@@ -150,3 +150,11 @@ el percentil 98.
 
 El estado completo son ~25k floats del manto + 2 mapas 2D: el esquema es
 portable tal cual a un shader o a un motor de juego.
+
+## Documentación técnica
+
+[`ALGORITMO.md`](ALGORITMO.md) documenta cada componente geológico en
+detalle: por qué se agregó, sus variables, su comportamiento, las trampas ya
+resueltas (invariantes que no hay que romper) y las técnicas de depuración
+que funcionaron. Es el punto de entrada para retomar o extender el proyecto
+(por una IA o un desarrollador) sin el historial original.
