@@ -605,9 +605,34 @@ duplicarlo en F rompía la conservación).
 
 **Matemática**: la edad `A` obedece `DA/Dt = 1` (cada parcela envejece un
 paso: advección semi-lagrangiana + `+DT`), con **renacimiento multiplicativo
-en los rifts**: `A ← A·clip(1 − 12·opening, 0, 1)` (un rift vigoroso resetea
-la edad a ~0 en pocas pasadas). Nace "vieja" (`5·AGE_TAU`) para que el
-océano inicial no parezca recién creado, y se acota a `10·AGE_TAU`.
+SOLO en el eje de la dorsal**. El eje se define como el núcleo más intenso
+de la divergencia (blur + normalización por percentil, adimensional):
+
+```
+opn = blur²(opening) / P98(blur²(opening))
+dorsal = clip(opn − 0.75, 0) · 4          ~1 en el eje, 0 fuera
+A ← A · clip(1 − 3·dorsal, 0.02, 1)
+rift = clip(opening − 0.006, 0)           desgarre continental (mismo umbral
+                                          que el desgarramiento de F, §4.8)
+```
+
+**Historia (corrección importante)**: la versión original rejuvenecía con
+cualquier divergencia (`A ← A·clip(1 − 12·opening)`), y como el ruido de
+divergencia de fondo es omnipresente, la edad no tenía estructura (mediana
+~8 pasos en todo el océano — "dorsales" por todas partes, incluso pegadas a
+las fosas). Con el renacimiento confinado al eje, la edad se estructura de
+verdad: p50 ~28, p90 ~178 — cuencas viejas profundas y franjas jóvenes solo
+donde se fabrica corteza. La dorsal es un límite de placa por definición
+(el divergente), igual que la fosa (el convergente que subduce); `dorsal` y
+`rift` son los campos que el mapa tectónico pinta (§5.3) — símbolo y física
+salen del mismo cálculo. Nace "vieja" (`5·AGE_TAU`) para que el océano
+inicial no parezca recién creado, y se acota a `10·AGE_TAU`.
+
+**Nota**: se probó y descartó la rigidez de placa TOTAL sobre océano
+(etiquetar placas enteras con la banda de límites del paso anterior): la
+retroalimentación rígido/fluido genera anillos concéntricos inestables
+alrededor de las plumas y congela la deriva (placas del tamaño del dominio
+tienen velocidad media ~0). No reintentar sin resolver ambas cosas.
 
 En el render, la **subsidencia térmica**:
 
@@ -798,12 +823,16 @@ Segunda vista renderizada por frame (`NOMBRE_placas.gif`): fondo pálido
 - **Límites de placa**: mismo criterio que el mapa (blur + percentil 98).
 - **Costa**: borde morfológico de `F > 0.5` (tierra menos su erosión de
   1 px), gris.
-- **Dorsal (ámbar)**: el fondo *más joven en términos relativos* —
-  `A < P8(A[océano])`. Percentil y no umbral absoluto (misma lección que
-  los hotspots, invariante 7): el ruido de divergencia de fondo rejuvenece
-  toda la edad continuamente (la mediana de A sobre océano ronda ~8 pasos,
-  no ~5·AGE_TAU), así que "joven" solo tiene sentido relativo.
-- **Fosa (violeta)**: `trench > max(0.0015, 0.3·max(trench))`.
+- **Dorsal (ámbar)** y **rift continental (naranja)**: los MISMOS campos que
+  usa la física (§4.10) — `crust.dorsal > 0.3` sobre océano (el eje
+  divergente donde renace el fondo) y `crust.rift > 0.008` sobre continente
+  (solo el desgarre vigoroso que de verdad parte la placa, no el roce de
+  los márgenes). Símbolo y simulación salen del mismo cálculo. Una versión
+  anterior pintaba la dorsal como "el 8% más joven de la edad" — proxy
+  incorrecto: marcaba fondo rejuvenecido por hotspots y bandas pegadas a
+  las fosas.
+- **Fosa (violeta)**: `_linea_placa(trench) > 0.75` (blur + percentil 98,
+  el mismo tratamiento que los bordes rojos).
 - **Cadenas montañosas (marrón)**: `elev > 0.20`.
 - **Flechas de deriva**: la velocidad final de placa (`u_vis/v_vis`, la
   velocidad post-mezcla de rigidez que realmente advecta la corteza)
@@ -852,7 +881,7 @@ Con `--datos`, la corrida escribe `mundos/<salida>_s<semilla>_<fecha>/`:
     `T` del manto, más `meta` (JSON): paso, contador del manto, plumas y
     el estado del `rng` (`bit_generator.state`). `trench` ES estado: es el
     `sink` del slab pull del paso siguiente.
-  - **Derivados solo-render (float16)**: `foreland, va, vh, boundary, u, v`.
+  - **Derivados solo-render (float16)**: `foreland, dorsal, rift, va, vh, boundary, u, v`.
 
 **Por qué float64**: el sistema tiene umbrales discretos (etiquetado de
 placas, percentiles) que amplifican cualquier redondeo — con estado en f32

@@ -231,6 +231,8 @@ class Crust:
         self.tick = 0                # etiquetado de placas cada 10 pasos
         self.lab_ids = self.lab_inv = None
         self.Pu = self.Pv = None     # campo de momento: rumbo persistente
+        self.dorsal = np.zeros((NY, NX))  # eje de dorsal activo
+        self.rift = np.zeros((NY, NX))    # desgarre continental activo
 
     def step(self, um, vm, hot=None):
         u = upsample(um, NY, NX) * VEL_SCALE
@@ -347,9 +349,25 @@ class Crust:
         # oceanico (las cordilleras interiores no se aplanan solas)
         C -= 0.001 * (C - floor) * (1 - 0.75 * F) * DT
         self.F = F
-        # edad del fondo oceanico: se advecta, envejece, y renace en los rifts
+        # eje de dorsal/rift: el nucleo mas intenso de la divergencia (blur +
+        # normalizacion por percentil, adimensional). La dorsal es el limite
+        # de placa que FABRICA corteza: sobre oceano es dorsal, sobre
+        # continente es el rift que lo parte
+        opn = opening
+        for _ in range(2):
+            opn = 0.2 * (opn + np.roll(opn, 1, 0) + np.roll(opn, -1, 0)
+                         + np.roll(opn, 1, 1) + np.roll(opn, -1, 1))
+        opn /= np.percentile(opn, 98) + 1e-9
+        self.dorsal = np.clip(opn - 0.75, 0, None) * 4.0
+        # rift continental: el mismo umbral de desgarre que usa la fisica
+        # para partir continentes (opening > 0.006, ver mas abajo)
+        self.rift = np.clip(opening - 0.006, 0, None)
+        # edad del fondo oceanico: se advecta, envejece, y renace SOLO en el
+        # eje de la dorsal — la divergencia debil de fondo no rejuvenece el
+        # oceano (antes lo hacia y la edad no tenia estructura: mediana ~8
+        # pasos en todo el mapa, dorsales por todas partes)
         A = advect(self.A, u, v, DT) + DT
-        A *= np.clip(1.0 - opening * 12, 0, 1)   # rift => corteza recien nacida
+        A *= np.clip(1.0 - 3.0 * self.dorsal, 0.02, 1)
         self.A = np.clip(A, 0, 10 * AGE_TAU)
         # fosa de subduccion: convergencia sobre corteza oceanica
         self.trench = conv * (F < 0.4)
@@ -504,12 +522,13 @@ def _flechas(d, u, v, n):
                 d.line([pa, (x1, y1), pb], fill=color, width=w)
 
 def _leyenda(d, n):
-    items = [((205, 60, 45), "limite de placa"),
-             ((105, 25, 140), "fosa"),
+    items = [((205, 60, 45), "otro limite de placa"),
+             ((105, 25, 140), "fosa (subduccion)"),
              ((240, 165, 25), "dorsal"),
+             ((255, 96, 0), "rift continental"),
              ((115, 62, 25), "cordillera"),
              (None, "deriva")]
-    alto, ancho = 13 * len(items) + 8, 122
+    alto, ancho = 13 * len(items) + 8, 150
     x0, y0 = 6, n - alto - 6
     d.rectangle([x0, y0, x0 + ancho, y0 + alto],
                 fill=(255, 255, 255, 205), outline=(90, 90, 90, 255))
@@ -523,21 +542,31 @@ def _leyenda(d, n):
                    fill=(25, 25, 30, 255), width=1)
         d.text((x0 + 25, cy - 5), texto, fill=(20, 20, 20, 255), font=_fuente())
 
+def _linea_placa(campo):
+    """Difumina y normaliza un campo de intensidad de limite (mismo criterio
+    que los bordes rojos del mapa: 2 pasadas de blur + percentil 98)."""
+    for _ in range(2):
+        campo = 0.2 * (campo + np.roll(campo, 1, 0) + np.roll(campo, -1, 0)
+                       + np.roll(campo, 1, 1) + np.roll(campo, -1, 1))
+    return campo / (np.percentile(campo, 98) + 1e-9)
+
 def render_placas(crust, boundary, elev):
-    """Mapa tectonico: fondo palido con los limites de placa en rojo,
-    simbologia de fosas (violeta), dorsales (ambar) y cadenas montanosas
-    (marron), flechas con la direccion de deriva de cada placa y leyenda."""
+    """Mapa tectonico. Los limites de placa se clasifican POR TIPO desde el
+    campo de velocidad real de la simulacion (la misma divergencia que usa
+    la fisica): divergente sobre oceano = dorsal (crea corteza marina),
+    divergente sobre continente = rift (parte el continente), convergente
+    sobre oceano = fosa de subduccion; lo que queda en rojo son los demas
+    limites (transformantes, suturas). Ademas: cadenas montanosas, flechas
+    de deriva por placa y leyenda."""
     n = elev.shape[0]
     img = np.empty(elev.shape + (3,))
     for ch in range(3):
         img[..., ch] = np.interp(elev, HYPSO[:, 0], HYPSO[:, ch + 1])
     img = img * 0.30 + np.array([235.0, 235.0, 230.0]) * 0.70  # fondo palido
-    # limites de placa (mismo criterio que el mapa normal)
-    b = boundary
-    for _ in range(2):
-        b = 0.2 * (b + np.roll(b, 1, 0) + np.roll(b, -1, 0)
-                   + np.roll(b, 1, 1) + np.roll(b, -1, 1))
-    b = np.clip(b / (np.percentile(b, 98) + 1e-9) - 0.6, 0, 1)[..., None]
+    # limites de placa genericos (rojo); los divergentes y convergentes se
+    # pintan encima con su propio simbolo, asi que el rojo que sobrevive son
+    # transformantes y suturas
+    b = np.clip(_linea_placa(boundary) - 0.6, 0, 1)[..., None]
     img = img * (1 - 0.55 * b) + np.array([205, 60, 45]) * 0.55 * b
     tierra = crust.F > 0.5
     interior = tierra
@@ -545,15 +574,16 @@ def render_placas(crust, boundary, elev):
         for sh in (1, -1):
             interior = interior & np.roll(tierra, sh, ax)
     img[tierra & ~interior] = (95, 95, 95)          # linea de costa
-    # dorsal: el fondo MAS joven en terminos relativos (la edad de fondo
-    # vive rejuvenecida por el ruido de divergencia, asi que un umbral
-    # absoluto no sirve; percentil, como los hotspots)
-    if (~tierra).any():
-        thr_a = np.percentile(crust.A[~tierra], 8)
-        img[(crust.A < thr_a) & ~tierra] = (240, 165, 25)
     img[elev > 0.20] = (115, 62, 25)                # cadenas montanosas
-    thr = max(0.0015, 0.3 * float(crust.trench.max()))
-    img[crust.trench > thr] = (105, 25, 140)        # fosa de subduccion
+    # tipos de limite: los MISMOS campos que usa la simulacion — crust.dorsal
+    # es el eje divergente donde renace el fondo, crust.rift el desgarre que
+    # parte continentes y crust.trench la convergencia que subduce
+    img[(crust.dorsal > 0.3) & ~tierra] = (240, 165, 25)  # dorsal: crea corteza
+    # solo el desgarre vigoroso (el que de verdad parte el continente), no
+    # el roce de los margenes
+    img[(crust.rift > 0.008) & tierra] = (255, 96, 0)     # rift continental
+    fosa = _linea_placa(crust.trench) > 0.75
+    img[fosa & ~tierra] = (105, 25, 140)            # fosa de subduccion
     im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
     d = ImageDraw.Draw(im, "RGBA")
     _flechas(d, crust.u_vis, crust.v_vis, n)
@@ -614,7 +644,8 @@ def guardar_frame(carpeta, paso, mantle, crust, boundary):
         meta=json.dumps(meta), T=mantle.T,
         **{k: getattr(crust, k) for k in CAMPOS_ESTADO},
         # derivados solo para re-renderizar (media precision basta)
-        foreland=crust.foreland.astype(f16),
+        foreland=crust.foreland.astype(f16), dorsal=crust.dorsal.astype(f16),
+        rift=crust.rift.astype(f16),
         va=crust.volcano_arc.astype(f16), vh=crust.volcano_hot.astype(f16),
         boundary=boundary.astype(f16),
         u=crust.u_vis.astype(f16), v=crust.v_vis.astype(f16))
@@ -664,6 +695,8 @@ def reconstruir(ruta):
             setattr(c, k, d[k].astype(float))
         c.trench = d["trench"].astype(float)
         c.foreland = d["foreland"].astype(float)
+        c.dorsal = d["dorsal"].astype(float)
+        c.rift = d["rift"].astype(float)
         c.volcano_arc = d["va"].astype(float)
         c.volcano_hot = d["vh"].astype(float)
         c.u_vis, c.v_vis = d["u"].astype(float), d["v"].astype(float)

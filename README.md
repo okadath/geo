@@ -8,9 +8,11 @@ real: solo flotabilidad, conservación de masa vía FFT y advección. Corre a
 ![ejemplo](tectonica.gif)
 
 Cada corrida produce además un **mapa tectónico animado**
-(`NOMBRE_placas.gif`): límites de placa, flechas con la dirección de deriva,
-y simbología de fosas (violeta), dorsales (ámbar) y cadenas montañosas
-(marrón), con leyenda.
+(`NOMBRE_placas.gif`): límites de placa clasificados por tipo con los mismos
+campos que usa la física — dorsales (ámbar, el eje divergente que fabrica
+corteza), rifts continentales (naranja), fosas de subducción (violeta) —
+más cadenas montañosas (marrón), flechas con la dirección de deriva de cada
+placa y leyenda.
 
 ![placas](tectonica_placas.gif)
 
@@ -184,9 +186,12 @@ campos: el **espesor de corteza** `C` y la **fracción continental** `F`
   conserva (un rift parte un continente, no lo borra) y un término biestable
   mantiene las costas nítidas frente a la difusión numérica.
 - **Edad del fondo oceánico** (`A`): se advecta con la placa, envejece paso a
-  paso y renace a cero en los rifts. El fondo joven queda somero y el viejo
-  se hunde (`SUBSIDENCE`, `AGE_TAU`) → **cordilleras submarinas** visibles a
-  lo largo de las dorsales.
+  paso y renace **solo en el eje de la dorsal** (el núcleo intenso de la
+  divergencia — la dorsal es el límite de placa que fabrica corteza; su
+  equivalente sobre continente es el rift que lo parte). El fondo joven
+  queda somero y el viejo se hunde (`SUBSIDENCE`, `AGE_TAU`) →
+  **cordilleras submarinas** a lo largo de las dorsales y cuencas abisales
+  viejas lejos de ellas.
 - **Fosas de subducción** (`TRENCH`): depresión batimétrica donde converge
   flujo sobre corteza oceánica, el rasgo oscuro que bordea los márgenes
   activos.
