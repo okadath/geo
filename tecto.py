@@ -15,8 +15,12 @@ Tres capas de abstraccion:
 Todo toroidal (mapa periodico). Costo por paso: unas cuantas FFTs 48x48 y
 operaciones vectorizadas 256x256 -> corre cientos de pasos por segundo.
 """
+import json
+import shutil
+from pathlib import Path
+
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 rng = np.random.default_rng(7)
 
@@ -31,6 +35,7 @@ VEL_SCALE = 18.0      # cuanto mueve el manto a la corteza (px/paso); mayor =
                       # evolucion geologica mas rapida por paso
 C_OCEAN = 0.35        # espesor de corteza oceanica nueva
 C_CONT = 1.0          # espesor continental inicial
+CONT_UMBRAL = 0.55    # umbral del ruido inicial: menor = mas continente
 SEA_LEVEL = 0.52      # nivel del mar en unidades de espesor
 EROSION = 0.008
 PLUME_EVERY = 70      # cada cuantos pasos nace una pluma nueva en el manto
@@ -206,7 +211,7 @@ class Crust:
         n = np.zeros((NY, NX))
         for s, a in [(6, 1.0), (12, 0.6), (24, 0.3)]:
             n += a * upsample(rng.standard_normal((s, s)), NY, NX)
-        self.F = np.where(n > 0.55, 1.0, 0.0)  # fraccion continental (conservada)
+        self.F = np.where(n > CONT_UMBRAL, 1.0, 0.0)  # fraccion continental (conservada)
         self.F_total = self.F.sum()            # el material continental no se crea ni destruye
         self.C = C_OCEAN + self.F * (C_CONT - C_OCEAN)
         self.C += 0.03 * rng.standard_normal((NY, NX))
@@ -287,6 +292,8 @@ class Crust:
         w = RIGID * np.clip(self.F, 0, 1) * np.clip(1 - open_m * 25, 0, 1)
         u = u * (1 - w) + u_raft * w
         v = v * (1 - w) + v_raft * w
+        # velocidad final de placa (para flechas del mapa tectonico)
+        self.u_vis, self.v_vis = u, v
 
         C = advect(self.C, u, v, DT)
         F = np.clip(advect(self.F, u, v, DT), 0, 1)
@@ -403,6 +410,18 @@ class Crust:
         # subsidencia termica: el fondo joven (dorsal) queda somero y el
         # viejo se hunde -> cordilleras submarinas donde diverge el manto
         elev -= SUBSIDENCE * (1 - np.exp(-self.A / AGE_TAU)) * ocean
+        # plataforma continental: el margen sumergido del continente sigue
+        # siendo corteza continental -> mar somero y plano que bordea las
+        # costas, con talud abrupto hacia el abisal (halo de F difuminado,
+        # remapeado casi-binario para que la plataforma sea plana y el
+        # quiebre nitido). Se aplica antes de la fosa: los margenes activos
+        # la pierden bajo la fosa de subduccion
+        marg = self.F
+        for sh in (1, 2, 3, 4):
+            marg = 0.2 * (marg + np.roll(marg, sh, 0) + np.roll(marg, -sh, 0)
+                          + np.roll(marg, sh, 1) + np.roll(marg, -sh, 1))
+        plataforma = np.clip(6.0 * (marg - 0.18), 0, 1) * ocean
+        elev += np.clip(-0.025 - elev, 0, None) * plataforma
         # fosa de subduccion: depresion batimetrica en la convergencia
         elev -= TRENCH * self.trench
         # cuenca de antepais: depresion flexural frente a la cordillera en
@@ -415,8 +434,9 @@ class Crust:
 
 # ---------------- 3. render ----------------
 HYPSO = np.array([  # (nivel, r,g,b) elevacion normalizada -1..1
-    (-1.0, 10, 20, 60), (-0.4, 15, 60, 120), (-0.05, 60, 130, 180),
-    (0.0, 90, 160, 170), (0.02, 190, 180, 120), (0.15, 110, 150, 70),
+    (-1.0, 10, 20, 60), (-0.4, 15, 60, 120), (-0.06, 55, 125, 178),
+    (-0.035, 90, 175, 190),   # banda somera: plataforma continental
+    (0.0, 105, 180, 180), (0.02, 190, 180, 120), (0.15, 110, 150, 70),
     (0.4, 140, 120, 80), (0.7, 150, 140, 130), (1.0, 255, 255, 255),
 ], dtype=float)
 
@@ -452,10 +472,262 @@ def render(elev, boundary, volcanoes=None):
         img[dots] = (235, 45, 25)
     return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
 
+# ---------------- mapa tectonico (placas, flechas y simbologia) ----------------
+_FUENTE = None
+
+def _fuente():
+    global _FUENTE
+    if _FUENTE is None:
+        _FUENTE = ImageFont.load_default()
+    return _FUENTE
+
+def _flechas(d, u, v, n):
+    """Flechas de deriva: velocidad de placa promediada en una malla gruesa."""
+    paso = max(16, n // 11)
+    for y in range(paso // 2, n - 2, paso):
+        for x in range(paso // 2, n - 2, paso):
+            du = float(u[y - 2:y + 3, x - 2:x + 3].mean()) * 14
+            dv = float(v[y - 2:y + 3, x - 2:x + 3].mean()) * 14
+            L = (du * du + dv * dv) ** 0.5
+            if L < 2.5:        # placa casi quieta: sin flecha
+                continue
+            if L > paso * 0.85:
+                du *= paso * 0.85 / L
+                dv *= paso * 0.85 / L
+            x1, y1 = x + du, y + dv
+            ang = np.arctan2(dv, du)
+            pa = (x1 - 4 * np.cos(ang - 0.5), y1 - 4 * np.sin(ang - 0.5))
+            pb = (x1 - 4 * np.cos(ang + 0.5), y1 - 4 * np.sin(ang + 0.5))
+            # trazo blanco debajo y oscuro encima: legible sobre cualquier fondo
+            for color, w in (((255, 255, 255, 210), 3), ((25, 25, 30, 255), 1)):
+                d.line([(x, y), (x1, y1)], fill=color, width=w)
+                d.line([pa, (x1, y1), pb], fill=color, width=w)
+
+def _leyenda(d, n):
+    items = [((205, 60, 45), "limite de placa"),
+             ((105, 25, 140), "fosa"),
+             ((240, 165, 25), "dorsal"),
+             ((115, 62, 25), "cordillera"),
+             (None, "deriva")]
+    alto, ancho = 13 * len(items) + 8, 122
+    x0, y0 = 6, n - alto - 6
+    d.rectangle([x0, y0, x0 + ancho, y0 + alto],
+                fill=(255, 255, 255, 205), outline=(90, 90, 90, 255))
+    for i, (color, texto) in enumerate(items):
+        cy = y0 + 10 + 13 * i
+        if color:
+            d.line([(x0 + 5, cy), (x0 + 20, cy)], fill=color + (255,), width=3)
+        else:
+            d.line([(x0 + 5, cy), (x0 + 20, cy)], fill=(25, 25, 30, 255), width=1)
+            d.line([(x0 + 16, cy - 3), (x0 + 20, cy), (x0 + 16, cy + 3)],
+                   fill=(25, 25, 30, 255), width=1)
+        d.text((x0 + 25, cy - 5), texto, fill=(20, 20, 20, 255), font=_fuente())
+
+def render_placas(crust, boundary, elev):
+    """Mapa tectonico: fondo palido con los limites de placa en rojo,
+    simbologia de fosas (violeta), dorsales (ambar) y cadenas montanosas
+    (marron), flechas con la direccion de deriva de cada placa y leyenda."""
+    n = elev.shape[0]
+    img = np.empty(elev.shape + (3,))
+    for ch in range(3):
+        img[..., ch] = np.interp(elev, HYPSO[:, 0], HYPSO[:, ch + 1])
+    img = img * 0.30 + np.array([235.0, 235.0, 230.0]) * 0.70  # fondo palido
+    # limites de placa (mismo criterio que el mapa normal)
+    b = boundary
+    for _ in range(2):
+        b = 0.2 * (b + np.roll(b, 1, 0) + np.roll(b, -1, 0)
+                   + np.roll(b, 1, 1) + np.roll(b, -1, 1))
+    b = np.clip(b / (np.percentile(b, 98) + 1e-9) - 0.6, 0, 1)[..., None]
+    img = img * (1 - 0.55 * b) + np.array([205, 60, 45]) * 0.55 * b
+    tierra = crust.F > 0.5
+    interior = tierra
+    for ax in (0, 1):
+        for sh in (1, -1):
+            interior = interior & np.roll(tierra, sh, ax)
+    img[tierra & ~interior] = (95, 95, 95)          # linea de costa
+    # dorsal: el fondo MAS joven en terminos relativos (la edad de fondo
+    # vive rejuvenecida por el ruido de divergencia, asi que un umbral
+    # absoluto no sirve; percentil, como los hotspots)
+    if (~tierra).any():
+        thr_a = np.percentile(crust.A[~tierra], 8)
+        img[(crust.A < thr_a) & ~tierra] = (240, 165, 25)
+    img[elev > 0.20] = (115, 62, 25)                # cadenas montanosas
+    thr = max(0.0015, 0.3 * float(crust.trench.max()))
+    img[crust.trench > thr] = (105, 25, 140)        # fosa de subduccion
+    im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+    d = ImageDraw.Draw(im, "RGBA")
+    _flechas(d, crust.u_vis, crust.v_vis, n)
+    _leyenda(d, n)
+    return im
+
+# ---------------- almacenamiento de mundos ----------------
+# cada mundo vive en mundos/<nombre>/: config.json con todos los parametros,
+# base.npz (textura de detalle) y frames/PASO.npz con el estado COMPLETO de
+# la simulacion por frame -> cualquier frame se puede re-renderizar o usarse
+# como punto de partida para continuar la simulacion.
+# estado de la simulacion: se guarda en float64 SIN redondear — el sistema
+# tiene umbrales discretos (etiquetado de placas, percentiles) que amplifican
+# cualquier redondeo, y con f32 una continuacion diverge de la corrida
+# original en ~100 pasos; con f64 es bit-exacta. trench es estado: alimenta
+# el slab pull (sink) del paso siguiente
+CAMPOS_ESTADO = ("C", "F", "A", "Pu", "Pv", "D", "trench")
+
+def _parametros_de(args):
+    claves = ("tiempo", "cada", "ms", "semilla", "resolucion", "detalle",
+              "velocidad", "mar", "continentes", "plumas", "erosion",
+              "empuje", "momento", "rigidez")
+    return {k: getattr(args, k) for k in claves}
+
+def _aplicar_parametros(p):
+    global NX, NY, VEL_SCALE, SEA_LEVEL, CONT_UMBRAL, PLUME_EVERY
+    global EROSION, RIDGE_PUSH, MOMENTUM, RIGID
+    NX = NY = int(p["resolucion"])
+    VEL_SCALE, SEA_LEVEL = float(p["velocidad"]), float(p["mar"])
+    CONT_UMBRAL = float(p["continentes"])
+    PLUME_EVERY, EROSION = max(int(p["plumas"]), 1), float(p["erosion"])
+    RIDGE_PUSH, MOMENTUM = float(p["empuje"]), float(p["momento"])
+    RIGID = min(max(float(p["rigidez"]), 0.0), 1.0)
+
+def _crear_mundo(args):
+    from datetime import datetime
+    p = _parametros_de(args)
+    nombre = f"{Path(args.salida).name}_s{p['semilla']}_{datetime.now():%Y%m%d-%H%M%S}"
+    carpeta = Path("mundos") / nombre
+    (carpeta / "frames").mkdir(parents=True, exist_ok=True)
+    cfg = {"nombre": nombre,
+           "creado": datetime.now().isoformat(timespec="seconds"),
+           "version": 1, "parametros": p}
+    (carpeta / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+    return carpeta
+
+def guardar_frame(carpeta, paso, mantle, crust, boundary):
+    """Estado completo de un frame: reproducible y reanudable."""
+    meta = {"paso": int(paso), "t": int(mantle.t),
+            "plumes": [{"y": float(q["y"]), "x": float(q["x"]),
+                        "dy": float(q["dy"]), "dx": float(q["dx"]),
+                        "age": int(q["age"]), "life": int(q["life"])}
+                       for q in mantle.plumes],
+            "rng": rng.bit_generator.state}
+    f16 = np.float16
+    np.savez_compressed(
+        carpeta / "frames" / f"{paso:06d}.npz",
+        meta=json.dumps(meta), T=mantle.T,
+        **{k: getattr(crust, k) for k in CAMPOS_ESTADO},
+        # derivados solo para re-renderizar (media precision basta)
+        foreland=crust.foreland.astype(f16),
+        va=crust.volcano_arc.astype(f16), vh=crust.volcano_hot.astype(f16),
+        boundary=boundary.astype(f16),
+        u=crust.u_vis.astype(f16), v=crust.v_vis.astype(f16))
+
+def _simular(mantle, crust, pasos, cada, carpeta=None, detalle=None,
+             paso0=0, sink=None):
+    """Corre la simulacion; si detalle no es None devuelve los frames
+    renderizados (mapa y placas); si carpeta no es None guarda el estado."""
+    frames_m, frames_p, boundary = [], [], None
+    for i in range(paso0, paso0 + pasos):
+        u, v = mantle.step(sink)
+        boundary = crust.step(u, v, mantle.hot)
+        sink = upsample(crust.trench, MY, MX)  # la losa fria ancla la bajada
+        if i % cada == 0:
+            if detalle is not None:
+                elev = crust.elevation(detalle)
+                vol = ((crust.volcano_arc, 0.003, 3), (crust.volcano_hot, 0.012, 2))
+                frames_m.append(render(elev, boundary, vol))
+                frames_p.append(render_placas(crust, boundary, elev))
+            if carpeta is not None:
+                guardar_frame(carpeta, i, mantle, crust, boundary)
+        rel = i - paso0
+        if rel % 200 == 0 and rel:
+            print(f"  paso {rel}/{pasos}...")
+    return frames_m, frames_p, boundary
+
+def _guardar_gifs(carpeta, frames_m, frames_p, ms):
+    frames_m[-1].save(carpeta / "mapa_final.png")
+    for nombre, fr in (("mapa.gif", frames_m), ("placas.gif", frames_p)):
+        fr[0].save(carpeta / nombre, save_all=True, append_images=fr[1:],
+                   duration=ms, loop=0)
+
+def reconstruir(ruta):
+    """Re-renderiza mapa.gif y placas.gif desde los datos guardados."""
+    carpeta = Path(ruta)
+    cfg = json.loads((carpeta / "config.json").read_text())
+    p = cfg["parametros"]
+    _aplicar_parametros(p)
+    ficheros = sorted((carpeta / "frames").glob("*.npz"))
+    if not ficheros:
+        raise SystemExit(f"no hay frames guardados en {carpeta}/frames")
+    frames_m, frames_p = [], []
+    for fz in ficheros:
+        d = np.load(fz)
+        c = Crust.__new__(Crust)   # cascaron: solo los campos del render
+        for k in ("C", "F", "A", "D"):
+            setattr(c, k, d[k].astype(float))
+        c.trench = d["trench"].astype(float)
+        c.foreland = d["foreland"].astype(float)
+        c.volcano_arc = d["va"].astype(float)
+        c.volcano_hot = d["vh"].astype(float)
+        c.u_vis, c.v_vis = d["u"].astype(float), d["v"].astype(float)
+        boundary = d["boundary"].astype(float)
+        elev = c.elevation(p["detalle"])
+        vol = ((c.volcano_arc, 0.003, 3), (c.volcano_hot, 0.012, 2))
+        frames_m.append(render(elev, boundary, vol))
+        frames_p.append(render_placas(c, boundary, elev))
+    _guardar_gifs(carpeta, frames_m, frames_p, p["ms"])
+    print(f"-> {carpeta}/mapa.gif, placas.gif y mapa_final.png "
+          f"({len(frames_m)} frames reconstruidos)")
+
+def continuar(ruta, pasos, desde=None):
+    """Retoma la simulacion desde un frame guardado (el ultimo por defecto)
+    y reconstruye ambos GIFs. Con --desde se parte de ese paso y los frames
+    posteriores se descartan (la historia se reescribe desde ahi)."""
+    global rng
+    import time
+    carpeta = Path(ruta)
+    cfg = json.loads((carpeta / "config.json").read_text())
+    p = cfg["parametros"]
+    _aplicar_parametros(p)
+    disponibles = {int(f.stem): f for f in (carpeta / "frames").glob("*.npz")}
+    if not disponibles:
+        raise SystemExit(f"no hay frames guardados en {carpeta}/frames")
+    paso0 = max(disponibles) if desde is None else desde
+    if paso0 not in disponibles:
+        raise SystemExit(f"no existe el frame del paso {paso0}; hay frames "
+                         f"cada {p['cada']} pasos hasta {max(disponibles)}")
+    if desde is not None:
+        for q, f in disponibles.items():
+            if q > desde:
+                f.unlink()
+    d = np.load(disponibles[paso0])
+    meta = json.loads(d["meta"].item())
+    rng = np.random.default_rng(0)   # temporal: los constructores consumen rng
+    mantle, crust = Mantle(), Crust()
+    mantle.T = d["T"].astype(float)
+    mantle.t = meta["t"]
+    mantle.plumes = meta["plumes"]
+    for k in CAMPOS_ESTADO:
+        setattr(crust, k, d[k].astype(float))
+    crust.trench = d["trench"].astype(float)
+    base = np.load(carpeta / "base.npz")
+    crust.D0 = base["D0"].astype(float)
+    crust.F_total = float(base["F_total"])
+    rng = np.random.default_rng()
+    rng.bit_generator.state = meta["rng"]   # el azar sigue donde iba
+    sink = upsample(crust.trench, MY, MX)
+    print(f"continuando '{cfg['nombre']}' desde el paso {paso0} (+{pasos} pasos)")
+    t0 = time.time()
+    _simular(mantle, crust, pasos, p["cada"], carpeta, paso0=paso0 + 1, sink=sink)
+    print(f"{pasos} pasos en {time.time()-t0:.1f}s; reconstruyendo GIFs...")
+    from datetime import datetime
+    cfg.setdefault("continuaciones", []).append(
+        {"desde": paso0, "pasos": pasos,
+         "fecha": datetime.now().isoformat(timespec="seconds")})
+    (carpeta / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+    reconstruir(carpeta)
+
 # ---------------- CLI ----------------
 def main():
     import argparse, time
-    global rng, NX, NY
+    global rng
 
     p = argparse.ArgumentParser(
         prog="tecto",
@@ -481,25 +753,59 @@ def main():
                    help="prefijo de salida: NOMBRE.gif y NOMBRE_final.png")
     p.add_argument("--sin-gif", action="store_true",
                    help="solo guardar el PNG del mapa final")
+    g = p.add_argument_group("algoritmo", "diales de la simulacion geologica")
+    g.add_argument("--velocidad", type=float, default=VEL_SCALE, metavar="V",
+                   help="velocidad de la deriva continental (px/paso)")
+    g.add_argument("--mar", type=float, default=SEA_LEVEL, metavar="H",
+                   help="nivel del mar (mas alto = mas oceano)")
+    g.add_argument("--continentes", type=float, default=CONT_UMBRAL, metavar="U",
+                   help="umbral continental inicial (menor = mas tierra)")
+    g.add_argument("--plumas", type=int, default=PLUME_EVERY, metavar="N",
+                   help="pasos entre nacimientos de plumas (menor = manto "
+                        "mas activo)")
+    g.add_argument("--erosion", type=float, default=EROSION, metavar="E",
+                   help="tasa de erosion del relieve")
+    g.add_argument("--empuje", type=float, default=RIDGE_PUSH, metavar="R",
+                   help="empuje de dorsal (motor de la deriva post-rift)")
+    g.add_argument("--momento", type=float, default=MOMENTUM, metavar="M",
+                   help="relajacion del rumbo de placa por paso (menor = "
+                        "rumbo mas sostenido, colisiones mas decididas)")
+    g.add_argument("--rigidez", type=float, default=RIGID, metavar="G",
+                   help="rigidez de placa: 0=fluido, 1=balsa rigida")
+    m = p.add_argument_group("mundos", "almacenamiento por frame para "
+                             "reconstruir o retomar simulaciones")
+    m.add_argument("--datos", action="store_true",
+                   help="guardar el estado completo de cada frame en "
+                        "mundos/<nombre>/ (config + frames reanudables)")
+    m.add_argument("--reconstruir", metavar="CARPETA",
+                   help="re-renderizar mapa.gif y placas.gif desde los datos "
+                        "de un mundo guardado (ignora el resto de opciones)")
+    m.add_argument("--continuar", metavar="CARPETA",
+                   help="retomar la simulacion de un mundo guardado; -t son "
+                        "los pasos adicionales")
+    m.add_argument("--desde", type=int, metavar="PASO",
+                   help="con --continuar: retomar desde ese frame guardado "
+                        "(los frames posteriores se descartan)")
     args = p.parse_args()
 
+    if args.reconstruir:
+        return reconstruir(args.reconstruir)
+    if args.continuar:
+        return continuar(args.continuar, args.tiempo, args.desde)
     if args.tiempo < 1 or args.cada < 1 or args.resolucion < 32:
         p.error("tiempo y cada deben ser >= 1, resolucion >= 32")
     rng = np.random.default_rng(args.semilla)
-    NX = NY = args.resolucion
+    _aplicar_parametros(_parametros_de(args))
 
     mantle, crust = Mantle(), Crust()
-    frames, sink = [], None
+    carpeta = _crear_mundo(args) if args.datos else None
+    if carpeta:
+        np.savez_compressed(carpeta / "base.npz", D0=crust.D0,
+                            F_total=crust.F_total)
     t0 = time.time()
-    for i in range(args.tiempo):
-        u, v = mantle.step(sink)
-        boundary = crust.step(u, v, mantle.hot)
-        sink = upsample(crust.trench, MY, MX)  # la losa fria ancla la bajada
-        if not args.sin_gif and i % args.cada == 0:
-            vol = ((crust.volcano_arc, 0.003, 3), (crust.volcano_hot, 0.012, 2))
-            frames.append(render(crust.elevation(args.detalle), boundary, vol))
-        if i % 200 == 0 and i:
-            print(f"  paso {i}/{args.tiempo}...")
+    frames_m, frames_p, boundary = _simular(
+        mantle, crust, args.tiempo, args.cada, carpeta,
+        None if args.sin_gif else args.detalle)
     dt = time.time() - t0
     print(f"{args.tiempo} pasos en {dt:.1f}s ({args.tiempo/dt:.0f} pasos/s)")
 
@@ -509,10 +815,22 @@ def main():
     print(f"-> {png}")
     if not args.sin_gif:
         gif = f"{args.salida}.gif"
-        frames[0].save(gif, save_all=True, append_images=frames[1:],
-                       duration=args.ms, loop=0)
-        segs = len(frames) * args.ms / 1000
-        print(f"-> {gif} ({len(frames)} frames, ~{segs:.1f}s)")
+        frames_m[0].save(gif, save_all=True, append_images=frames_m[1:],
+                         duration=args.ms, loop=0)
+        segs = len(frames_m) * args.ms / 1000
+        print(f"-> {gif} ({len(frames_m)} frames, ~{segs:.1f}s)")
+        gifp = f"{args.salida}_placas.gif"
+        frames_p[0].save(gifp, save_all=True, append_images=frames_p[1:],
+                         duration=args.ms, loop=0)
+        print(f"-> {gifp} (placas, deriva y simbologia)")
+    if carpeta:
+        shutil.copy(png, carpeta / "mapa_final.png")
+        if not args.sin_gif:
+            shutil.copy(gif, carpeta / "mapa.gif")
+            shutil.copy(gifp, carpeta / "placas.gif")
+        tam = sum(f.stat().st_size for f in carpeta.rglob("*") if f.is_file()) / 1e6
+        print(f"-> {carpeta}/ (estado por frame, {tam:.0f} MB; "
+              f"--reconstruir/--continuar para retomarlo)")
 
 
 if __name__ == "__main__":

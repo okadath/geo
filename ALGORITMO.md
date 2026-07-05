@@ -737,10 +737,31 @@ manchas redondas de las plumas volvían a aparecer amplificadas.
 elev = (C − SEA_LEVEL)·1.1
 elev = (elev > 0) ? 0.5·elev² + 0.03 : elev        escala cuadrática en tierra
 elev −= SUBSIDENCE·(1 − e^{−A/AGE_TAU})·[océano]    §4.10
+elev += max(−0.025 − elev, 0)·plataforma            plataforma continental
 elev −= TRENCH·trench                               §4.11
 elev −= 14·foreland                                 §4.7
 elev += detail·D·(0.04 + 0.11·clip(elev, 0, 1))
 ```
+
+**Plataforma continental**: el margen sumergido del continente sigue siendo
+corteza continental — un mar somero y plano que bordea las costas, con talud
+abrupto hacia el abisal. Se construye del halo difuminado de F:
+
+```
+marg = G_σ * F                                σ ≈ 3.5 px (shifts 1,2,3,4)
+plataforma = clip(6·(marg − 0.18), 0, 1)·[océano]
+```
+
+El remapeo con pendiente 6 es casi binario a propósito: da una plataforma
+*plana* a −0.025 (los ~4–5 px con marg alto saturan a 1) y un *quiebre*
+nítido de 1–2 px donde marg cruza 0.18 — el perfil real de un margen pasivo,
+no una rampa. Se aplica **antes** de restar la fosa: en los márgenes activos
+(tipo Andes) la fosa corta la plataforma, que es exactamente lo que pasa en
+la Tierra (los márgenes activos tienen plataformas estrechas o ausentes).
+Vive solo en el render, como la fosa y el antepaís (invariante 11). Para que
+se lea, `HYPSO` tiene una banda somera turquesa dedicada entre −0.035 y 0 —
+sin ella la rampa de color apenas distinguía −0.09 de −0.03 y la plataforma
+era invisible. Los mares interiores de antepaís caen en la misma banda.
 
 **Por qué cuadrática**: la derivada del mapeo es `d(elev')/d(elev) = elev` —
 crece linealmente con la altura. Las elevaciones bajas se comprimen (todo el
@@ -769,6 +790,29 @@ altura (`0.04` en el mar, hasta `0.15` en cumbre): montaña rugosa, mar liso.
   1 px (cruz de 5) y se pintan (235,45,25). En el CLI:
   `((volcano_arc, 0.003, 3), (volcano_hot, 0.012, 2))`.
 
+### 5.3 `render_placas(crust, boundary, elev)` — el mapa tectónico
+
+Segunda vista renderizada por frame (`NOMBRE_placas.gif`): fondo pálido
+(70% blanco + 30% del tinte hipsométrico) con simbología encima:
+
+- **Límites de placa**: mismo criterio que el mapa (blur + percentil 98).
+- **Costa**: borde morfológico de `F > 0.5` (tierra menos su erosión de
+  1 px), gris.
+- **Dorsal (ámbar)**: el fondo *más joven en términos relativos* —
+  `A < P8(A[océano])`. Percentil y no umbral absoluto (misma lección que
+  los hotspots, invariante 7): el ruido de divergencia de fondo rejuvenece
+  toda la edad continuamente (la mediana de A sobre océano ronda ~8 pasos,
+  no ~5·AGE_TAU), así que "joven" solo tiene sentido relativo.
+- **Fosa (violeta)**: `trench > max(0.0015, 0.3·max(trench))`.
+- **Cadenas montañosas (marrón)**: `elev > 0.20`.
+- **Flechas de deriva**: la velocidad final de placa (`u_vis/v_vis`, la
+  velocidad post-mezcla de rigidez que realmente advecta la corteza)
+  promediada en ventanas de 5×5 sobre una malla gruesa (~11×11 flechas);
+  largo ∝ |v| (×14, recortado), trazo blanco debajo + oscuro encima, punta
+  en dos segmentos a ±0.5 rad. Sin flecha si |v|·14 < 2.5 px (placa quieta).
+- **Leyenda** (PIL ImageDraw + fuente por defecto) en la esquina inferior
+  izquierda.
+
 ---
 
 ## 6. Bucle principal (CLI, `main()`)
@@ -782,8 +826,48 @@ for i in range(tiempo):
 ```
 
 Flags: `-t` pasos, `-c` cada, `--ms`, `-s` semilla, `-r` resolución,
-`-d` detalle, `-o` prefijo, `--sin-gif`. La semilla reinicializa el `rng`
-global (¡`main` hace `global rng, NX, NY`!) — mismo comando = mismo mundo.
+`-d` detalle, `-o` prefijo, `--sin-gif`. Además, los diales principales del
+algoritmo se pueden sobrescribir desde la línea de comandos sin editar el
+archivo: `--velocidad` (VEL_SCALE), `--mar` (SEA_LEVEL), `--continentes`
+(CONT_UMBRAL, el umbral del ruido inicial), `--plumas` (PLUME_EVERY),
+`--erosion` (EROSION), `--empuje` (RIDGE_PUSH), `--momento` (MOMENTUM) y
+`--rigidez` (RIGID) — `main()` reasigna las constantes globales del módulo
+antes de construir `Mantle`/`Crust` (por eso las clases las leen en tiempo
+de ejecución, no de importación). La semilla reinicializa el `rng` global —
+mismo comando = mismo mundo. `web.py` sirve una interfaz local con sliders
+para todos estos parámetros, guardado de mundos (semilla + parámetros en
+`semillas.json`), cancelación de trabajos, botón de valores por defecto y
+muestra ambos GIFs (mapa y placas).
+
+### 6.1 Almacenamiento de mundos (`--datos`, `--reconstruir`, `--continuar`)
+
+Con `--datos`, la corrida escribe `mundos/<salida>_s<semilla>_<fecha>/`:
+
+- `config.json` — todos los parámetros + historial de continuaciones.
+- `base.npz` — `D0` (textura de detalle) y `F_total` (el total continental
+  ORIGINAL: usarlo al reanudar, no `F.sum()`, porque el clip de la
+  renormalización puede dejar `ΣF` ligeramente por debajo).
+- `frames/PASO.npz` por cada frame guardado, con dos niveles de precisión:
+  - **Estado (float64, sin redondear)**: `C, F, A, Pu, Pv, D, trench` y
+    `T` del manto, más `meta` (JSON): paso, contador del manto, plumas y
+    el estado del `rng` (`bit_generator.state`). `trench` ES estado: es el
+    `sink` del slab pull del paso siguiente.
+  - **Derivados solo-render (float16)**: `foreland, va, vh, boundary, u, v`.
+
+**Por qué float64**: el sistema tiene umbrales discretos (etiquetado de
+placas, percentiles) que amplifican cualquier redondeo — con estado en f32
+una continuación diverge visiblemente de la corrida original en ~100 pasos
+(dif. máx. en C ~1e-5 creciendo); con f64 y el estado del RNG restaurado la
+continuación es **bit-exacta** (verificado: continuar 300→400 coincide byte
+a byte con una corrida directa de 400). Al reanudar, los constructores
+`Mantle()/Crust()` consumen un rng temporal y DESPUÉS se sobreescriben
+todos los campos y se restaura el estado real del rng — el orden importa.
+
+`--reconstruir CARPETA` re-renderiza ambos GIFs desde los frames (usa un
+`Crust.__new__` cascarón con solo los campos del render). `--continuar
+CARPETA -t N` retoma desde el último frame; `--desde PASO` retoma desde ese
+frame y borra los posteriores (reescribe la historia). Tamaño: ~2–3 MB por
+frame a 256²; se controla con `-c`.
 
 ---
 
@@ -822,6 +906,10 @@ global (¡`main` hace `global rng, NX, NY`!) — mismo comando = mismo mundo.
 13. **El transporte vertical del manto es un no-op** (§3.3): dos líneas que
     se cancelan exactamente. El modelo está calibrado así; arreglarlo exige
     recalibrar `BUOY`, `DECAY`, `PLUME_AMP` y cambia todos los mundos.
+14. **El estado guardado para reanudar va en float64 e incluye `trench` y
+    el estado del RNG** (§6.1): cualquier redondeo del estado (o restaurar
+    `trench` en f16, que alimenta el slab pull) rompe la continuación
+    bit-exacta.
 
 ---
 

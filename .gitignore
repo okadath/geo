@@ -1,2 +1,5 @@
 __pycache__/
 .claude/
+salidas/
+semillas.json
+mundos/

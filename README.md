@@ -7,6 +7,13 @@ real: solo flotabilidad, conservación de masa vía FFT y advección. Corre a
 
 ![ejemplo](tectonica.gif)
 
+Cada corrida produce además un **mapa tectónico animado**
+(`NOMBRE_placas.gif`): límites de placa, flechas con la dirección de deriva,
+y simbología de fosas (violeta), dorsales (ámbar) y cadenas montañosas
+(marrón), con leyenda.
+
+![placas](tectonica_placas.gif)
+
 ## Requisitos
 
 - Python 3.8+
@@ -34,8 +41,81 @@ python3 tecto.py --help               # todas las opciones
 | `-o, --salida NOMBRE` | tectonica | prefijo de los archivos de salida |
 | `--sin-gif` | — | omite el GIF, solo guarda `NOMBRE_final.png` |
 
+Diales del algoritmo (sobrescriben las constantes de `tecto.py`):
+
+| Opción | Default | Efecto |
+|---|---|---|
+| `--velocidad V` | 18.0 | velocidad de la deriva continental (px/paso) |
+| `--mar H` | 0.52 | nivel del mar (más alto = más océano) |
+| `--continentes U` | 0.55 | umbral continental inicial (menor = más tierra) |
+| `--plumas N` | 70 | pasos entre nacimientos de plumas (menor = manto más activo) |
+| `--erosion E` | 0.008 | desgaste del relieve |
+| `--empuje R` | 0.15 | empuje de dorsal (motor de la deriva post-rift) |
+| `--momento M` | 0.02 | relajación del rumbo por paso (menor = colisiones más decididas) |
+| `--rigidez G` | 0.85 | rigidez de placa: 0 = fluido, 1 = balsa rígida |
+
+## Mundos guardados (datos por frame)
+
+```bash
+python3 tecto.py -t 800 --datos              # guarda mundos/<nombre>/
+python3 tecto.py --reconstruir mundos/NOMBRE # re-renderiza ambos GIFs desde los datos
+python3 tecto.py --continuar mundos/NOMBRE -t 500          # +500 pasos desde el final
+python3 tecto.py --continuar mundos/NOMBRE --desde 400 -t 500  # reescribe desde el paso 400
+```
+
+Con `--datos`, cada corrida crea una carpeta `mundos/<salida>_s<semilla>_<fecha>/`
+que identifica al mundo y contiene:
+
+```
+config.json     todos los parámetros (imagen + algoritmo) e historial de continuaciones
+base.npz        textura de detalle y total continental
+mapa.gif        el mapa animado          placas.gif   el mapa tectónico animado
+mapa_final.png  el último frame
+frames/000000.npz, 000008.npz, …   estado COMPLETO de la simulación por frame
+```
+
+Cada `frames/PASO.npz` guarda el estado íntegro (corteza, manto, plumas,
+momento, edad, estado del RNG), así que **cualquier frame** sirve para
+re-renderizar o para retomar la simulación desde ahí. La continuación es
+**bit-exacta**: continuar un mundo produce exactamente el mismo futuro que
+haberlo corrido de un tirón. `--desde` descarta los frames posteriores al
+punto elegido (la historia se reescribe desde ahí). Tamaño: ~2–3 MB por
+frame a 256² (contrólalo con `-c`).
+
 Duración del GIF ≈ `(tiempo / cada) × ms / 1000` segundos.
 Ej.: `-t 2400 -c 8 --ms 60` → 300 frames ≈ 18 s.
+
+## Interfaz web
+
+```bash
+python3 web.py            # abre http://127.0.0.1:8000
+python3 web.py -p 9000    # otro puerto
+```
+
+Página local (solo biblioteca estándar, sin dependencias extra) que llama al
+CLI para generar GIFs desde el navegador:
+
+- **Sliders** para los parámetros importantes: tiempo, frame cada N pasos,
+  ms por frame, resolución y detalle, con estimación en vivo de la duración
+  del GIF y del tiempo de cómputo.
+- **Sliders del algoritmo**: velocidad de deriva, nivel del mar, umbral
+  continental, ritmo de plumas, erosión, empuje de dorsal, momento y rigidez
+  de placa (los flags `--velocidad`, `--mar`, … del CLI).
+- **Botón Cancelar** para abortar una simulación en curso, y botón
+  **⟲ Valores por defecto** que restablece todos los sliders (imagen y
+  tectónica; la semilla se conserva).
+- Muestra **ambos GIFs**: el mapa y el mapa tectónico de placas.
+- **Semilla** editable con botón 🎲 de semilla aleatoria; misma semilla +
+  mismos parámetros reproducen el mundo byte a byte.
+- **Mundos guardados**: guarda la semilla junto con todos los parámetros
+  bajo un nombre (persisten en `semillas.json`) y cárgalos después para
+  repetir la simulación exacta.
+- Barra de progreso durante la simulación; al terminar muestra el GIF con
+  enlaces de descarga (GIF y PNG final). Los resultados quedan en
+  `salidas/` (fuera de git, igual que `semillas.json`).
+
+El servidor escucha solo en `127.0.0.1` y acota todos los parámetros a
+rangos seguros antes de invocar el CLI.
 
 ## Cómo funciona
 
@@ -110,6 +190,10 @@ campos: el **espesor de corteza** `C` y la **fracción continental** `F`
 - **Fosas de subducción** (`TRENCH`): depresión batimétrica donde converge
   flujo sobre corteza oceánica, el rasgo oscuro que bordea los márgenes
   activos.
+- **Plataforma continental**: el margen sumergido del continente forma un
+  mar somero turquesa que bordea las costas, plano y con talud abrupto al
+  abisal. Los márgenes activos la pierden bajo la fosa (como en los Andes);
+  los mares interiores comparten la misma banda somera.
 - **Fallas transformantes**: cizalla alta con divergencia baja = las placas
   solo se rozan; no hay orogenia ni fosa, apenas un valle de falla sutil.
 - **Cuencas de antepaís**: la corteza se flexiona hacia abajo frente al

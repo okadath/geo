@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tecto — simulador tectónico</title>
+<style>
+  :root {
+    --fondo: #10141c; --panel: #171d28; --borde: #262f40;
+    --texto: #dde4ee; --tenue: #8090a5; --acento: #3fb8af; --rojo: #d06a5a;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--texto);
+    font: 15px/1.5 system-ui, sans-serif; min-height: 100vh;
+  }
+  header { padding: 18px 26px 6px; }
+  h1 { margin: 0; font-size: 20px; font-weight: 650; }
+  h1 small { color: #8090a5; font-weight: 400; margin-left: 10px; font-size: 13px; }
+  main {
+    display: grid; grid-template-columns: 360px 1fr; gap: 18px;
+    padding: 14px 26px 26px; align-items: start;
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  section {
+    background: var(--panel); border: 1px solid var(--borde);
+    border-radius: 12px; padding: 18px;
+  }
+  h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase;
+       letter-spacing: .08em; color: #8090a5; font-weight: 600; }
+  .control { margin-bottom: 14px; }
+  .control label { display: flex; justify-content: space-between; font-size: 14px; }
+  .control label output { color: var(--acento); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .control .pista { font-size: 12px; color: #8090a5; }
+  input[type=range] { width: 100%; accent-color: var(--acento); margin: 4px 0 0; }
+  .fila { display: flex; gap: 8px; align-items: center; }
+  input[type=number], input[type=text] {
+    background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 8px; padding: 7px 10px; font: inherit; width: 100%;
+  }
+  button {
+    background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover { border-color: var(--acento); }
+  button.primario {
+    background: var(--acento); border-color: var(--acento); color: #08211f;
+    font-weight: 650; width: 100%; padding: 10px; font-size: 15px; margin-top: 4px;
+  }
+  button.primario:disabled { opacity: .55; cursor: wait; }
+  #estimacion { font-size: 12.5px; color: #8090a5; margin: 10px 0 12px; }
+  /* mundos guardados */
+  #mundos { display: flex; flex-direction: column; gap: 8px; }
+  .mundo {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px;
+  }
+  .mundo .datos { flex: 1; min-width: 0; }
+  .mundo .nombre { font-weight: 600; font-size: 14px; }
+  .mundo .resumen { font-size: 12px; color: #8090a5; white-space: nowrap;
+                    overflow: hidden; text-overflow: ellipsis; }
+  .mundo button { padding: 4px 9px; font-size: 12.5px; }
+  .mundo button.borrar { color: var(--rojo); }
+  #cancelar { color: var(--rojo); border-color: var(--rojo); }
+  .vacio { color: #8090a5; font-size: 13px; }
+  /* resultado */
+  #barra { height: 8px; background: var(--fondo); border-radius: 99px;
+           overflow: hidden; margin: 10px 0; }
+  #barra div { height: 100%; width: 0; background: var(--acento); transition: width .5s; }
+  #resultado img {
+    width: 100%; max-width: 640px; image-rendering: pixelated;
+    border-radius: 10px; border: 1px solid var(--borde); display: block;
+    margin-top: 12px;
+  }
+  .pie-img { font-size: 12px; color: var(--tenue); margin-top: 4px; }
+  #enlaces { margin-top: 10px; font-size: 13px; }
+  #enlaces a { color: var(--acento); margin-right: 14px; }
+  #estado { font-size: 13.5px; color: #8090a5; }
+  #estado.error { color: var(--rojo); }
+  pre#log { font-size: 12px; color: #8090a5; white-space: pre-wrap; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌍 tecto <small>convección del manto → tectónica de placas → GIF</small></h1>
+</header>
+<main>
+  <div>
+    <section>
+      <h2>Parámetros</h2>
+
+      <div class="control">
+        <label>Tiempo (pasos) <output id="v-tiempo"></output></label>
+        <input type="range" id="tiempo" min="50" max="6000" step="50" value="800">
+        <div class="pista">más pasos = más deriva continental</div>
+      </div>
+
+      <div class="control">
+        <label>Frame cada N pasos <output id="v-cada"></output></label>
+        <input type="range" id="cada" min="1" max="50" step="1" value="8">
+      </div>
+
+      <div class="control">
+        <label>ms por frame <output id="v-ms"></output></label>
+        <input type="range" id="ms" min="20" max="300" step="10" value="60">
+      </div>
+
+      <div class="control">
+        <label>Resolución (px) <output id="v-resolucion"></output></label>
+        <input type="range" id="resolucion" min="96" max="512" step="32" value="256">
+        <div class="pista">el costo crece con el cuadrado</div>
+      </div>
+
+      <div class="control">
+        <label>Detalle fractal <output id="v-detalle"></output></label>
+        <input type="range" id="detalle" min="0" max="1.5" step="0.1" value="0.6">
+        <div class="pista">solo afecta el render, no el costo</div>
+      </div>
+
+      <div class="control">
+        <label for="semilla">Semilla</label>
+        <div class="fila">
+          <input type="number" id="semilla" min="0" step="1" value="7">
+          <button id="azar" title="semilla aleatoria">🎲</button>
+        </div>
+        <div class="pista">misma semilla + mismos parámetros = mismo mundo</div>
+      </div>
+
+      <div id="estimacion"></div>
+      <button class="primario" id="generar">Generar GIF</button>
+      <button id="defecto" style="width:100%;margin-top:8px"
+              title="restablece imagen y tectónica; la semilla no cambia">
+        ⟲ Valores por defecto</button>
+    </section>
+
+    <section style="margin-top:18px">
+      <h2>Algoritmo</h2>
+
+      <div class="control">
+        <label>Velocidad de deriva <output id="v-velocidad"></output></label>
+        <input type="range" id="velocidad" min="2" max="40" step="1" value="18">
+        <div class="pista">cuánto mueve el manto a las placas por paso</div>
+      </div>
+
+      <div class="control">
+        <label>Nivel del mar <output id="v-mar"></output></label>
+        <input type="range" id="mar" min="0.35" max="0.70" step="0.01" value="0.52">
+        <div class="pista">más alto = más océano</div>
+      </div>
+
+      <div class="control">
+        <label>Umbral continental <output id="v-continentes"></output></label>
+        <input type="range" id="continentes" min="0.10" max="1.20" step="0.05" value="0.55">
+        <div class="pista">menor = más tierra inicial</div>
+      </div>
+
+      <div class="control">
+        <label>Pasos entre plumas <output id="v-plumas"></output></label>
+        <input type="range" id="plumas" min="10" max="300" step="10" value="70">
+        <div class="pista">menor = manto más activo, más rifts y hotspots</div>
+      </div>
+
+      <div class="control">
+        <label>Erosión <output id="v-erosion"></output></label>
+        <input type="range" id="erosion" min="0" max="0.03" step="0.001" value="0.008">
+        <div class="pista">cuánto se desgastan las cordilleras</div>
+      </div>
+
+      <div class="control">
+        <label>Empuje de dorsal <output id="v-empuje"></output></label>
+        <input type="range" id="empuje" min="0" max="0.6" step="0.05" value="0.15">
+        <div class="pista">motor de la deriva tras abrirse un rift</div>
+      </div>
+
+      <div class="control">
+        <label>Momento de placa <output id="v-momento"></output></label>
+        <input type="range" id="momento" min="0.005" max="0.2" step="0.005" value="0.02">
+        <div class="pista">menor = rumbo más sostenido, colisiones más decididas</div>
+      </div>
+
+      <div class="control">
+        <label>Rigidez de placa <output id="v-rigidez"></output></label>
+        <input type="range" id="rigidez" min="0" max="1" step="0.05" value="0.85">
+        <div class="pista">0 = corteza fluida · 1 = balsa rígida</div>
+      </div>
+    </section>
+
+    <section style="margin-top:18px">
+      <h2>Mundos guardados</h2>
+      <div class="fila" style="margin-bottom:10px">
+        <input type="text" id="nombre" placeholder="nombre del mundo…" maxlength="60">
+        <button id="guardar">Guardar</button>
+      </div>
+      <div id="mundos"><div class="vacio">Aún no hay mundos guardados.</div></div>
+    </section>
+  </div>
+
+  <section id="resultado">
+    <h2>Resultado</h2>
+    <div class="fila">
+      <div id="estado" style="flex:1">Ajusta los parámetros y pulsa «Generar GIF».</div>
+      <button id="cancelar" hidden>Cancelar</button>
+    </div>
+    <div id="barra" hidden><div></div></div>
+    <img id="gif" hidden alt="mapa">
+    <div class="pie-img" id="pie-gif" hidden>mapa</div>
+    <img id="gifplacas" hidden alt="placas tectónicas">
+    <div class="pie-img" id="pie-placas" hidden>placas, deriva y simbología</div>
+    <div id="enlaces"></div>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const SLIDERS = ["tiempo", "cada", "ms", "resolucion", "detalle",
+                 "velocidad", "mar", "continentes", "plumas",
+                 "erosion", "empuje", "momento", "rigidez"];
+let sondeo = null;
+let trabajo = null;
+
+function parametros() {
+  const p = { semilla: Math.max(0, parseInt($("semilla").value) || 0) };
+  for (const k of SLIDERS) p[k] = parseFloat($(k).value);
+  return p;
+}
+
+function aplicar(p) {
+  for (const k of SLIDERS) if (k in p) $(k).value = p[k];
+  if ("semilla" in p) $("semilla").value = p.semilla;
+  refrescar();
+}
+
+function refrescar() {
+  for (const k of SLIDERS) $("v-" + k).textContent = $(k).value;
+  const p = parametros();
+  const frames = Math.ceil(p.tiempo / p.cada);
+  const dur = (frames * p.ms / 1000).toFixed(1);
+  const computo = Math.ceil(p.tiempo / 28 * (p.resolucion / 256) ** 2);
+  $("estimacion").textContent =
+    `GIF: ~${frames} frames ≈ ${dur} s · cómputo estimado ~${computo} s`;
+}
+SLIDERS.forEach(k => $(k).addEventListener("input", refrescar));
+$("semilla").addEventListener("input", refrescar);
+refrescar();
+
+$("azar").onclick = () => {
+  $("semilla").value = Math.floor(Math.random() * 1e9);
+  refrescar();
+};
+
+// valores por defecto (los `value` originales del HTML); la semilla se
+// conserva para no perder el mundo actual
+$("defecto").onclick = () => {
+  for (const k of SLIDERS) $(k).value = $(k).defaultValue;
+  refrescar();
+};
+
+// ---- generar ----
+$("generar").onclick = async () => {
+  const r = await fetch("/api/generar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(parametros()),
+  });
+  const { id } = await r.json();
+  trabajo = id;
+  $("generar").disabled = true;
+  $("cancelar").hidden = false;
+  for (const el of ["gif", "pie-gif", "gifplacas", "pie-placas"])
+    $(el).hidden = true;
+  $("enlaces").textContent = "";
+  $("log").textContent = "";
+  $("barra").hidden = false;
+  $("estado").className = "";
+  const t0 = Date.now();
+  clearInterval(sondeo);
+  sondeo = setInterval(async () => {
+    const e = await (await fetch("/api/estado?id=" + id)).json();
+    const segs = Math.round((Date.now() - t0) / 1000);
+    $("barra").firstElementChild.style.width = (e.progreso * 100) + "%";
+    if (e.estado === "corriendo") {
+      $("estado").textContent =
+        `Simulando… ${Math.round(e.progreso * 100)} % (${segs} s)`;
+      return;
+    }
+    clearInterval(sondeo);
+    trabajo = null;
+    $("generar").disabled = false;
+    $("cancelar").hidden = true;
+    $("barra").hidden = true;
+    if (e.estado === "cancelado") {
+      $("estado").textContent = "Simulación cancelada.";
+    } else if (e.estado === "listo") {
+      $("estado").textContent =
+        `Listo en ${segs} s — semilla ${e.params.semilla}.`;
+      $("gif").src = e.gif + "?t=" + Date.now();
+      $("gif").hidden = $("pie-gif").hidden = false;
+      if (e.placas) {
+        $("gifplacas").src = e.placas + "?t=" + Date.now();
+        $("gifplacas").hidden = $("pie-placas").hidden = false;
+      }
+      $("enlaces").innerHTML =
+        `<a href="${e.gif}" download>descargar GIF</a>` +
+        (e.placas ? `<a href="${e.placas}" download>GIF de placas</a>` : "") +
+        (e.png ? `<a href="${e.png}" target="_blank">PNG final</a>` : "");
+    } else {
+      $("estado").textContent = "La simulación falló.";
+      $("estado").className = "error";
+      $("log").textContent = e.log || "";
+    }
+  }, 700);
+};
+
+$("cancelar").onclick = async () => {
+  if (!trabajo) return;
+  $("cancelar").disabled = true;
+  await fetch("/api/cancelar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: trabajo }),
+  });
+  $("cancelar").disabled = false;
+};
+
+// ---- mundos guardados ----
+function pintarMundos(lista) {
+  const caja = $("mundos");
+  caja.textContent = "";
+  if (!lista.length) {
+    caja.innerHTML = '<div class="vacio">Aún no hay mundos guardados.</div>';
+    return;
+  }
+  for (const m of lista.slice().reverse()) {
+    const p = m.params;
+    const div = document.createElement("div");
+    div.className = "mundo";
+    div.innerHTML =
+      `<div class="datos"><div class="nombre"></div>
+         <div class="resumen">semilla ${p.semilla} · ${p.tiempo} pasos · ${p.resolucion}px · d${p.detalle}</div>
+       </div>
+       <button class="cargar">Cargar</button>
+       <button class="borrar" title="borrar">×</button>`;
+    div.querySelector(".nombre").textContent = m.nombre;
+    div.querySelector(".cargar").onclick = () => aplicar(p);
+    div.querySelector(".borrar").onclick = async () => {
+      const r = await fetch("/api/semillas/borrar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: m.nombre }),
+      });
+      pintarMundos(await r.json());
+    };
+    caja.appendChild(div);
+  }
+}
+
+$("guardar").onclick = async () => {
+  const nombre = $("nombre").value.trim();
+  if (!nombre) { $("nombre").focus(); return; }
+  const r = await fetch("/api/semillas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre, params: parametros() }),
+  });
+  pintarMundos(await r.json());
+  $("nombre").value = "";
+};
+
+fetch("/api/semillas").then(r => r.json()).then(pintarMundos);
+</script>
+</body>
+</html>
