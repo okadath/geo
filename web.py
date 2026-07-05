@@ -66,6 +66,7 @@ def limpiar(datos):
 
 
 def correr(job_id, p):
+    SALIDAS.mkdir(exist_ok=True)   # por si se borro con el servidor corriendo
     cmd = [sys.executable, "-u", str(BASE / "tecto.py"),
            "-t", str(p["tiempo"]), "-c", str(p["cada"]), "--ms", str(p["ms"]),
            "-s", str(p["semilla"]), "-r", str(p["resolucion"]),

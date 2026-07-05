@@ -796,6 +796,8 @@ def main():
         p.error("tiempo y cada deben ser >= 1, resolucion >= 32")
     rng = np.random.default_rng(args.semilla)
     _aplicar_parametros(_parametros_de(args))
+    # crear el directorio del prefijo de salida si hace falta
+    Path(args.salida).resolve().parent.mkdir(parents=True, exist_ok=True)
 
     mantle, crust = Mantle(), Crust()
     carpeta = _crear_mundo(args) if args.datos else None
