@@ -20,7 +20,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 rng = np.random.default_rng(7)
 
@@ -52,6 +52,42 @@ MOMENTUM = 0.02       # memoria de rumbo de las placas: fraccion por paso con
                       # (menor = rumbo mas sostenido, colisiones mas decididas)
 RIDGE_PUSH = 0.15     # empuje de dorsal: el fondo joven y elevado desliza las
                       # placas pendiente abajo, alejandolas de la dorsal
+SLAB_PULL_SURF = 0.08 # tiron de losa en superficie: la placa es jalada hacia
+                      # la fosa donde subduce; si la dorsal se apaga (pluma
+                      # muerta) este es el motor que sigue moviendo la placa
+HALO_PLACA = 6        # celdas LGRID de banda oceanica adherida al margen
+                      # pasivo que remolcan al continente (la placa real no
+                      # termina en la costa; una banda y no todo el oceano:
+                      # ver el comentario del remolque en Crust.step)
+DERIVA = 8.0          # ganancia de la traslacion de balsa: bajo un continente
+                      # grande el manto esta casi en punto de estancamiento y
+                      # su media se cancela; sin compensarla los continentes
+                      # quedan anclados mientras el oceano fluye alrededor
+ARRASTRE = 0.015      # relajacion del impulso de placa hacia el empuje del
+                      # manto (por paso): la placa en movimiento conserva su
+                      # rumbo ~1/ARRASTRE pasos aunque el manto se reorganice
+                      # (inercia de deriva: los continentes terminan su viaje)
+FUERZA_PLACA = 10.0   # ganancia de las fuerzas de borde (dorsal+losa)
+                      # integradas sobre el territorio de la placa; sostienen
+                      # ~FUERZA_PLACA/ARRASTRE veces la fuerza media (el
+                      # motor direccional de la deriva; ver Crust.step)
+DORSAL_PERSIST = 0.985  # memoria de la dorsal: una dorsal, una vez encendida,
+                        # sigue siendo un eje de expansion mientras haya ALGO
+                        # de apertura; no se recalcula de cero cada paso ni
+                        # parpadea. Solo muere cuando la apertura cesa de
+                        # verdad (la pluma se apago -> deja de crear corteza) o
+                        # cuando la convergencia la alcanza (la subduccion la
+                        # consume). Antes era memoryless y desaparecia con
+                        # cualquier fluctuacion del campo de divergencia
+TRENCH_PERSIST = 0.975  # memoria de la fosa: una zona de subduccion, una vez
+                        # iniciada, sigue consumiendo litosfera hasta agotar el
+                        # oceano viejo o hasta que cese la convergencia (como en
+                        # la Tierra la fosa dura hasta que la placa subduce del
+                        # todo); antes se recalculaba de cero cada paso
+PLUME_FUERZA_MIN = 0.30 # intensidad (hot) por debajo de la cual una pluma es
+                        # "sin fuerza": hotspot/domo local (LIP) que NO organiza
+                        # un eje de expansion; ver la regla pluma-dorsal en
+                        # Crust.step
 
 # ---------------- utilidades ----------------
 def grad_periodic(f):
@@ -113,15 +149,25 @@ def label_components(mask):
     """Componentes conexas en malla periodica por propagacion de maximos.
 
     Puro numpy: cada celda toma el id maximo de sus vecinas hasta converger.
-    Sobre la malla reducida LGRID x LGRID el costo es despreciable.
+    La propagacion a los 4 vecinos (periodicos) se hace por SLICING con max
+    in-place en vez de np.roll: mismo resultado bit a bit, pero sin el
+    overhead por-llamada de np.roll (normalize_axis, empty_like...), que
+    dominaba el perfil (~2.4x mas rapido en 256x256, el caso del render).
     """
-    lab = np.where(mask, np.arange(mask.size, dtype=np.int64).reshape(mask.shape), -1)
+    idx = np.arange(mask.size, dtype=np.int64).reshape(mask.shape)
+    lab = np.where(mask, idx, -1)
+    neg = ~mask
     for _ in range(2 * mask.shape[0]):
-        nxt = lab
-        for ax in (0, 1):
-            for sh in (1, -1):
-                nxt = np.maximum(nxt, np.roll(lab, sh, ax))
-        nxt = np.where(mask, nxt, -1)
+        nxt = lab.copy()
+        np.maximum(nxt[1:], lab[:-1], out=nxt[1:])      # vecino de arriba
+        np.maximum(nxt[:1], lab[-1:], out=nxt[:1])      # ... con wrap toroidal
+        np.maximum(nxt[:-1], lab[1:], out=nxt[:-1])     # vecino de abajo
+        np.maximum(nxt[-1:], lab[:1], out=nxt[-1:])
+        np.maximum(nxt[:, 1:], lab[:, :-1], out=nxt[:, 1:])    # vecino izquierdo
+        np.maximum(nxt[:, :1], lab[:, -1:], out=nxt[:, :1])
+        np.maximum(nxt[:, :-1], lab[:, 1:], out=nxt[:, :-1])   # vecino derecho
+        np.maximum(nxt[:, -1:], lab[:, :1], out=nxt[:, -1:])
+        nxt[neg] = -1
         if np.array_equal(nxt, lab):
             break
         lab = nxt
@@ -231,7 +277,14 @@ class Crust:
         self.tick = 0                # etiquetado de placas cada 10 pasos
         self.lab_ids = self.lab_inv = None
         self.Pu = self.Pv = None     # campo de momento: rumbo persistente
-        self.dorsal = np.zeros((NY, NX))  # eje de dorsal activo
+        self.Qu = self.Qv = None     # impulso rigido por placa (inercia de deriva)
+        self.fzx = np.zeros((NY, NX))  # fuerzas de borde del paso (dorsal+losa)
+        self.fzy = np.zeros((NY, NX))
+        self.dorsal = np.zeros((NY, NX))  # eje de dorsal activo (cresta fina)
+        self.open_mem = np.zeros((NY, NX))  # memoria escalar de apertura: da a
+                                          # la dorsal persistencia temporal sin
+                                          # ensancharla (se le extrae la cresta)
+        self.fosa = np.zeros((NY, NX))    # eje DELGADO de la fosa (render/placas)
         self.rift = np.zeros((NY, NX))    # desgarre continental activo
 
     def step(self, um, vm, hot=None):
@@ -264,13 +317,127 @@ class Crust:
             rx, ry = grad_periodic(ridge)
             self.Pu -= RIDGE_PUSH * rx
             self.Pv -= RIDGE_PUSH * ry
+            self.fzx = -RIDGE_PUSH * rx
+            self.fzy = -RIDGE_PUSH * ry
+            # tiron de losa (slab pull / succion de fosa): la placa es jalada
+            # hacia la fosa donde su borde subduce. Cuando una dorsal se
+            # apaga porque su pluma murio deja de crear corteza y de empujar;
+            # a partir de ahi son los movimientos de las otras placas --la
+            # subduccion en sus margenes y el arrastre del manto-- los que
+            # siguen moviendo esa placa, hasta que sea consumida por completo
+            pull = self.trench
+            for sh in (1, 2, 3, 4):
+                pull = 0.2 * (pull + np.roll(pull, sh, 0) + np.roll(pull, -sh, 0)
+                              + np.roll(pull, sh, 1) + np.roll(pull, -sh, 1))
+            pull = np.clip(pull / max(pull.max(), 1e-3), 0, 1)
+            tx, ty = grad_periodic(pull)
+            self.Pu += SLAB_PULL_SURF * tx
+            self.Pv += SLAB_PULL_SURF * ty
+            self.fzx += SLAB_PULL_SURF * tx
+            self.fzy += SLAB_PULL_SURF * ty
         us = sample_nearest(self.Pu, LGRID, LGRID).ravel()
         vs = sample_nearest(self.Pv, LGRID, LGRID).ravel()
-        cnt = np.bincount(self.lab_inv).astype(float)
-        mu = np.bincount(self.lab_inv, us) / cnt
-        mv = np.bincount(self.lab_inv, vs) / cnt
-        u_r = mu[self.lab_inv].reshape(LGRID, LGRID)
-        v_r = mv[self.lab_inv].reshape(LGRID, LGRID)
+        # remolque oceanico: la placa NO termina en la costa; una banda de
+        # fondo oceanico soldado al margen pasivo (tipo Atlantico sur
+        # adherido a Sudamerica) pertenece a la MISMA balsa y el empuje
+        # acumulado en su momento remolca al continente. Sin la banda la
+        # media de balsa solo muestrea el manto BAJO el continente (casi
+        # un punto de estancamiento entre celdas de conveccion: media ~0)
+        # y los continentes quedan anclados mientras el oceano fluye
+        # alrededor. Es una BANDA (HALO_PLACA celdas por dilatacion), no
+        # todo el oceano por Voronoi: la suma global de velocidades es ~0
+        # (incompresibilidad), asi que promediar territorios completos
+        # diluye el empuje de vuelta a cero
+        lab_ext = lab
+        for _ in range(HALO_PLACA):
+            for ax in (0, 1):
+                for sh in (1, -1):
+                    vec = np.roll(lab_ext, sh, ax)
+                    lab_ext = np.where((lab_ext < 0) & (vec >= 0), vec, lab_ext)
+        inv_ext = np.searchsorted(self.lab_ids, lab_ext.ravel())
+        nlab = len(self.lab_ids)
+        cnt = np.bincount(inv_ext, minlength=nlab).astype(float)
+        cnt[cnt == 0] = 1.0
+        mu = np.bincount(inv_ext, us, minlength=nlab) / cnt
+        mv = np.bincount(inv_ext, vs, minlength=nlab) / cnt
+        # motor de fuerzas de borde: la media de VELOCIDAD sobre la placa se
+        # cancela (la suma global es 0 por incompresibilidad y el oceano
+        # converge simetrico sobre un continente ya asentado en la linea de
+        # convergencia), pero la media de FUERZA no: para una placa con
+        # dorsal a un lado y fosa al otro, el empuje de dorsal y el tiron
+        # de losa apuntan AMBOS de la dorsal a la fosa sobre todo su
+        # territorio -- el Voronoi completo del oceano al continente mas
+        # cercano, que aproxima "la placa llega hasta la dorsal". Integrada
+        # contra el arrastre del impulso, la fuerza media sostiene
+        # ~FUERZA_PLACA/ARRASTRE veces su valor: el motor del ciclo de
+        # Wilson (las velocidades solas no lo dan, medido: quitar este
+        # termino deja la deriva neta en cero)
+        terr = lab_ext
+        while (terr < 0).any():
+            prev = terr
+            for ax in (0, 1):
+                for sh in (1, -1):
+                    vec = np.roll(terr, sh, ax)
+                    terr = np.where((terr < 0) & (vec >= 0), vec, terr)
+            if np.array_equal(prev, terr):     # mapa sin continentes
+                break
+        inv_t = np.searchsorted(self.lab_ids, terr.ravel())
+        cnt_t = np.bincount(inv_t, minlength=nlab).astype(float)
+        cnt_t[cnt_t == 0] = 1.0
+        fx = np.bincount(inv_t, sample_nearest(self.fzx, LGRID, LGRID).ravel(),
+                         minlength=nlab) / cnt_t
+        fy = np.bincount(inv_t, sample_nearest(self.fzy, LGRID, LGRID).ravel(),
+                         minlength=nlab) / cnt_t
+        # impulso de placa (inercia de deriva): la velocidad de balsa NO se
+        # rederiva del manto cada paso; cada placa conserva un impulso
+        # propio -- un valor rigido por placa, guardado en un campo que su
+        # propio territorio recupera al paso siguiente -- que se relaja
+        # despacio (ARRASTRE) hacia el empuje actual del manto + dorsal +
+        # losa. Un continente en marcha atraviesa asi las reorganizaciones
+        # del manto (la muerte de la pluma que lo empujaba) y termina su
+        # viaje hasta colisionar, como en un ciclo de Wilson real; al
+        # fusionarse dos placas sus impulsos se promedian por area
+        if self.Qu is None:
+            qu, qv = DERIVA * mu, DERIVA * mv
+        else:
+            qs = sample_nearest(self.Qu, LGRID, LGRID).ravel()
+            qt = sample_nearest(self.Qv, LGRID, LGRID).ravel()
+            qu = np.bincount(inv_ext, qs, minlength=nlab) / cnt
+            qv = np.bincount(inv_ext, qt, minlength=nlab) / cnt
+            qu = (1 - ARRASTRE) * qu + ARRASTRE * (DERIVA * mu) + FUERZA_PLACA * fx
+            qv = (1 - ARRASTRE) * qv + ARRASTRE * (DERIVA * mv) + FUERZA_PLACA * fy
+        # rotacion rigida (polo de Euler): ademas de trasladarse, cada placa
+        # gira segun el torque que el flujo ejerce sobre su huella; sin esto
+        # las balsas solo se trasladan y la deriva se ve robotica. Se ajusta
+        # la rotacion por minimos cuadrados alrededor del centroide toroidal
+        yy0, xx0 = np.meshgrid(np.arange(LGRID), np.arange(LGRID), indexing="ij")
+
+        def _cmedia(q):
+            a = q.ravel() * (2 * np.pi / LGRID)
+            s = np.bincount(inv_ext, np.sin(a), minlength=nlab)
+            c = np.bincount(inv_ext, np.cos(a), minlength=nlab)
+            return (np.arctan2(s, c) % (2 * np.pi)) * LGRID / (2 * np.pi)
+        cy, cx = _cmedia(yy0), _cmedia(xx0)
+        ry = (yy0.ravel() - cy[inv_ext] + LGRID / 2) % LGRID - LGRID / 2
+        rx = (xx0.ravel() - cx[inv_ext] + LGRID / 2) % LGRID - LGRID / 2
+        r2 = np.bincount(inv_ext, ry ** 2 + rx ** 2, minlength=nlab) + 1e-9
+        om = np.bincount(inv_ext, rx * (vs - mv[inv_ext]) - ry * (us - mu[inv_ext]),
+                         minlength=nlab) / r2
+        # tope de giro: la velocidad de rotacion en el borde de la placa no
+        # supera su propia traslacion (una placa chica con flujo ruidoso
+        # alrededor no debe ponerse a girar como remolino)
+        rmax = np.zeros(nlab)
+        np.maximum.at(rmax, inv_ext, np.hypot(ry, rx))
+        tope = (0.6 * np.hypot(qu, qv) + 0.02) / (rmax + 1e-9)
+        om = np.clip(om, -tope, tope)
+        u_r = (qu[inv_ext] - om[inv_ext] * ry).reshape(LGRID, LGRID)
+        v_r = (qv[inv_ext] + om[inv_ext] * rx).reshape(LGRID, LGRID)
+        # el impulso rigido queda almacenado sobre el territorio de cada
+        # placa; el paso siguiente lo recupera promediando sobre el nuevo
+        # territorio (el etiquetado re-hecho sigue al material sin
+        # necesidad de rastrear identidades de placa entre pasos)
+        self.Qu = upsample(qu[inv_ext].reshape(LGRID, LGRID), NY, NX)
+        self.Qv = upsample(qv[inv_ext].reshape(LGRID, LGRID), NY, NX)
         # el oceano no es balsa: lleva su velocidad local (NO cero — un cero
         # en huecos o suturas dentro del continente crea pozos de velocidad
         # que fabrican crestas orogenicas paralelas artificiales)
@@ -304,17 +471,131 @@ class Crust:
         shear = np.sqrt((ux - vy) ** 2 + (uy + vx) ** 2)
         conv = np.clip(-div, 0, None)
         opening = np.clip(div, 0, None)
+        # eje de dorsal/rift: la dorsal NO es la pluma (un punto), es el
+        # limite divergente entre celdas de conveccion que UNE las plumas.
+        # Se extrae como la CRESTA del campo de divergencia por supresion de
+        # no-maximos (maximo local transversal en x o en y): una linea de
+        # 1-2 px que sigue el eje tambien en los tramos debiles entre plumas
+        # -> dorsales continuas que recorren el oceano en grandes tramos,
+        # no manchas redondas alrededor de cada pluma.
+        #
+        # PERSISTENCIA: la memoria NO se aplica a la cresta ya extraida (eso
+        # dejaba una estela ancha al migrar el eje y llenaba el oceano de
+        # naranja), sino al campo ESCALAR de apertura, que decae despacio. De
+        # ese campo persistente se extrae la cresta CADA paso, asi que la
+        # dorsal es siempre una linea fina (como la fosa) y a la vez DURA en
+        # el tiempo: los tramos que el eje dejo atras decaen por debajo del eje
+        # fresco y la supresion de no-maximos los descarta. Cuando la apertura
+        # cesa de verdad (la pluma murio -> deja de crear corteza) open_mem
+        # decae y la cresta desaparece: la dorsal muere, como en la Tierra,
+        # cuando deja de generar fondo oceanico (o cuando la fosa la alcanza)
+        self.open_mem = np.maximum(opening, self.open_mem * DORSAL_PERSIST)
+        self.open_mem *= np.clip(1.0 - conv * 20.0, 0.0, 1.0)   # la fosa la apaga
+        opn = self.open_mem
+        for sh in (1, 1, 2, 2):
+            opn = 0.2 * (opn + np.roll(opn, sh, 0) + np.roll(opn, -sh, 0)
+                         + np.roll(opn, sh, 1) + np.roll(opn, -sh, 1))
+        fondo = opn
+        for sh in (1, 2, 3, 4):
+            fondo = 0.2 * (fondo + np.roll(fondo, sh, 0) + np.roll(fondo, -sh, 0)
+                           + np.roll(fondo, sh, 1) + np.roll(fondo, -sh, 1))
+        eje = np.zeros(opn.shape, bool)
+        for ax in (0, 1):
+            mx = opn
+            for sh in (1, 2):
+                mx = np.maximum(mx, np.maximum(np.roll(opn, sh, ax),
+                                               np.roll(opn, -sh, ax)))
+            eje |= opn >= mx - 1e-12
+        # compuertas: la cresta necesita divergencia real (no ruido en zona
+        # quieta) y debe sobresalir de su fondo local (no meseta plana)
+        p98 = np.percentile(opn, 98) + 1e-9
+        eje &= (opn > 0.15 * p98) & (opn > fondo)
+        eje = (eje | np.roll(eje, 1, 0) | np.roll(eje, -1, 0)
+               | np.roll(eje, 1, 1) | np.roll(eje, -1, 1))
+        self.dorsal = eje * np.clip(opn / p98 * 1.5, 0, 1)
+        # regla pluma-dorsal: una pluma que crea terreno DEBE ser parte de una
+        # dorsal (un eje de expansion) salvo dos excepciones geologicas:
+        #   - pluma SIN FUERZA (hot < PLUME_FUERZA_MIN): domo/gran provincia
+        #     ignea que no logra abrir un eje de expansion (queda un hotspot)
+        #   - placa 100% OCEANICA bajo la pluma: hotspot intraplaca tipo Hawai,
+        #     una cadena de islas que la placa arrastra, sin dorsal asociada
+        # En cualquier otro caso (pluma con fuerza sobre litosfera que incluye
+        # continente) la pluma organiza una dorsal: el rift desgarra el
+        # continente y abre un oceano nuevo (Mar Rojo, Rift de Africa oriental,
+        # Islandia sobre la dorsal atlantica). Antes se suprimia la dorsal de
+        # TODA pluma solitaria; ahora solo la de esas dos excepciones -> una
+        # pluma con fuerza conserva y sostiene su dorsal
+        if hot is not None and self.dorsal.any():
+            hm = hot > 0.15
+            if hm.any():
+                my, mxh = hot.shape
+                esc = NY / my
+                labh = label_components(hm)
+                yyN, xxN = np.meshgrid(np.arange(NY), np.arange(NX), indexing="ij")
+                cents = []
+                for i in np.unique(labh[labh >= 0]):
+                    ys, xs = np.nonzero(labh == i)
+                    ay = 2 * np.pi * ys / my; ax_ = 2 * np.pi * xs / mxh
+                    cy = (np.angle(np.exp(1j * ay).mean()) % (2 * np.pi)) * my / (2 * np.pi)
+                    cx = (np.angle(np.exp(1j * ax_).mean()) % (2 * np.pi)) * mxh / (2 * np.pi)
+                    fuerza = float(hot[ys, xs].max())     # fuerza de la pluma
+                    cents.append((cy * esc, cx * esc, fuerza))
+                r_sup, R = 9 * esc, 18 * esc
+                for cy, cx, fuerza in cents:
+                    dy = np.abs(yyN - cy); dy = np.minimum(dy, NY - dy)
+                    dx = np.abs(xxN - cx); dx = np.minimum(dx, NX - dx)
+                    d2 = dy ** 2 + dx ** 2
+                    dentro = d2 < R ** 2
+                    F_local = float(self.F[dentro].mean()) if dentro.any() else 0.0
+                    oceanica = F_local < 0.05             # placa 100% oceanica
+                    sin_fuerza = fuerza < PLUME_FUERZA_MIN
+                    if sin_fuerza or oceanica:
+                        # excepcion: hotspot puro (Hawai) o domo debil -> se
+                        # suprime el eje de expansion alrededor de la pluma; se
+                        # apaga tambien open_mem para que la cresta no reaparezca
+                        supp = np.clip(d2 / r_sup ** 2, 0, 1)
+                        self.dorsal *= supp
+                        self.open_mem *= supp
+                    # else: pluma con fuerza sobre continente -> conserva su
+                    # dorsal (el rift real); no se suprime nada
+        # rift continental: el mismo umbral de desgarre que usa la fisica
+        # para partir continentes (opening > 0.006)
+        self.rift = np.clip(opening - 0.006, 0, None)
+        # --- subduccion: SOLO el fondo oceanico VIEJO (denso) subduce ---
+        # el fondo joven que rodea la dorsal es flotante y no se hunde: sin
+        # esta compuerta cada anillo de convergencia alrededor de una pluma
+        # abria una fosa pegada a su propia dorsal. Un margen pasivo
+        # (continente empujado por el fondo de SU misma placa, tipo
+        # Atlantico) tampoco abre fosa: sin salto real de velocidad la
+        # convergencia queda bajo el umbral. Fosa => limite de placas
+        madura = np.clip(self.A / AGE_TAU - 1.0, 0, 1)   # >2*AGE_TAU: denso
+        cerca = self.dorsal
+        for sh in (1, 2, 3):
+            cerca = 0.2 * (cerca + np.roll(cerca, sh, 0) + np.roll(cerca, -sh, 0)
+                           + np.roll(cerca, sh, 1) + np.roll(cerca, -sh, 1))
+        lejos = np.clip(1 - 5.0 * cerca, 0, 1)           # nunca junto al eje
+        subd_ign = np.clip(conv - 0.008, 0, None) * madura * lejos   # ignicion
+        # persistencia de la fosa: una vez iniciada la subduccion sigue
+        # consumiendo litosfera mientras haya convergencia (alive_t) y quede
+        # oceano viejo que tragar (madura). No desaparece por una fluctuacion
+        # del campo de velocidad; muere cuando cesa la convergencia o cuando la
+        # placa oceanica se consumio del todo (la fosa dura hasta que la placa
+        # subduce por completo). subd es la BANDA de subduccion (consumo, slab
+        # pull, arcos); mas abajo se extrae su EJE delgado (self.fosa) para el
+        # render, igual que la dorsal
+        alive_t = np.clip((conv - 0.002) / 0.006, 0, 1) * lejos
+        subd = np.maximum(subd_ign, self.trench * TRENCH_PERSIST * alive_t * madura)
         # falla transformante: cizalla alta con divergencia baja -> las placas
         # solo se rozan; no hay orogenia ni fosa, apenas un valle de falla
         transform = np.clip(shear - 2.5 * np.abs(div), 0, None)
         C -= 0.3 * transform * DT
-        # convergencia: oceano subduce (se consume), continente se apila
-        # (orogenia: la colision continental levanta cordilleras)
-        C = np.where(F < 0.4, C - conv * C * DT * 1.5, C + conv * C * DT * 1.8)
+        # convergencia: solo el oceano viejo subduce (se consume); el
+        # continente se apila (orogenia: la colision levanta cordilleras)
+        C = np.where(F < 0.4, C - subd * C * DT * 1.5, C + conv * C * DT * 1.8)
         # arco de subduccion: la placa oceanica que se hunde bajo el margen
         # continental levanta una cordillera costera en la placa que cabalga
         # (tipo Andes): la fosa difuminada, aplicada solo sobre continente
-        arc = conv * (F < 0.4)
+        arc = subd * (F < 0.4)
         for sh in (1, 2, 3):   # desplazamientos crecientes: blur sin peine
             arc = 0.2 * (arc + np.roll(arc, sh, 0) + np.roll(arc, -sh, 0)
                          + np.roll(arc, sh, 1) + np.roll(arc, -sh, 1))
@@ -349,19 +630,6 @@ class Crust:
         # oceanico (las cordilleras interiores no se aplanan solas)
         C -= 0.001 * (C - floor) * (1 - 0.75 * F) * DT
         self.F = F
-        # eje de dorsal/rift: el nucleo mas intenso de la divergencia (blur +
-        # normalizacion por percentil, adimensional). La dorsal es el limite
-        # de placa que FABRICA corteza: sobre oceano es dorsal, sobre
-        # continente es el rift que lo parte
-        opn = opening
-        for _ in range(2):
-            opn = 0.2 * (opn + np.roll(opn, 1, 0) + np.roll(opn, -1, 0)
-                         + np.roll(opn, 1, 1) + np.roll(opn, -1, 1))
-        opn /= np.percentile(opn, 98) + 1e-9
-        self.dorsal = np.clip(opn - 0.75, 0, None) * 4.0
-        # rift continental: el mismo umbral de desgarre que usa la fisica
-        # para partir continentes (opening > 0.006, ver mas abajo)
-        self.rift = np.clip(opening - 0.006, 0, None)
         # edad del fondo oceanico: se advecta, envejece, y renace SOLO en el
         # eje de la dorsal — la divergencia debil de fondo no rejuvenece el
         # oceano (antes lo hacia y la edad no tenia estructura: mediana ~8
@@ -369,8 +637,30 @@ class Crust:
         A = advect(self.A, u, v, DT) + DT
         A *= np.clip(1.0 - 3.0 * self.dorsal, 0.02, 1)
         self.A = np.clip(A, 0, 10 * AGE_TAU)
-        # fosa de subduccion: convergencia sobre corteza oceanica
-        self.trench = conv * (F < 0.4)
+        # fosa de subduccion (BANDA): la intensidad persistente con compuertas
+        # (fondo viejo + lejos de la dorsal + convergencia); alimenta el consumo
+        # de corteza, el slab pull (superficie y manto) y los arcos volcanicos
+        self.trench = subd * (F < 0.4)
+        # eje DELGADO de la fosa: la CRESTA de la banda de subduccion por
+        # supresion de no-maximos, igual que la dorsal -> una linea de 1-2 px
+        # (no un hueco ancho) que sigue el limite de placa en tramos largos.
+        # Es lo que dibujan el mapa (batimetria de la fosa) y el mapa de placas
+        tb = self.trench
+        for sh in (1, 1, 2, 2):
+            tb = 0.2 * (tb + np.roll(tb, sh, 0) + np.roll(tb, -sh, 0)
+                        + np.roll(tb, sh, 1) + np.roll(tb, -sh, 1))
+        ejf = np.zeros(tb.shape, bool)
+        for ax in (0, 1):
+            mxf = tb
+            for sh in (1, 2):
+                mxf = np.maximum(mxf, np.maximum(np.roll(tb, sh, ax),
+                                                 np.roll(tb, -sh, ax)))
+            ejf |= tb >= mxf - 1e-12
+        pf = np.percentile(tb, 98) + 1e-9
+        ejf &= tb > 0.15 * pf
+        ejf = (ejf | np.roll(ejf, 1, 0) | np.roll(ejf, -1, 0)
+               | np.roll(ejf, 1, 1) | np.roll(ejf, -1, 1))
+        self.fosa = ejf * np.clip(tb / pf * 1.5, 0, 1) * (F < 0.4)
         # --- volcanismo ---
         # puntos calientes: donde una cabeza de pluma toca la litosfera
         hs = np.zeros((NY, NX))
@@ -417,6 +707,11 @@ class Crust:
         # pluma para que no salgan como manchas redondas (ahi el volcan rojo
         # ya marca el punto caliente)
         boundary = (np.abs(div) + shear) * (1 - np.clip(hs * 30, 0, 0.95))
+        # los arcos volcanicos y las cordilleras nacidas de la colision
+        # tambien son limite de placa (marcan la sutura/el margen activo):
+        # se suman al campo de borde, que alimenta tanto los trazos rojos
+        # del mapa como la segmentacion del mapa de placas
+        boundary = boundary + 3.0 * self.volcano_arc
         return boundary
 
     def elevation(self, detail=0.6):
@@ -440,8 +735,10 @@ class Crust:
                           + np.roll(marg, sh, 1) + np.roll(marg, -sh, 1))
         plataforma = np.clip(6.0 * (marg - 0.18), 0, 1) * ocean
         elev += np.clip(-0.025 - elev, 0, None) * plataforma
-        # fosa de subduccion: depresion batimetrica en la convergencia
-        elev -= TRENCH * self.trench
+        # fosa de subduccion: depresion batimetrica DELGADA (el eje de la fosa,
+        # no la banda ancha) -> una linea profunda como en la Tierra, no un
+        # hueco. getattr: mundos guardados antes del eje delgado no traen fosa
+        elev -= TRENCH * getattr(self, "fosa", self.trench)
         # cuenca de antepais: depresion flexural frente a la cordillera en
         # crecimiento; si baja del nivel del mar se inunda (mar interior)
         elev -= 14.0 * self.foreland
@@ -490,15 +787,46 @@ def render(elev, boundary, volcanoes=None):
         img[dots] = (235, 45, 25)
     return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
 
+# paleta del manto: azul = anomalia fria (losas que bajan), oscuro = neutro,
+# naranja/amarillo = anomalia caliente (plumas que suben)
+_PALETA_MANTO = np.array([
+    (-1.0, 30, 55, 130), (-0.35, 28, 45, 95), (0.0, 24, 22, 34),
+    (0.35, 150, 60, 20), (0.7, 235, 120, 25), (1.0, 255, 230, 120),
+], dtype=float)
+
+def render_manto(T, plumes=(), n=None):
+    """Mapa del manto: plumas calientes que ascienden (naranja/amarillo,
+    anomalia de las capas BAJAS, donde se inyectan) y zonas de hundimiento
+    (azul, anomalia fria de las capas ALTAS: las losas que subducen enfrian
+    el manto superior bajo las fosas). Separar por capas evita que la
+    dorsal salga azul: la dorsal no es una bajada del manto, es el eje
+    divergente en superficie y queda neutra. Anillo blanco = pluma activa.
+    Se calcula solo desde T, asi tambien sirve para reconstruir mundos."""
+    n = n or NX
+    an = T - T.mean(axis=(1, 2), keepdims=True)
+    sube = np.clip(upsample(an[1:MZ // 2 + 1].mean(axis=0), n, n) / 0.30, 0, 1)
+    baja = np.clip(upsample(an[MZ - 3:MZ - 1].mean(axis=0), n, n) / 0.20, -1, 0)
+    a = sube + baja
+    img = np.empty((n, n, 3))
+    for ch in range(3):
+        img[..., ch] = np.interp(a, _PALETA_MANTO[:, 0], _PALETA_MANTO[:, ch + 1])
+    im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+    d = ImageDraw.Draw(im, "RGBA")
+    esc = n / MX
+    r = 3.5 * esc
+    for p in plumes:
+        fade = min(p["age"] / 60, 1.0, (p["life"] - p["age"]) / 60)
+        if fade <= 0:
+            continue
+        cx, cy = p["x"] * esc, p["y"] * esc
+        for oy in (-n, 0, n):        # copias toroidales: anillos que cruzan borde
+            for ox in (-n, 0, n):
+                x, y = cx + ox, cy + oy
+                d.ellipse([x - r, y - r, x + r, y + r],
+                          outline=(255, 255, 255, int(80 + 150 * fade)), width=2)
+    return im
+
 # ---------------- mapa tectonico (placas, flechas y simbologia) ----------------
-_FUENTE = None
-
-def _fuente():
-    global _FUENTE
-    if _FUENTE is None:
-        _FUENTE = ImageFont.load_default()
-    return _FUENTE
-
 def _flechas(d, u, v, n):
     """Flechas de deriva: velocidad de placa promediada en una malla gruesa."""
     paso = max(16, n // 11)
@@ -521,27 +849,6 @@ def _flechas(d, u, v, n):
                 d.line([(x, y), (x1, y1)], fill=color, width=w)
                 d.line([pa, (x1, y1), pb], fill=color, width=w)
 
-def _leyenda(d, n):
-    items = [((205, 60, 45), "otro limite de placa"),
-             ((105, 25, 140), "fosa (subduccion)"),
-             ((240, 165, 25), "dorsal"),
-             ((255, 96, 0), "rift continental"),
-             ((115, 62, 25), "cordillera"),
-             (None, "deriva")]
-    alto, ancho = 13 * len(items) + 8, 150
-    x0, y0 = 6, n - alto - 6
-    d.rectangle([x0, y0, x0 + ancho, y0 + alto],
-                fill=(255, 255, 255, 205), outline=(90, 90, 90, 255))
-    for i, (color, texto) in enumerate(items):
-        cy = y0 + 10 + 13 * i
-        if color:
-            d.line([(x0 + 5, cy), (x0 + 20, cy)], fill=color + (255,), width=3)
-        else:
-            d.line([(x0 + 5, cy), (x0 + 20, cy)], fill=(25, 25, 30, 255), width=1)
-            d.line([(x0 + 16, cy - 3), (x0 + 20, cy), (x0 + 16, cy + 3)],
-                   fill=(25, 25, 30, 255), width=1)
-        d.text((x0 + 25, cy - 5), texto, fill=(20, 20, 20, 255), font=_fuente())
-
 def _linea_placa(campo):
     """Difumina y normaliza un campo de intensidad de limite (mismo criterio
     que los bordes rojos del mapa: 2 pasadas de blur + percentil 98)."""
@@ -550,24 +857,498 @@ def _linea_placa(campo):
                        + np.roll(campo, 1, 1) + np.roll(campo, -1, 1))
     return campo / (np.percentile(campo, 98) + 1e-9)
 
+# paleta de relleno por placa (tonos suaves distinguibles, tipo mapa escolar)
+_PALETA_PLACAS = np.array([
+    (166, 206, 227), (178, 223, 138), (251, 154, 153), (253, 191, 111),
+    (202, 178, 214), (255, 255, 153), (141, 211, 199), (190, 186, 218),
+    (128, 177, 211), (253, 180, 98), (179, 222, 105), (252, 205, 229),
+    (217, 217, 217), (188, 128, 189), (204, 235, 197), (255, 237, 111),
+    (137, 195, 165), (222, 165, 164), (169, 169, 219), (196, 156, 148),
+], float)
+
+def _compactar(lab):
+    _, inv = np.unique(lab, return_inverse=True)
+    return inv.reshape(lab.shape)
+
+# --- imposicion de los ejes fisicos como limites de placa (dorsal/fosa/rift) ---
+# La particion por velocidad (SLIC + fusion) da placas coherentes pero NO
+# garantiza que una dorsal caiga en un borde: con frecuencia una dorsal (o una
+# fosa) queda DENTRO de una placa. Geologicamente eso es imposible: un limite
+# divergente/convergente ES, por definicion, el borde entre dos placas. Estas
+# funciones imponen esa regla como post-proceso solo-render: prolongan los
+# cabos sueltos de cada eje hasta la red de limites mas cercana (la
+# "continuidad hasta la placa/dorsal mas cercana") y subdividen cada placa por
+# los ejes que la cruzan, de modo que todo eje pasa a SER un borde de placa y
+# ninguno queda en el interior. NOTA: NO se intento reducir el numero de placas
+# fusionando a traves de ejes debiles — ese camino colapsa a UNA placa gigante
+# (el mismo fallo documentado en §5.3 de la fusion sin limite real).
+_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+def _vecinos4(m):
+    """OR de los 4 vecinos (arriba/abajo/izq/der) en el toro, por SLICING.
+    Identico a acumular np.roll(m, ±1) sobre los 4 dirs pero sin el overhead
+    por-llamada de np.roll: acelera los BFS y la dilatacion del cierre de red."""
+    o = np.zeros_like(m)
+    o[1:] |= m[:-1]; o[:1] |= m[-1:]
+    o[:-1] |= m[1:]; o[-1:] |= m[:1]
+    o[:, 1:] |= m[:, :-1]; o[:, :1] |= m[:, -1:]
+    o[:, :-1] |= m[:, 1:]; o[:, -1:] |= m[:, :1]
+    return o
+
+def _dilata(m, r=1):
+    for _ in range(r):
+        m = m | _vecinos4(m)
+    return m
+
+def _bfs_dist(seed, maxd=None, plano=False):
+    """Distancia de manzana (city-block) al conjunto `seed`, en el toro.
+    Con `maxd` se detiene ahi (lo no alcanzado queda en el centinela).
+    Con `plano` la malla NO envuelve (para operar en ventanas recortadas)."""
+    D = np.full(seed.shape, 1 << 30, np.int64)
+    D[seed] = 0
+    cur = seed.copy(); d = 0
+    while cur.any() and (maxd is None or d < maxd):
+        d += 1; nxt = _vecinos4(cur)
+        if plano:
+            nxt[[0, -1], :] = False; nxt[:, [0, -1]] = False
+        nxt &= D > d; D[nxt] = d; cur = nxt
+    return D
+
+def _bfs_en(mask, py, px):
+    """Distancia geodesica DENTRO de `mask` (4-conexa, toroidal) desde un
+    pixel. Para hallar los extremos de un fragmento de eje."""
+    D = np.full(mask.shape, 1 << 30, np.int64)
+    D[py, px] = 0
+    cur = np.zeros_like(mask); cur[py, px] = True
+    d = 0
+    while cur.any():
+        d += 1; nxt = _vecinos4(cur)
+        nxt &= mask & (D > d); D[nxt] = d; cur = nxt
+    return D
+
+def _extremos(comp):
+    """Los dos extremos geodesicos de un fragmento (diametro del grafo,
+    por doble BFS): los cabos REALES de la linea, aunque sea corta, curva
+    o gruesa — el criterio de masa local fallaba en fragmentos cortos."""
+    ys, xs = np.nonzero(comp)
+    d0 = _bfs_en(comp, ys[0], xs[0])
+    d0[~comp] = -1
+    p1 = np.unravel_index(d0.argmax(), comp.shape)
+    d1 = _bfs_en(comp, *p1)
+    d1[~comp] = -1
+    p2 = np.unravel_index(d1.argmax(), comp.shape)
+    return p1, p2
+
+def _tangente(comp, py, px, R=5):
+    """Direccion saliente del fragmento en un extremo: opuesta al centroide
+    de los pixeles del fragmento cercanos al extremo (toroidal)."""
+    n = comp.shape[0]
+    ys, xs = np.nonzero(comp)
+    dy = (ys - py + n // 2) % n - n // 2
+    dx = (xs - px + n // 2) % n - n // 2
+    sel = (np.abs(dy) <= R) & (np.abs(dx) <= R)
+    my, mx = dy[sel].mean(), dx[sel].mean()
+    nn = (my * my + mx * mx) ** 0.5
+    if nn < 0.3:                     # blob sin direccion clara
+        return 0.0, 0.0
+    return -my / nn, -mx / nn
+
+def _caminar(py, px, ty, tx, Dt, maxpaso, rumbo=1.5, inercia=0.7):
+    """Prolonga un cabo desde (py,px) con direccion inicial (ty,tx): en cada
+    paso elige el vecino-8 que minimiza distancia_a_red - rumbo*avance. El
+    sesgo de rumbo hace que los DOS cabos de un fragmento salgan en sentidos
+    OPUESTOS y toquen la red en puntos distintos -> fragmento + puentes
+    forman un corte que separa placas. (El puenteo por camino mas corto
+    llevaba ambos cabos al MISMO punto: arbol colgante, sin separacion.)"""
+    n = Dt.shape[0]
+    path = []
+    y, x, dy, dx = py, px, ty, tx
+    for _ in range(maxpaso):
+        if Dt[y, x] == 0:
+            return path, True
+        mejor = None
+        for sy in (-1, 0, 1):
+            for sx in (-1, 0, 1):
+                if not sy and not sx:
+                    continue
+                nrm = 1.4142135 if sy and sx else 1.0
+                ny_, nx_ = (y + sy) % n, (x + sx) % n
+                s = Dt[ny_, nx_] - rumbo * (sy * dy + sx * dx) / nrm
+                if (ny_, nx_) in path:
+                    s += 4.0                     # no repisar el propio camino
+                if mejor is None or s < mejor[0]:
+                    mejor = (s, ny_, nx_, sy / nrm, sx / nrm)
+        _, y, x, sy, sx = mejor
+        dy, dx = inercia * dy + (1 - inercia) * sy, inercia * dx + (1 - inercia) * sx
+        nn = (dy * dy + dx * dx) ** 0.5 + 1e-9
+        dy, dx = dy / nn, dx / nn
+        path.append((y, x))
+    return path, bool(Dt[y, x] == 0)
+
+def _masa(m, R=4):
+    """Masa de linea en un disco de radio R alrededor de cada pixel."""
+    f = m.astype(np.float32); acc = np.zeros_like(f)
+    for dy in range(-R, R + 1):
+        for dx in range(-R, R + 1):
+            if dy * dy + dx * dx <= R * R:
+                acc += np.roll(np.roll(f, dy, 0), dx, 1)
+    return acc
+
+def _zona(comp, margen):
+    """Ventana toroidal centrada en un fragmento: desplazamiento que lo
+    centra y recorte cuadrado que lo contiene con margen. Operar en la
+    ventana evita BFS de mapa completo por cada fragmento."""
+    n = comp.shape[0]
+    ys, xs = np.nonzero(comp)
+    cy = int((np.angle(np.exp(2j * np.pi * ys / n).mean()) % (2 * np.pi))
+             * n / (2 * np.pi))
+    cx = int((np.angle(np.exp(2j * np.pi * xs / n).mean()) % (2 * np.pi))
+             * n / (2 * np.pi))
+    sy, sx = n // 2 - cy, n // 2 - cx
+    dy = np.abs((ys + sy) % n - n // 2).max()
+    dx = np.abs((xs + sx) % n - n // 2).max()
+    h = min(n // 2, int(max(dy, dx)) + margen)
+    return sy, sx, slice(n // 2 - h, n // 2 + h)
+
+def _rec(m, sy, sx, sl):
+    return np.roll(np.roll(m, sy, 0), sx, 1)[sl, sl]
+
+def _cabos(comp, acc):
+    """Puntos de arranque de los puentes de un fragmento: TODAS las puntas de
+    rama (pixeles con poca masa de linea en su disco, umbral relativo a la
+    mediana DEL fragmento — una red ramificada tiene mas de dos cabos) mas
+    los dos extremos geodesicos como respaldo (una banda gruesa o corta puede
+    no tener ninguna punta por masa local)."""
+    tips = comp & (acc < 0.55 * np.median(acc[comp]))
+    reps = []
+    tl = label_components(tips)
+    for t in np.unique(tl[tl >= 0]):
+        ys, xs = np.nonzero(tl == t)
+        k = len(ys) // 2
+        reps.append((int(ys[k]), int(xs[k])))
+    n = comp.shape[0]
+    for (py, px) in _extremos(comp):
+        cerca = any(min(abs(py - y), n - abs(py - y))
+                    + min(abs(px - x), n - abs(px - x)) <= 4
+                    for (y, x) in reps)
+        if not cerca:
+            reps.append((py, px))
+    return reps
+
+def _puentes_de(comp, red, acc, maxpaso, rumbo=1.5, inercia=0.7):
+    """Puentes desde todos los cabos de un fragmento hasta `red`, calculados
+    en una ventana local. Devuelve pixeles en coordenadas del mapa."""
+    n = comp.shape[0]
+    sy, sx, sl = _zona(comp, maxpaso + 6)
+    compz = _rec(comp, sy, sx, sl)
+    Dt = _bfs_dist(_rec(red, sy, sx, sl), maxd=maxpaso + 2, plano=True)
+    accz = _rec(acc, sy, sx, sl)
+    a = sl.start
+    out = []
+    for (py, px) in _cabos(compz, accz):
+        ty, tx = _tangente(compz, py, px)
+        camino, _ = _caminar(py, px, ty, tx, Dt, maxpaso, rumbo, inercia)
+        out += [((a + yy - sy) % n, (a + xx - sx) % n) for yy, xx in camino]
+    return out
+
+def _cerrar_red(ejes, borde, maxpaso):
+    """Cierra la red de limites: cada fragmento de eje se prolonga por todos
+    sus cabos hasta la red mas cercana (OTRO fragmento de eje o un borde de
+    placa). Es la 'continuidad hasta la dorsal/placa mas cercana': una dorsal
+    partida en tramos se une en una linea continua y los cabos restantes se
+    sueldan a la red de bordes, de modo que cada eje separe dos placas."""
+    acc = _masa(ejes)
+    comps = label_components(ejes)
+    puentes = np.zeros_like(ejes)
+    red = borde | ejes
+    for cid in np.unique(comps[comps >= 0]):
+        comp = comps == cid
+        if comp.sum() < 3:
+            continue                             # ruido puntual sin direccion
+        for yy, xx in _puentes_de(comp, red & ~comp, acc, maxpaso):
+            puentes[yy, xx] = True
+    return ejes | puentes
+
+def _subdividir(L, cortes, ids=None):
+    """Parte cada placa por los ejes que la cruzan: quita los pixeles de eje,
+    re-etiqueta las componentes conexas resultantes (los dos flancos de una
+    dorsal que la cruza entera pasan a ser placas distintas) y re-asigna los
+    pixeles del eje al vecino mas cercano. La dorsal deja de estar dentro de
+    una placa y pasa a SER el borde entre las dos. Con `ids` solo se
+    re-particionan esas placas (reintento barato tras la verificacion)."""
+    lab = np.full(L.shape, -1, np.int64)
+    sig = int(L.max()) + 1
+    if ids is None:
+        todos = range(sig)
+    else:
+        todos = sorted(ids)
+        fuera = ~np.isin(L, todos)
+        lab[fuera] = L[fuera]
+    seeds = np.where(~cortes, L, -1)
+    for i in todos:
+        cc = label_components(seeds == i)
+        for cid in np.unique(cc[cc >= 0]):
+            lab[cc == cid] = sig; sig += 1
+    while (lab < 0).any():
+        prog = False
+        for dy, dx in _DIRS:
+            vec = np.roll(lab, dy, 0) if dx == 0 else np.roll(lab, dx, 1)
+            take = (lab < 0) & (vec >= 0)
+            if take.any():
+                lab[take] = vec[take]; prog = True
+        if not prog:
+            break
+    return _compactar(lab)
+
+def _ejes_fisicos(crust):
+    """Mascara de los ejes que son limite de placa por definicion fisica:
+    dorsal (divergente sobre oceano), fosa (convergente con subduccion) y
+    rift (divergente sobre continente). Los MISMOS campos que dibuja el mapa
+    (§5.3) y usa la simulacion (§4.10-4.11)."""
+    tierra = crust.F > 0.5
+    fosa = getattr(crust, "fosa", crust.trench)   # eje delgado de la fosa
+    return (((crust.dorsal > 0.3) & ~tierra)
+            | ((_linea_placa(fosa) > 0.5) & ~tierra)
+            | ((crust.rift > 0.008) & tierra))
+
+# memoria entre frames del mapa de placas (solo render): centroides SLIC del
+# frame anterior (arranque en caliente -> particion estable) y colores por
+# placa (heredados por solapamiento -> sin parpadeo en el GIF)
+_SEG_PREV = {}
+
+def _segmentar_placas(crust, boundary):
+    """Particion del mapa en placas desde el campo de VELOCIDAD (la
+    definicion fisica: una placa es una region que se mueve coherente).
+
+    1. Superpixeles tipo SLIC sobre (u, v, posicion) en malla 64x64: ~36
+       regiones compactas cuyas fronteras caen donde la velocidad salta.
+    2. Fusion: dos regiones vecinas se unen si sus velocidades medias son
+       similares Y su frontera comun no tiene deformacion real (|div|+shear
+       bajo). El oceano suave coalesce en placas grandes; solo sobreviven
+       los bordes fisicos (dorsales, fosas, saltos de velocidad) -> pocas
+       placas grandes + medianas + microplacas, como en la Tierra.
+    Devuelve (etiquetas nxn, bordes bool). Solo render: no toca la fisica."""
+    n = boundary.shape[0]
+    m = min(64, n)
+    u = sample_nearest(crust.u_vis, m, m)
+    v = sample_nearest(crust.v_vis, m, m)
+    # limite real = deformacion + los ejes fisicos (dorsal, fosa, rift).
+    # La fusion solo respeta fronteras con limite real: todo lo que hay
+    # entre la dorsal y el continente (margen pasivo, sin fosa) es parte de
+    # la MISMA placa, y el interior de un continente tambien, salvo que una
+    # colision o un rift de pluma nueva lo este partiendo
+    fis = (np.clip(crust.dorsal, 0, 1) + np.clip(crust.rift / 0.008, 0, 1)
+           + np.clip(_linea_placa(getattr(crust, "fosa", crust.trench)), 0, 1))
+    for _ in range(2):
+        fis = 0.2 * (fis + np.roll(fis, 1, 0) + np.roll(fis, -1, 0)
+                     + np.roll(fis, 1, 1) + np.roll(fis, -1, 1))
+    defo = sample_nearest(_linea_placa(boundary) + 3.0 * fis, m, m)
+    # media movil exponencial de lo que ve el segmentador: la velocidad
+    # instantanea fluctua y hace parpadear la particion entre frames; la
+    # EMA (tau ~2.5 frames) la vuelve un mapa que evoluciona despacio
+    if _SEG_PREV.get("m") == m:
+        u = 0.6 * _SEG_PREV["uema"] + 0.4 * u
+        v = 0.6 * _SEG_PREV["vema"] + 0.4 * v
+        defo = 0.6 * _SEG_PREV["dema"] + 0.4 * defo
+    _SEG_PREV["uema"], _SEG_PREV["vema"], _SEG_PREV["dema"] = u, v, defo
+    un = u / (u.std() + 1e-9)
+    vn = v / (v.std() + 1e-9)
+    # --- 1. SLIC: asignacion iterativa a centroides (velocidad + posicion) ---
+    K, lam = 36, 0.8
+    S = m / np.sqrt(K)
+    yy, xx = np.meshgrid(np.arange(m), np.arange(m), indexing="ij")
+    if _SEG_PREV.get("m") == m:
+        # arranque en caliente: los centroides del frame anterior ya estan
+        # cerca de la solucion -> particion temporalmente estable
+        cys, cxs = _SEG_PREV["cys"].copy(), _SEG_PREV["cxs"].copy()
+        cu, cv = _SEG_PREV["cu"].copy(), _SEG_PREV["cv"].copy()
+        iters = 4
+    else:
+        lado = int(round(np.sqrt(K)))
+        cy = (np.arange(lado) + 0.5) * m / lado
+        cys, cxs = np.meshgrid(cy, cy, indexing="ij")
+        cys, cxs = cys.ravel().copy(), cxs.ravel().copy()
+        cu = np.array([un[int(y) % m, int(x) % m] for y, x in zip(cys, cxs)])
+        cv = np.array([vn[int(y) % m, int(x) % m] for y, x in zip(cys, cxs)])
+        iters = 8
+    for _ in range(iters):
+        D = np.empty((K, m, m))
+        for k in range(K):
+            dy = np.abs(yy - cys[k]); dy = np.minimum(dy, m - dy)
+            dx = np.abs(xx - cxs[k]); dx = np.minimum(dx, m - dx)
+            D[k] = ((un - cu[k]) ** 2 + (vn - cv[k]) ** 2
+                    + lam * (dy ** 2 + dx ** 2) / S ** 2)
+        asg = D.argmin(0)
+        for k in range(K):
+            sel = asg == k
+            if not sel.any():
+                continue
+            cu[k] = un[sel].mean(); cv[k] = vn[sel].mean()
+            # centroide toroidal via media circular
+            ay = 2 * np.pi * yy[sel] / m; ax_ = 2 * np.pi * xx[sel] / m
+            cys[k] = (np.angle(np.exp(1j * ay).mean()) % (2 * np.pi)) * m / (2 * np.pi)
+            cxs[k] = (np.angle(np.exp(1j * ax_).mean()) % (2 * np.pi)) * m / (2 * np.pi)
+    _SEG_PREV.update(m=m, cys=cys, cxs=cxs, cu=cu, cv=cv)
+    # separar componentes conexas de cada cluster y absorber esquirlas
+    lab = np.full((m, m), -1, np.int64)
+    sig = 0
+    for k in np.unique(asg):
+        cc = label_components(asg == k)
+        for cid in np.unique(cc[cc >= 0]):
+            lab[cc == cid] = sig
+            sig += 1
+    ids, cnt = np.unique(lab, return_counts=True)
+    lab = np.where(np.isin(lab, ids[cnt < 10]), -1, lab)
+    while (lab < 0).any():
+        for ax in (0, 1):
+            for sh in (1, -1):
+                vec = np.roll(lab, sh, ax)
+                lab = np.where((lab < 0) & (vec >= 0), vec, lab)
+    lab = _compactar(lab)
+    # --- 2. fusion de vecinos coherentes (union-find) ---
+    # tolerancias: la de deformacion manda (sin limite real en la frontera,
+    # dos regiones son la misma placa aunque sus velocidades difieran algo);
+    # la de velocidad solo evita fusionar a traves de saltos cinematicos
+    # enormes que la deformacion muestreada pudiera no captar
+    TOLV, TOLD = 1.5, 0.5
+    for _ in range(6):
+        nl = lab.max() + 1
+        mu = np.array([un[lab == i].mean() for i in range(nl)])
+        mv = np.array([vn[lab == i].mean() for i in range(nl)])
+        sums, cnts = {}, {}
+        for ax in (0, 1):
+            l2 = np.roll(lab, 1, ax)
+            sel = lab != l2
+            for i, j, dd in zip(lab[sel], l2[sel], defo[sel]):
+                key = (min(i, j), max(i, j))
+                sums[key] = sums.get(key, 0.0) + dd
+                cnts[key] = cnts.get(key, 0) + 1
+        padre = list(range(nl))
+        def raiz(x):
+            while padre[x] != x:
+                padre[x] = padre[padre[x]]
+                x = padre[x]
+            return x
+        fusiones = 0
+        for (i, j), s in sums.items():
+            dv = np.hypot(mu[i] - mu[j], mv[i] - mv[j])
+            if dv < TOLV and s / cnts[(i, j)] < TOLD:
+                ri, rj = raiz(i), raiz(j)
+                if ri != rj:
+                    padre[max(ri, rj)] = min(ri, rj)
+                    fusiones += 1
+        if not fusiones:
+            break
+        lab = _compactar(np.array([raiz(i) for i in range(nl)])[lab])
+    # upsample suave: indicador bilineal por placa + argmax -> los bordes
+    # salen como curvas, no la escalera del vecino mas cercano 64->n
+    mejor = np.full((n, n), -1.0)
+    L = np.zeros((n, n), np.int64)
+    for i in range(lab.max() + 1):
+        p = upsample((lab == i).astype(float), n, n)
+        gana = p > mejor
+        L[gana] = i
+        mejor[gana] = p[gana]
+    borde = np.zeros((n, n), bool)
+    for ax in (0, 1):
+        borde |= L != np.roll(L, 1, ax)
+    # --- 3. los ejes fisicos SON limites de placa: se imponen aqui ---
+    # La velocidad no basta para separar los dos flancos de una dorsal joven o
+    # de baja apertura, asi que la dorsal queda dentro de una placa. Se cierra
+    # la red prolongando los DOS extremos de cada fragmento hasta la red mas
+    # cercana y se subdivide por los ejes; luego se VERIFICA fragmento por
+    # fragmento y el que aun no separe dos placas se prolonga RECTO por su
+    # propia direccion hasta la red -> ninguna dorsal/fosa queda en el interior.
+    ejes = _ejes_fisicos(crust)
+    if ejes.any():
+        # motas de menos de 6 px: ruido numerico, no un eje (sin direccion
+        # definible, sus puentes degeneran en arboles colgantes que no
+        # separan nada); se excluyen de la red de cortes
+        comps0 = label_components(ejes)
+        ids0, cnt0 = np.unique(comps0[comps0 >= 0], return_counts=True)
+        ejes &= ~np.isin(comps0, ids0[cnt0 < 6])
+    if ejes.any():
+        maxpaso = max(24, n // 6)
+        ejes_d = _dilata(ejes, 1)
+        cortes = _cerrar_red(ejes_d, borde, maxpaso)
+        L = _subdividir(L, cortes)
+        # verificacion: los pixeles de cada fragmento se reasignaron a las
+        # placas que lo flanquean; si todos cayeron en UNA placa el corte fue
+        # un arbol colgante y no separo nada -> reintento con paso recto
+        borde = np.zeros((n, n), bool)
+        for ax in (0, 1):
+            borde |= L != np.roll(L, 1, ax)
+        comps = label_components(ejes_d)
+        Db = _bfs_dist(borde, maxd=5)
+        acc = _masa(ejes_d)
+        extra = np.zeros_like(ejes_d)
+        fallidas = set()
+        for cid in np.unique(comps[comps >= 0]):
+            comp = comps == cid
+            # el fragmento separa placas si (casi) todo el queda pegado al
+            # borde final; si no, el corte fue un arbol colgante (o solo lo
+            # cruza un borde ajeno) y se prolonga RECTO hasta la red
+            if comp.sum() < 3 or (Db[comp] <= 3).mean() >= 0.85:
+                continue
+            red = borde | (cortes & ~comp)
+            for yy, xx in _puentes_de(comp, red, acc, 2 * maxpaso,
+                                      rumbo=6.0, inercia=0.9):
+                extra[yy, xx] = True
+            fallidas.update(int(i) for i in np.unique(L[comp]))
+        if fallidas:
+            L = _subdividir(L, cortes | extra, ids=fallidas)
+        borde = np.zeros((n, n), bool)
+        for ax in (0, 1):
+            borde |= L != np.roll(L, 1, ax)
+    return L, borde
+
+def _colores_de_placas(L):
+    """Color por placa, estable entre frames: cada placa hereda el color de
+    la placa del frame anterior con la que mas se solapa (>50%); si es nueva
+    recibe uno por su centroide cuantizado. Sin esto el GIF parpadea."""
+    prevL = _SEG_PREV.get("L")
+    prevcol = _SEG_PREV.get("col", {})
+    colores = np.zeros(L.shape + (3,))
+    col = {}
+    usados = set()
+    ids, cnts = np.unique(L, return_counts=True)
+    for pid in ids[np.argsort(-cnts)]:        # las grandes eligen primero
+        sel = L == pid
+        c = None
+        if prevL is not None and prevL.shape == L.shape:
+            vals, vc = np.unique(prevL[sel], return_counts=True)
+            j = int(vals[vc.argmax()])
+            # herencia pegajosa; una placa que se parte no duplica color en
+            # sus dos mitades (la mayor hereda, la menor recibe uno nuevo)
+            if vc.max() / sel.sum() > 0.35 and j in prevcol and j not in usados:
+                c = prevcol[j]
+                usados.add(j)
+        if c is None:
+            ys, xs = np.nonzero(sel)
+            cy, cx = int(ys.mean()) // 16, int(xs.mean()) // 16
+            c = tuple(_PALETA_PLACAS[(cy * 31 + cx * 17) % len(_PALETA_PLACAS)])
+        col[pid] = c
+        colores[sel] = c
+    _SEG_PREV["L"] = L
+    _SEG_PREV["col"] = col
+    return colores
+
 def render_placas(crust, boundary, elev):
-    """Mapa tectonico. Los limites de placa se clasifican POR TIPO desde el
-    campo de velocidad real de la simulacion (la misma divergencia que usa
-    la fisica): divergente sobre oceano = dorsal (crea corteza marina),
-    divergente sobre continente = rift (parte el continente), convergente
-    sobre oceano = fosa de subduccion; lo que queda en rojo son los demas
-    limites (transformantes, suturas). Ademas: cadenas montanosas, flechas
-    de deriva por placa y leyenda."""
+    """Mapa tectonico. El dominio se TESELA en placas (regiones cerradas,
+    grandes y pequenas, cada una con su color) y los limites se clasifican
+    POR TIPO desde los mismos campos que usa la fisica: divergente sobre
+    oceano = dorsal, divergente sobre continente = rift, convergente con
+    fondo viejo = fosa; el resto de bordes (transformantes, suturas) queda
+    en rojo. Ademas: costas, cordilleras y flechas de deriva. La leyenda
+    vive en la pagina web (web.html), no en la imagen."""
     n = elev.shape[0]
     img = np.empty(elev.shape + (3,))
     for ch in range(3):
         img[..., ch] = np.interp(elev, HYPSO[:, 0], HYPSO[:, ch + 1])
     img = img * 0.30 + np.array([235.0, 235.0, 230.0]) * 0.70  # fondo palido
-    # limites de placa genericos (rojo); los divergentes y convergentes se
-    # pintan encima con su propio simbolo, asi que el rojo que sobrevive son
-    # transformantes y suturas
-    b = np.clip(_linea_placa(boundary) - 0.6, 0, 1)[..., None]
-    img = img * (1 - 0.55 * b) + np.array([205, 60, 45]) * 0.55 * b
+    # teselacion en placas: relleno translucido por placa
+    L, borde = _segmentar_placas(crust, boundary)
+    img = img * 0.68 + _colores_de_placas(L) * 0.32
     tierra = crust.F > 0.5
     interior = tierra
     for ax in (0, 1):
@@ -575,19 +1356,33 @@ def render_placas(crust, boundary, elev):
             interior = interior & np.roll(tierra, sh, ax)
     img[tierra & ~interior] = (95, 95, 95)          # linea de costa
     img[elev > 0.20] = (115, 62, 25)                # cadenas montanosas
-    # tipos de limite: los MISMOS campos que usa la simulacion — crust.dorsal
-    # es el eje divergente donde renace el fondo, crust.rift el desgarre que
-    # parte continentes y crust.trench la convergencia que subduce
-    img[(crust.dorsal > 0.3) & ~tierra] = (240, 165, 25)  # dorsal: crea corteza
-    # solo el desgarre vigoroso (el que de verdad parte el continente), no
-    # el roce de los margenes
-    img[(crust.rift > 0.008) & tierra] = (255, 96, 0)     # rift continental
-    fosa = _linea_placa(crust.trench) > 0.75
-    img[fosa & ~tierra] = (105, 25, 140)            # fosa de subduccion
+    # tipos de limite desde los MISMOS campos que usa la simulacion, pero
+    # RECORTADOS al borde de placa: la subdivision por ejes (_segmentar_placas)
+    # ya puso un borde sobre cada dorsal/fosa/rift, asi que se dibujan solo
+    # donde coinciden con ese borde. Un tramo que no llego a separar placas (un
+    # cabo residual que el puente no cerro) NO se pinta: una dorsal jamas
+    # aparece dentro de una placa.
+    en_borde = _dilata(borde, 2)
+    dorsal_m = (crust.dorsal > 0.3) & ~tierra & en_borde
+    rift_m = (crust.rift > 0.008) & tierra & en_borde
+    fosa_m = (_linea_placa(getattr(crust, "fosa", crust.trench)) > 0.5) & ~tierra & en_borde
+    # el limite ES la dorsal y ES la fosa: el contorno generico de la
+    # teselacion se borra cerca de esos ejes para no dibujar una linea
+    # roja paralela al lado del limite verdadero
+    lineas = dorsal_m | rift_m | fosa_m
+    cerca = lineas
+    for ax in (0, 1):
+        acc = cerca
+        for sh in range(1, 7):
+            acc = acc | np.roll(cerca, sh, ax) | np.roll(cerca, -sh, ax)
+        cerca = acc
+    img[borde & ~cerca] = (205, 60, 45)   # transformantes, suturas
+    img[dorsal_m] = (240, 165, 25)        # dorsal: el eje es el limite
+    img[rift_m] = (255, 96, 0)            # rift continental
+    img[fosa_m] = (105, 25, 140)          # fosa: la fosa es el limite
     im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
     d = ImageDraw.Draw(im, "RGBA")
     _flechas(d, crust.u_vis, crust.v_vis, n)
-    _leyenda(d, n)
     return im
 
 # ---------------- almacenamiento de mundos ----------------
@@ -600,23 +1395,28 @@ def render_placas(crust, boundary, elev):
 # cualquier redondeo, y con f32 una continuacion diverge de la corrida
 # original en ~100 pasos; con f64 es bit-exacta. trench es estado: alimenta
 # el slab pull (sink) del paso siguiente
-CAMPOS_ESTADO = ("C", "F", "A", "Pu", "Pv", "D", "trench")
+# dorsal es estado: su memoria (persistencia) entra en el paso siguiente; una
+# continuacion debe recuperarla o la dorsal renaceria de cero y parpadearia
+CAMPOS_ESTADO = ("C", "F", "A", "Pu", "Pv", "Qu", "Qv", "D", "trench", "dorsal",
+                 "open_mem")
 
 def _parametros_de(args):
     claves = ("tiempo", "cada", "ms", "semilla", "resolucion", "detalle",
               "velocidad", "mar", "continentes", "plumas", "erosion",
-              "empuje", "momento", "rigidez")
+              "empuje", "momento", "rigidez", "deriva")
     return {k: getattr(args, k) for k in claves}
 
 def _aplicar_parametros(p):
     global NX, NY, VEL_SCALE, SEA_LEVEL, CONT_UMBRAL, PLUME_EVERY
-    global EROSION, RIDGE_PUSH, MOMENTUM, RIGID
+    global EROSION, RIDGE_PUSH, MOMENTUM, RIGID, DERIVA
     NX = NY = int(p["resolucion"])
     VEL_SCALE, SEA_LEVEL = float(p["velocidad"]), float(p["mar"])
     CONT_UMBRAL = float(p["continentes"])
     PLUME_EVERY, EROSION = max(int(p["plumas"]), 1), float(p["erosion"])
     RIDGE_PUSH, MOMENTUM = float(p["empuje"]), float(p["momento"])
     RIGID = min(max(float(p["rigidez"]), 0.0), 1.0)
+    # .get: los mundos guardados antes de este dial no traen la clave
+    DERIVA = float(p.get("deriva", DERIVA))
 
 def _crear_mundo(args):
     from datetime import datetime
@@ -643,8 +1443,9 @@ def guardar_frame(carpeta, paso, mantle, crust, boundary):
         carpeta / "frames" / f"{paso:06d}.npz",
         meta=json.dumps(meta), T=mantle.T,
         **{k: getattr(crust, k) for k in CAMPOS_ESTADO},
-        # derivados solo para re-renderizar (media precision basta)
-        foreland=crust.foreland.astype(f16), dorsal=crust.dorsal.astype(f16),
+        # derivados solo para re-renderizar (media precision basta); dorsal ya
+        # va en CAMPOS_ESTADO (f64). fosa = eje delgado de la fosa para el mapa
+        foreland=crust.foreland.astype(f16), fosa=crust.fosa.astype(f16),
         rift=crust.rift.astype(f16),
         va=crust.volcano_arc.astype(f16), vh=crust.volcano_hot.astype(f16),
         boundary=boundary.astype(f16),
@@ -653,8 +1454,8 @@ def guardar_frame(carpeta, paso, mantle, crust, boundary):
 def _simular(mantle, crust, pasos, cada, carpeta=None, detalle=None,
              paso0=0, sink=None):
     """Corre la simulacion; si detalle no es None devuelve los frames
-    renderizados (mapa y placas); si carpeta no es None guarda el estado."""
-    frames_m, frames_p, boundary = [], [], None
+    renderizados (mapa, placas y manto); si carpeta no es None guarda el estado."""
+    frames_m, frames_p, frames_ma, boundary = [], [], [], None
     for i in range(paso0, paso0 + pasos):
         u, v = mantle.step(sink)
         boundary = crust.step(u, v, mantle.hot)
@@ -665,16 +1466,18 @@ def _simular(mantle, crust, pasos, cada, carpeta=None, detalle=None,
                 vol = ((crust.volcano_arc, 0.003, 3), (crust.volcano_hot, 0.012, 2))
                 frames_m.append(render(elev, boundary, vol))
                 frames_p.append(render_placas(crust, boundary, elev))
+                frames_ma.append(render_manto(mantle.T, mantle.plumes))
             if carpeta is not None:
                 guardar_frame(carpeta, i, mantle, crust, boundary)
         rel = i - paso0
         if rel % 200 == 0 and rel:
             print(f"  paso {rel}/{pasos}...")
-    return frames_m, frames_p, boundary
+    return frames_m, frames_p, frames_ma, boundary
 
-def _guardar_gifs(carpeta, frames_m, frames_p, ms):
+def _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, ms):
     frames_m[-1].save(carpeta / "mapa_final.png")
-    for nombre, fr in (("mapa.gif", frames_m), ("placas.gif", frames_p)):
+    for nombre, fr in (("mapa.gif", frames_m), ("placas.gif", frames_p),
+                       ("manto.gif", frames_ma)):
         fr[0].save(carpeta / nombre, save_all=True, append_images=fr[1:],
                    duration=ms, loop=0)
 
@@ -687,7 +1490,7 @@ def reconstruir(ruta):
     ficheros = sorted((carpeta / "frames").glob("*.npz"))
     if not ficheros:
         raise SystemExit(f"no hay frames guardados en {carpeta}/frames")
-    frames_m, frames_p = [], []
+    frames_m, frames_p, frames_ma = [], [], []
     for fz in ficheros:
         d = np.load(fz)
         c = Crust.__new__(Crust)   # cascaron: solo los campos del render
@@ -696,6 +1499,8 @@ def reconstruir(ruta):
         c.trench = d["trench"].astype(float)
         c.foreland = d["foreland"].astype(float)
         c.dorsal = d["dorsal"].astype(float)
+        # fosa: eje delgado; mundos previos a este campo caen a la banda trench
+        c.fosa = d["fosa"].astype(float) if "fosa" in d.files else c.trench
         c.rift = d["rift"].astype(float)
         c.volcano_arc = d["va"].astype(float)
         c.volcano_hot = d["vh"].astype(float)
@@ -705,8 +1510,10 @@ def reconstruir(ruta):
         vol = ((c.volcano_arc, 0.003, 3), (c.volcano_hot, 0.012, 2))
         frames_m.append(render(elev, boundary, vol))
         frames_p.append(render_placas(c, boundary, elev))
-    _guardar_gifs(carpeta, frames_m, frames_p, p["ms"])
-    print(f"-> {carpeta}/mapa.gif, placas.gif y mapa_final.png "
+        meta = json.loads(d["meta"].item())
+        frames_ma.append(render_manto(d["T"].astype(float), meta["plumes"]))
+    _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, p["ms"])
+    print(f"-> {carpeta}/mapa.gif, placas.gif, manto.gif y mapa_final.png "
           f"({len(frames_m)} frames reconstruidos)")
 
 def continuar(ruta, pasos, desde=None):
@@ -738,7 +1545,10 @@ def continuar(ruta, pasos, desde=None):
     mantle.t = meta["t"]
     mantle.plumes = meta["plumes"]
     for k in CAMPOS_ESTADO:
-        setattr(crust, k, d[k].astype(float))
+        # mundos guardados antes del impulso de placa no traen Qu/Qv: se
+        # dejan en None y el primer paso los siembra desde el empuje actual
+        if k in d.files:
+            setattr(crust, k, d[k].astype(float))
     crust.trench = d["trench"].astype(float)
     base = np.load(carpeta / "base.npz")
     crust.D0 = base["D0"].astype(float)
@@ -805,6 +1615,11 @@ def main():
                         "rumbo mas sostenido, colisiones mas decididas)")
     g.add_argument("--rigidez", type=float, default=RIGID, metavar="G",
                    help="rigidez de placa: 0=fluido, 1=balsa rigida")
+    g.add_argument("--deriva", type=float, default=DERIVA, metavar="D",
+                   help="ganancia de deriva continental: cuanto remolcan a "
+                        "cada continente su margen oceanico y el manto "
+                        "(1=solo la media del manto; con el valor por defecto "
+                        "el continente viaja a la velocidad de su placa)")
     m = p.add_argument_group("mundos", "almacenamiento por frame para "
                              "reconstruir o retomar simulaciones")
     m.add_argument("--datos", action="store_true",
@@ -838,7 +1653,7 @@ def main():
         np.savez_compressed(carpeta / "base.npz", D0=crust.D0,
                             F_total=crust.F_total)
     t0 = time.time()
-    frames_m, frames_p, boundary = _simular(
+    frames_m, frames_p, frames_ma, boundary = _simular(
         mantle, crust, args.tiempo, args.cada, carpeta,
         None if args.sin_gif else args.detalle)
     dt = time.time() - t0
@@ -858,11 +1673,16 @@ def main():
         frames_p[0].save(gifp, save_all=True, append_images=frames_p[1:],
                          duration=args.ms, loop=0)
         print(f"-> {gifp} (placas, deriva y simbologia)")
+        gifma = f"{args.salida}_manto.gif"
+        frames_ma[0].save(gifma, save_all=True, append_images=frames_ma[1:],
+                          duration=args.ms, loop=0)
+        print(f"-> {gifma} (manto: plumas y anomalia termica)")
     if carpeta:
         shutil.copy(png, carpeta / "mapa_final.png")
         if not args.sin_gif:
             shutil.copy(gif, carpeta / "mapa.gif")
             shutil.copy(gifp, carpeta / "placas.gif")
+            shutil.copy(gifma, carpeta / "manto.gif")
         tam = sum(f.stat().st_size for f in carpeta.rglob("*") if f.is_file()) / 1e6
         print(f"-> {carpeta}/ (estado por frame, {tam:.0f} MB; "
               f"--reconstruir/--continuar para retomarlo)")

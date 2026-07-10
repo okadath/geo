@@ -100,6 +100,10 @@ del fondo), `Pu/Pv` (momento), `D` (detalle), `trench`, `foreland`,
 | `LGRID` | 64 | malla reducida para etiquetar placas | |
 | `MOMENTUM` | 0.02 | relajación del rumbo al manto | memoria de rumbo τ = 1/0.02 = 50 pasos |
 | `RIDGE_PUSH` | 0.15 | empuje pendiente-abajo desde las dorsales | amplificado ×50 en estado estacionario (§4.3) |
+| `DERIVA` | 6.0 | ganancia de la traslación de balsa (CLI `--deriva`) | compensa la cancelación de la media del manto bajo la placa; 1 = solo la media (§4.2b) |
+| `ARRASTRE` | 0.02 | relajación del impulso de placa hacia el empuje | inercia de deriva τ = 50 pasos: la placa cruza reorganizaciones del manto (§4.2b) |
+| `FUERZA_PLACA` | 5.0 | ganancia de las fuerzas de borde integradas por placa | sostienen ×`FUERZA_PLACA/ARRASTRE` = 250 su media territorial (§4.2b) |
+| `HALO_PLACA` | 6 | celdas LGRID de banda oceánica adherida a la balsa | remolque del margen pasivo; una banda, NO todo el océano (§4.2b) |
 
 Constantes "enterradas" importantes (no están arriba del archivo):
 
@@ -342,10 +346,11 @@ sola velocidad.
 3. Velocidad de balsa por placa p: la media
    `ū_p = (1/|p|) Σ_{i∈p} Pu_i` (vía `np.bincount`). No es arbitraria: la
    traslación rígida `c` que minimiza `Σ_{i∈p} |v_i − c|²` es exactamente la
-   media — es el ajuste L2-óptimo de un movimiento rígido sin rotación (la
-   rotación de placa no se modela; sería el siguiente término del ajuste).
-   Nota: la media se toma sobre el **momento** `Pu/Pv` (§4.2), no sobre la
-   velocidad instantánea del manto.
+   media — es el ajuste L2-óptimo de la parte traslacional de un movimiento
+   rígido; la parte rotacional se ajusta aparte (§4.2b). Notas: la media se
+   toma sobre el **momento** `Pu/Pv` (§4.2), no sobre la velocidad
+   instantánea del manto, y sobre el **territorio** de la placa (continente
+   + su océano por Voronoi, §4.2b), no solo sobre la huella continental.
 4. Rellenar cada placa con su media, subir a 256² y mezclar:
 
 ```
@@ -408,6 +413,90 @@ una perturbación del manto más corta que ~τ (una pluma joven) casi no
 desvía el rumbo; bajar `MOMENTUM` da placas más tercas. Es el análogo barato
 de la inercia de placa / slab pull.
 
+### 4.2b Deriva continental sostenida (remolque oceánico, rotación e impulso de placa)
+
+**Por qué se agregó**: el usuario reportó que "los continentes tienen cierta
+inercia a no moverse de acuerdo a su placa; el efecto de deriva similar a los
+continentes de nuestro planeta no se aprecia". Diagnóstico medido: la
+velocidad media sobre continente era *menor* que sobre océano (~0.1 vs ~0.25
+px/paso) y el rumbo vagabundeaba (rectitud de camino ~0.3). Tres causas, tres
+remedios:
+
+1. **Remolque oceánico (`HALO_PLACA = 6`).** La media de balsa se tomaba
+   solo sobre la huella continental — y un continente flota casi siempre
+   sobre la línea de **convergencia** entre celdas de convección (por eso se
+   acumuló ahí): la media del manto bajo él se cancela ≈ 0. En la Tierra la
+   placa no termina en la costa: Sudamérica lleva medio Atlántico sur
+   adherido y ese fondo la remolca. Aquí: la etiqueta de cada continente se
+   dilata `HALO_PLACA` celdas `LGRID` sobre el océano vecino y la media de
+   `Pu/Pv` se toma sobre esa huella extendida. **Una banda, NO todo el
+   océano por Voronoi** — se probó y NO funciona: la suma global de
+   velocidades es 0 (incompresibilidad, `u = ∇φ` periódico), así que
+   promediar territorios completos diluye el empuje de vuelta a ~0.
+2. **Ganancia de deriva (`DERIVA = 6`, CLI `--deriva`).** Aun con banda, la
+   media se diluye (el océano converge casi simétrico sobre un continente ya
+   asentado en su atractor). La traslación de balsa se multiplica por
+   `DERIVA`: con 6, la velocidad continental media pasa de ~0.55× a ~0.9× la
+   del océano circundante — el continente se mueve *con* su placa (la queja
+   original). Escala sublineal (×3 de ganancia ≈ ×1.5 de velocidad): hay
+   retroalimentación negativa porque el continente más rápido se sale de la
+   región de empuje coherente. Con 1 se recupera el comportamiento anterior.
+3. **Motor de fuerzas de borde (`FUERZA_PLACA = 5`, `fzx/fzy`).** Las
+   *velocidades* medias se cancelan, pero las **fuerzas** no: para una placa
+   con dorsal a un lado y fosa al otro, ridge push y slab pull apuntan
+   AMBOS de la dorsal a la fosa. Los incrementos de fuerza del paso (los
+   mismos que alimentan `Pu`, §4.3) se guardan en `fzx/fzy` y su media se
+   integra por placa sobre su **territorio Voronoi completo** (aquí sí:
+   las fuerzas de la dorsal propia viven lejos del margen). En estado
+   estacionario sostienen `FUERZA_PLACA/ARRASTRE = 250×` su media
+   territorial. Como el campo de edad `A` viaja con la placa, esta
+   asimetría es persistente y direccional: es el término tipo ciclo de
+   Wilson. (Medido: en placas grandes y viejas el balance de fuerzas es
+   casi neutro — como Eurasia — y dominan los términos 1–2.)
+4. **Impulso de placa (`Qu/Qv`, `ARRASTRE = 0.02`).** La velocidad de balsa
+   ya no se rederiva del manto cada paso: cada placa lleva un impulso propio
+   —un valor rígido por placa, almacenado en un campo del que su propio
+   territorio lo recupera al paso siguiente (el reetiquetado sigue al
+   material sin rastrear identidades)— que se relaja despacio hacia el
+   empuje actual:
+
+   ```
+   q ← (1 − ARRASTRE)·q̄_territorio + ARRASTRE·(DERIVA·ū_p) + FUERZA_PLACA·f̄_p
+   ```
+
+   Con τ = 1/ARRASTRE = 50 pasos, un continente en marcha atraviesa las
+   perturbaciones cortas del manto y termina su viaje hasta colisionar. Al
+   fusionarse dos placas sus impulsos se promedian por área: colisión
+   inelástica (verificado: el "rebote" que se veía en las métricas de
+   centroide era en realidad una fusión).
+
+**Límite medido (que quien retome esto no repita el camino):** el
+desplazamiento *neto* del continente mayor satura en ~20–25 px por ventana
+de 150 pasos para CUALQUIER combinación de ganancias (se barrió DERIVA
+3–9, FUERZA_PLACA 1–5, ARRASTRE 0.0025–0.02, PLUME_EVERY 70–240; menos
+plumas = menos vigor = MENOS deriva, no más). La causa es arquitectónica:
+los continentes son esclavos de los atractores (líneas de convergencia) de
+la convección, y los atractores mismos caminan al azar en escalas de ~150
+pasos. Hipótesis refutadas por experimento directo: NO es pinning del
+frente biestable de F (un frente advectado a 0.3 px/paso avanza 59/60 px
+con el término biestable activo), NO es falta de inercia (bajar ARRASTRE
+promedia un empuje que revierte a la media y encoge |Q|). Lo que sí
+mejora con estos cambios: velocidad continental ≈ la de su placa (antes
+~0.5×), rotación visible, y colisiones que se completan.
+
+**Rotación rígida (polo de Euler).** Además de trasladarse, cada placa gira:
+se ajusta por mínimos cuadrados la rotación alrededor del centroide toroidal
+(media circular por `bincount`),
+
+```
+ω_p = Σ_{i∈p} [r_x·(v−v̄) − r_y·(u−ū)] / Σ_{i∈p} |r|²
+```
+
+y se aplica `(u,v) += ω·(−r_y, r_x)`. El tope `|ω|·r_max ≤ 0.6·|q| + 0.02`
+impide que una placa chica con flujo ruidoso alrededor gire como remolino.
+La deriva deja de ser una traslación robótica: los continentes rotan
+mientras viajan, como India camino a Asia.
+
 ### 4.3 Empuje de dorsal (ridge push)
 
 **Por qué se agregó**: el usuario pidió que "plumas o cordilleras que surgen
@@ -441,6 +530,22 @@ sostenida. Ese factor es el que empuja las dos orillas de un rift a través
 de todo el océano hasta colisionar en el lado opuesto del toro; aplicado a
 la velocidad instantánea, el empuje sería 50 veces más débil e invisible.
 
+**Tirón de losa en superficie (`SLAB_PULL_SURF = 0.08`)**: el término
+complementario. La fosa (blurreada en 4 pasadas y normalizada por su
+máximo) define un pozo hacia el que las placas son jaladas:
+
+```
+(Pu, Pv) += SLAB_PULL_SURF · ∇(fosa_blur / max(fosa_blur))
+```
+
+Con la misma amplificación ×50 del estado estacionario. Garantiza la regla
+física: cuando una dorsal **se apaga** porque su pluma murió, esa zona deja
+de crear corteza y de empujar (el ridge push decae solo al envejecer `A`);
+a partir de ahí son los movimientos de las **otras** placas —la subducción
+en sus márgenes y el arrastre del manto— los que siguen moviendo esa placa.
+Una placa solo desaparece si es subducida por completo: `F` se conserva y
+solo la corteza oceánica se consume (§4.4).
+
 ### 4.4 Orogenia y subducción (la asimetría clave)
 
 **Geología (pedida explícitamente por el usuario)**: solo la corteza
@@ -451,9 +556,13 @@ cordillera costera (Andes).
 **Matemática**: crecimiento/consumo **multiplicativo** en C:
 
 ```
-dC/dt = −1.5·conv·C    donde F < 0.4   (subducción: el océano se consume)
+dC/dt = −1.5·subd·C    donde F < 0.4   (subducción: solo el océano VIEJO se consume)
 dC/dt = +1.8·conv·C    donde F ≥ 0.4   (orogenia: el continente se apila)
 ```
+
+donde `subd = max(conv − 0.008, 0) · madura · lejos` es la convergencia con
+las compuertas de subducción de §4.11 (fondo maduro, lejos de la dorsal,
+por encima del umbral de límite de placa).
 
 Al ser lineal en C, la solución bajo convergencia sostenida es exponencial:
 `C(t) = C₀·exp(±k·∫conv dt)` — la corteza gruesa se engrosa más rápido, lo
@@ -474,7 +583,7 @@ cordillera debe crecer en el continental (`F` alto) y **desplazada tierra
 adentro**. Ambas cosas las hace una convolución:
 
 ```
-arc = G_σ * (conv·[F < 0.4])          blur shifts (1,2,3) ⇒ σ ≈ 2.4 px
+arc = G_σ * (subd·[F < 0.4])          blur shifts (1,2,3) ⇒ σ ≈ 2.4 px
 C  += 1.8 · arc · F · DT
 ```
 
@@ -605,16 +714,41 @@ duplicarlo en F rompía la conservación).
 
 **Matemática**: la edad `A` obedece `DA/Dt = 1` (cada parcela envejece un
 paso: advección semi-lagrangiana + `+DT`), con **renacimiento multiplicativo
-SOLO en el eje de la dorsal**. El eje se define como el núcleo más intenso
-de la divergencia (blur + normalización por percentil, adimensional):
+SOLO en el eje de la dorsal**. El eje se extrae como la **cresta** del campo
+de divergencia por supresión de no-máximos: un píxel pertenece al eje si es
+máximo local transversal (en x o en y, radio 2) del `opening` suavizado, con
+dos compuertas — vigor (`opn > 0.15·P98`, no es ruido en zona quieta) y
+fondo local (`opn > blur_ancho(opn)`, sobresale de su meseta):
 
 ```
-opn = blur²(opening) / P98(blur²(opening))
-dorsal = clip(opn − 0.75, 0) · 4          ~1 en el eje, 0 fuera
+opn    = blur⁴(opening)
+eje    = NMS_x(opn) | NMS_y(opn), con opn > 0.15·P98 y opn > fondo
+dorsal = dilata¹(eje) · clip(opn/P98 · 1.5, 0, 1)   línea de 2-3 px
 A ← A · clip(1 − 3·dorsal, 0.02, 1)
 rift = clip(opening − 0.006, 0)           desgarre continental (mismo umbral
                                           que el desgarramiento de F, §4.8)
 ```
+
+**Por qué NMS y no umbral**: la dorsal NO es la pluma. La pluma es un punto
+caliente; la dorsal es el límite divergente entre celdas de convección que
+**une** las plumas. Un umbral absoluto (la versión anterior: percentil 98
+− 0.75) solo conservaba los núcleos más intensos — manchas redondas sobre
+cada cabeza de pluma, eje fragmentado en ~50 trozos. La cresta por NMS
+sigue el máximo transversal también en los tramos débiles entre plumas:
+tramos conexos de ~700-1000 px que recorren el océano, como las dorsales
+reales (medido a 250-500 pasos, semillas 7 y 21).
+
+**Pluma solitaria ≠ dorsal**: una pluma sola produce mucha superficie nueva
+(domo térmico, gran provincia ígnea) pero su anillo divergente no es un eje
+de expansión organizado. Tras el NMS se etiquetan las cabezas de pluma
+(componentes conexas de `hot > 0.15` en la malla del manto) y, para cada
+una, se comprueba si está **acompañada**: otra pluma activa a menos de
+`18·esc` px (esc = NY/48) o eje de dorsal real fuera de su propio anillo
+(masa de `dorsal` en el anillo `10·esc < d < 18·esc` mayor que `15·NY/256`).
+Si está aislada, la dorsal se apaga suavemente en su disco
+(`dorsal ·= clip(d²/(9·esc)², 0, 1)`) — con ello tampoco rejuvenece la edad
+ni pinta símbolo: solo cuando hay más plumas o dorsales cerca el sistema se
+conecta y el eje sobrevive.
 
 **Historia (corrección importante)**: la versión original rejuvenecía con
 cualquier divergencia (`A ← A·clip(1 − 12·opening)`), y como el ruido de
@@ -651,9 +785,27 @@ dónde estuvo cada dorsal.
 
 ### 4.11 Fosas de subducción
 
-`trench = conv·[F < 0.4]` — convergencia sobre corteza oceánica. Tres usos:
-depresión batimétrica en el render (`elev −= TRENCH·trench`, el rasgo oscuro
-que bordea los márgenes activos), semilla de los arcos de islas (§4.12), y
+```
+madura = clip(A/AGE_TAU − 1, 0, 1)        el fondo joven es flotante: solo
+                                          subduce con A > AGE_TAU (pleno a 2·)
+lejos  = clip(1 − 5·blur³(dorsal), 0, 1)  nunca junto al eje divergente
+subd   = max(conv − 0.008, 0)·madura·lejos
+trench = subd·[F < 0.4]
+```
+
+**Por qué las compuertas** (corrección pedida por el usuario): la versión
+anterior (`trench = conv·[F<0.4]`) abría fosa con CUALQUIER convergencia
+sobre océano; como cada pluma genera un anillo de convergencia alrededor de
+su divergencia, salía una fosa pegada a cada dorsal (edad mediana del fondo
+en fosa: ~53 pasos — fondo recién creado). Física real: solo la litosfera
+oceánica **vieja y densa** subduce; el fondo joven que rodea la dorsal
+flota, y un **margen pasivo** (continente empujado por el fondo de SU misma
+placa, tipo Atlántico) no tiene salto de velocidad ⇒ queda bajo el umbral y
+no abre fosa. Fosa ⇒ límite de placas con subducción real. Tras el cambio,
+la edad del fondo en fosa es p10 ≈ 85-155, p50 ≈ 130-290 (fondo maduro).
+`subd` es también lo que consume corteza (§4.4) y alimenta el arco (§4.5).
+Tres usos de `trench`: depresión batimétrica en el render
+(`elev −= TRENCH·trench`), semilla de los arcos de islas (§4.12), y
 retroalimentación `sink` al manto (§3.5).
 
 ### 4.12 Volcanismo: puntos calientes, islas y arcos
@@ -742,11 +894,15 @@ CLI `-d/--detalle`.
 ### 4.15 Bordes de placa (`boundary`, valor de retorno)
 
 ```
-boundary = (|div| + shear) · (1 − clip(30·hs, 0, 0.95))
+boundary = (|div| + shear) · (1 − clip(30·hs, 0, 0.95)) + 3·volcano_arc
 ```
 
 Suma de los dos modos deformantes de §4.6 (la actividad total del límite de
-placa), atenuada ≥95% sobre cabezas de pluma.
+placa), atenuada ≥95% sobre cabezas de pluma. El término `3·volcano_arc`
+suma los **arcos volcánicos** (continentales y de islas) y con ellos las
+cordilleras nacidas de la colisión: también son límite de placa —marcan la
+sutura o el margen activo— tanto en los trazos rojos del mapa como en el
+campo de deformación que usa la segmentación del mapa de placas (§5.3).
 **Trampa resuelta**: la atenuación debe aplicarse **antes** de la
 normalización por percentil del render — una versión previa atenuaba
 después, y como el percentil re-escala todo el campo por su rango, las
@@ -818,29 +974,145 @@ altura (`0.04` en el mar, hasta `0.15` en cumbre): montaña rugosa, mar liso.
 ### 5.3 `render_placas(crust, boundary, elev)` — el mapa tectónico
 
 Segunda vista renderizada por frame (`NOMBRE_placas.gif`): fondo pálido
-(70% blanco + 30% del tinte hipsométrico) con simbología encima:
+(70% blanco + 30% del tinte hipsométrico), **teselación en placas** y
+simbología encima:
 
-- **Límites de placa**: mismo criterio que el mapa (blur + percentil 98).
+- **Placas (relleno de color)**: `_segmentar_placas` particiona TODO el
+  mapa en placas desde el campo de velocidad (la definición física: una
+  placa es una región que se mueve coherente). Dos pasos, en malla 64²:
+  1. **Superpixeles tipo SLIC** sobre `(u, v, posición)` (36 centroides,
+     8 iteraciones frías / 4 con arranque en caliente): regiones compactas
+     cuyas fronteras caen donde la velocidad salta.
+  2. **Fusión (union-find)**: dos vecinas se unen si la deformación media
+     de su frontera común es < 0.5 y sus velocidades medias difieren
+     < 1.5 std. El campo de deformación que ve la fusión es
+     `_linea_placa(boundary) + 3·blur²(dorsal + rift/0.008 + fosa)`: los
+     **ejes físicos** (dorsal, fosa, rift) son límites infranqueables, y
+     donde NO hay límite real la fusión es agresiva (la tolerancia de
+     velocidad alta solo evita unir saltos cinemáticos enormes). Regla
+     resultante: todo lo que hay entre la dorsal y el continente (margen
+     pasivo, sin fosa) es la MISMA placa, y el interior de un continente
+     también, salvo que una colisión o un rift de pluma nueva lo esté
+     partiendo ⇒ pocas placas grandes + medianas + microplacas, como en la
+     Tierra.
+  3. **Imposición de los ejes físicos como límites de placa** (paso añadido
+     tras el upsample, a resolución completa). La velocidad NO basta para
+     separar los dos flancos de una dorsal joven o de baja apertura: la
+     fusión los deja en la MISMA placa y la dorsal queda **dentro** de la
+     placa — geológicamente imposible (un límite divergente/convergente ES,
+     por definición, el borde entre dos placas). Se midió: 10–18 % de los
+     píxeles de dorsal caían a > 3 px de cualquier borde (hasta 30 px). El
+     arreglo (funciones `_cerrar_red`/`_subdividir`, §5.3.1) impone la regla:
+     - **Filtro de motas**: los fragmentos de eje de < 6 px son ruido
+       numérico sin dirección definible y se excluyen de la red de cortes.
+     - `_cerrar_red`: cada **fragmento** de eje se prolonga por TODOS sus
+       cabos — las puntas de rama por masa local (`_cabos`, umbral relativo
+       a la mediana del propio fragmento) más los dos **extremos geodésicos**
+       (`_extremos`, doble BFS = diámetro del grafo) como respaldo para
+       fragmentos cortos o gruesos — hasta la red más cercana (OTRO
+       fragmento de eje o un borde de placa). Cada cabo camina con **sesgo
+       de rumbo** (`_caminar`: minimiza `dist_a_red − 1.5·avance` sobre los
+       8 vecinos, con inercia de dirección): los dos cabos salen en sentidos
+       OPUESTOS y tocan la red en puntos DISTINTOS, así el fragmento + sus
+       puentes forman un corte cerrado que separa dos placas. (El puenteo
+       anterior por camino más corto llevaba ambos cabos al MISMO punto:
+       árbol colgante, sin separación — de ahí el 10–18 % residual.) Es la
+       *"continuidad hasta la placa o dorsal más cercana"* pedida
+       explícitamente por el usuario: una dorsal partida en tramos se une en
+       una línea continua (los conectores son las transformantes rojas).
+       Todo el trabajo por fragmento corre en una **ventana toroidal
+       recortada** (`_zona`/`_puentes_de`, BFS `plano` sin envolver): ~1.3 s
+       por frame a 256² en vez de ~3 s con BFS de mapa completo.
+     - `_subdividir`: se quitan los píxeles de eje, se re-etiquetan las
+       componentes conexas de cada placa (los dos flancos de una dorsal que
+       ahora la cruza entera quedan separados) y los píxeles del eje se
+       re-asignan al vecino más cercano por BFS. La dorsal deja de estar
+       dentro de una placa y pasa a **SER** el borde entre las dos.
+     - **Verificación y reintento**: tras subdividir se comprueba fragmento
+       por fragmento que quedó pegado al borde final (≥ 85 % de sus píxeles
+       a ≤ 3 px); el que no —árbol colgante residual, o fragmento solo
+       cruzado transversalmente por un borde ajeno— se prolonga casi RECTO
+       (`rumbo=6`, `inercia=0.9`) hasta la red y solo sus placas se
+       re-particionan (`_subdividir(ids=…)`, reintento barato).
+     Resultado medido (pasos 200–500, semilla 7): **100 % de los fragmentos
+     de eje separan ≥ 2 placas**; distancia media eje→borde 1.3 px (el
+     residual > 3 px es el grosor de la banda difuminada de la fosa, no ejes
+     interiores). El coste es un número de etiquetas alto (~300–450 a 256²)
+     porque el campo de ejes es denso y ramificado, pero **visualmente** se
+     leen ~20 placas: el color heredado funde las esquirlas y solo los ejes
+     largos separan colores distintos.
+  El upsample a resolución completa es bilineal por indicador de placa +
+  argmax (bordes curvos, no escalera). NO se intentó segmentar por líneas
+  de límite cerradas ni watershed de deformación: el océano del modelo es
+  un fluido suave y sus "crestas" de deformación no cierran regiones (se
+  probó: salía UNA placa gigante del 98% del mapa). **Tampoco se intentó
+  reducir el número de etiquetas fusionando placas a través de ejes débiles
+  o cortos**: se probó y colapsa a UNA placa gigante (la fusión es
+  transitiva — unir A-B por un borde débil y B-C por otro encadena todo el
+  mapa), el mismo fallo del párrafo anterior. La subdivisión por ejes es
+  aditiva (nunca fusiona), por eso es estable.
+  **Coherencia temporal** (`_SEG_PREV`, memoria solo-render entre frames):
+  EMA (τ≈2.5 frames) de la velocidad/deformación que ve el segmentador,
+  arranque en caliente de los centroides, y color heredado por
+  solapamiento >35% con la placa del frame anterior (la mayor hereda; una
+  placa que se parte no duplica color). Sin esto el GIF parpadea.
+- **Límite genérico (rojo)**: el contorno de la teselación (donde cambia
+  la etiqueta de placa) — transformantes y suturas. **El límite ES la
+  dorsal y ES la fosa**: el contorno genérico se borra a ≤6 px de un eje
+  con tipo (dorsal, rift, fosa) para no dibujar una línea roja paralela al
+  lado del límite verdadero; los ejes se pintan con su propio color.
 - **Costa**: borde morfológico de `F > 0.5` (tierra menos su erosión de
   1 px), gris.
 - **Dorsal (ámbar)** y **rift continental (naranja)**: los MISMOS campos que
   usa la física (§4.10) — `crust.dorsal > 0.3` sobre océano (el eje
   divergente donde renace el fondo) y `crust.rift > 0.008` sobre continente
   (solo el desgarre vigoroso que de verdad parte la placa, no el roce de
-  los márgenes). Símbolo y simulación salen del mismo cálculo. Una versión
-  anterior pintaba la dorsal como "el 8% más joven de la edad" — proxy
-  incorrecto: marcaba fondo rejuvenecido por hotspots y bandas pegadas a
-  las fosas.
+  los márgenes) — **recortados al borde de placa** (`& _dilata(borde, 2)`).
+  Como el paso 3 de la segmentación ya puso un borde sobre cada eje, dibujar
+  solo `eje ∩ borde` garantiza por construcción que **ninguna dorsal aparece
+  dentro de una placa**: el resto (algún cabo residual que el puente no
+  cerró) simplemente no se pinta. Símbolo y simulación salen del mismo
+  cálculo. Una versión anterior pintaba la dorsal como "el 8% más joven de
+  la edad" — proxy incorrecto: marcaba fondo rejuvenecido por hotspots y
+  bandas pegadas a las fosas; otra la pintaba sin recortar al borde y las
+  dorsales aparecían atravesando el interior de las placas.
 - **Fosa (violeta)**: `_linea_placa(trench) > 0.75` (blur + percentil 98,
-  el mismo tratamiento que los bordes rojos).
+  el mismo tratamiento que los bordes rojos), igualmente recortada al borde
+  de placa.
 - **Cadenas montañosas (marrón)**: `elev > 0.20`.
 - **Flechas de deriva**: la velocidad final de placa (`u_vis/v_vis`, la
   velocidad post-mezcla de rigidez que realmente advecta la corteza)
   promediada en ventanas de 5×5 sobre una malla gruesa (~11×11 flechas);
   largo ∝ |v| (×14, recortado), trazo blanco debajo + oscuro encima, punta
   en dos segmentos a ±0.5 rad. Sin flecha si |v|·14 < 2.5 px (placa quieta).
-- **Leyenda** (PIL ImageDraw + fuente por defecto) en la esquina inferior
-  izquierda.
+- **Leyenda**: vive en la página web (`web.html`, bloque `#leyenda`), NO
+  dentro de la imagen — el GIF queda limpio y la leyenda es texto real.
+
+### 5.4 `render_manto(T, plumes)` — el mapa del manto
+
+Tercera vista por frame (`NOMBRE_manto.gif`, también en la web): la
+anomalía térmica del manto **separada por capas**,
+
+```
+an   = T − media_horizontal(T)
+sube = clip( media_z(an, capas 1..MZ/2)      / 0.30, 0, 1)   plumas (abajo)
+baja = clip( media_z(an, capas MZ−3..MZ−2)   / 0.20, −1, 0)  losas (arriba)
+a    = sube + baja
+```
+
+Las plumas viven en las capas bajas (ahí se inyecta su calor) y las zonas
+de hundimiento en las altas (el slab pull §3.5 enfría el manto superior
+bajo las fosas). Separar por capas evita un artefacto de la versión
+anterior (columna media única): la dorsal salía azul — pero la dorsal no
+es una bajada del manto, es el eje divergente en superficie, y queda
+neutra; el azul marca las verdaderas zonas de hundimiento, bajo las fosas.
+Paleta divergente (azul = losa fría que baja; oscuro = neutro;
+naranja→amarillo = pluma caliente que sube), más un **anillo blanco** en
+la posición de cada pluma activa
+(alfa ∝ su fade de §3, con copias toroidales para las que cruzan el borde).
+Se calcula **solo desde `T`** — sin depender de `w` ni del estado del paso —
+para que `--reconstruir` pueda regenerarlo desde los frames guardados
+(que almacenan `T` completo y las plumas en `meta`).
 
 ---
 
@@ -920,11 +1192,14 @@ frame a 256²; se controla con `-c`.
    la escala de w varía órdenes de magnitud; el percentil fija la fracción
    de área por construcción.
 8. **El halo excluye el núcleo de la fosa en los arcos de islas** (§4.12):
-   en el núcleo la subducción (−1.5·conv·C) gana al crecimiento del arco.
+   en el núcleo la subducción (−1.5·subd·C) gana al crecimiento del arco.
 9. **La atenuación de `boundary` sobre plumas va antes de normalizar**
    (§4.15): el percentil re-amplifica lo que se atenúe después.
 10. **Solo la corteza oceánica subduce** (`where(F < 0.4, …)`, §4.4):
-    invertirlo contradice el requisito central del usuario.
+    invertirlo contradice el requisito central del usuario. Y solo el fondo
+    oceánico **viejo** subduce (`subd = conv·madura·lejos`, §4.11): sin las
+    compuertas, cada pluma abre una fosa pegada a su propia dorsal y los
+    márgenes pasivos (misma placa) subducen — también pedido del usuario.
 11. **La cuenca de antepaís y las fosas viven en el render**, no en `C` — no
     las conviertas en modificaciones permanentes del espesor sin repensar la
     erosión.
@@ -939,6 +1214,16 @@ frame a 256²; se controla con `-c`.
     el estado del RNG** (§6.1): cualquier redondeo del estado (o restaurar
     `trench` en f16, que alimenta el slab pull) rompe la continuación
     bit-exacta.
+15. **La dorsal y la fosa SON límites de placa, nunca quedan en el interior**
+    (§5.3, paso 3): la segmentación subdivide cada placa por sus ejes
+    (`_cerrar_red` + `_subdividir` + verificación con reintento) y los
+    símbolos se dibujan recortados al borde (`eje ∩ _dilata(borde,2)`). Es
+    solo-render (no toca la física ni la reanudación). NO reduzcas el número
+    de etiquetas fusionando a través de ejes: la fusión es transitiva y
+    colapsa a una placa gigante — la subdivisión es aditiva a propósito. NO
+    vuelvas al puenteo por camino más corto puro (sin sesgo de rumbo): los
+    dos cabos de un fragmento llegan al mismo punto y el corte no separa
+    nada. Si el campo de ejes cambia (§4.10), este paso lo sigue solo.
 
 ---
 

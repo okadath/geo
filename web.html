@@ -29,6 +29,24 @@
   }
   h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase;
        letter-spacing: .08em; color: #8090a5; font-weight: 600; }
+  /* sección plegable (misma caja que <section>) */
+  details.seccion {
+    background: var(--panel); border: 1px solid var(--borde);
+    border-radius: 12px; padding: 0 18px;
+  }
+  details.seccion > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px; padding: 18px 0;
+    font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+    color: #8090a5; font-weight: 600;
+  }
+  details.seccion > summary::-webkit-details-marker { display: none; }
+  details.seccion > summary::before {
+    content: "▸"; font-size: 11px; transition: transform .15s; color: var(--acento);
+  }
+  details.seccion[open] > summary::before { transform: rotate(90deg); }
+  details.seccion > summary + * { margin-top: 4px; }
+  details.seccion > :last-child { margin-bottom: 18px; }
   .control { margin-bottom: 14px; }
   .control label { display: flex; justify-content: space-between; font-size: 14px; }
   .control label output { color: var(--acento); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -80,6 +98,21 @@
   #estado { font-size: 13.5px; color: #8090a5; }
   #estado.error { color: var(--rojo); }
   pre#log { font-size: 12px; color: #8090a5; white-space: pre-wrap; margin: 8px 0 0; }
+  /* leyenda del mapa de placas (vive aquí, no dentro del GIF) */
+  #leyenda {
+    display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px;
+    padding: 10px 12px; background: var(--fondo); border: 1px solid var(--borde);
+    border-radius: 8px; font-size: 12.5px; color: var(--texto);
+    max-width: 640px;
+  }
+  #leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+  #leyenda i.linea { display: inline-block; width: 18px; height: 4px;
+                     border-radius: 2px; }
+  #leyenda i.flecha { font-style: normal; font-weight: 700; }
+  #leyenda i.parche {
+    display: inline-block; width: 18px; height: 11px; border-radius: 3px;
+    background: linear-gradient(90deg, #a6cee3 33%, #b2df8a 33% 66%, #fdbf6f 66%);
+  }
 </style>
 </head>
 <body>
@@ -135,8 +168,8 @@
         ⟲ Valores por defecto</button>
     </section>
 
-    <section style="margin-top:18px">
-      <h2>Algoritmo</h2>
+    <details class="seccion" id="sec-algoritmo" style="margin-top:18px">
+      <summary>Algoritmo</summary>
 
       <div class="control">
         <label>Velocidad de deriva <output id="v-velocidad"></output></label>
@@ -185,15 +218,23 @@
         <input type="range" id="rigidez" min="0" max="1" step="0.05" value="0.85">
         <div class="pista">0 = corteza fluida · 1 = balsa rígida</div>
       </div>
-    </section>
+
+      <div class="control">
+        <label>Deriva continental <output id="v-deriva"></output></label>
+        <input type="range" id="deriva" min="1" max="10" step="0.5" value="6">
+        <div class="pista">cuánto remolcan al continente su margen oceánico y el manto</div>
+      </div>
+
+      <button id="defecto-algoritmo" style="width:100%"
+              title="restablece solo los diales del algoritmo">
+        ⟲ Valores por defecto del algoritmo</button>
+    </details>
 
     <section style="margin-top:18px">
-      <h2>Mundos guardados</h2>
-      <div class="fila" style="margin-bottom:10px">
-        <input type="text" id="nombre" placeholder="nombre del mundo…" maxlength="60">
-        <button id="guardar">Guardar</button>
-      </div>
-      <div id="mundos"><div class="vacio">Aún no hay mundos guardados.</div></div>
+      <h2>Corridas guardadas</h2>
+      <div class="pista" style="margin-bottom:10px">Cada GIF generado se guarda
+        en su carpeta con sello de tiempo. «Cargar» reabre sus imágenes.</div>
+      <div id="mundos"><div class="vacio">Aún no hay corridas guardadas.</div></div>
     </section>
   </div>
 
@@ -208,6 +249,20 @@
     <div class="pie-img" id="pie-gif" hidden>mapa</div>
     <img id="gifplacas" hidden alt="placas tectónicas">
     <div class="pie-img" id="pie-placas" hidden>placas, deriva y simbología</div>
+    <img id="gifmanto" hidden alt="plumas del manto">
+    <div class="pie-img" id="pie-manto" hidden>manto: naranja/amarillo = pluma
+      caliente que asciende, azul = zona de hundimiento (losa fría que subduce
+      bajo la fosa), ○ = pluma activa</div>
+    <div id="leyenda" hidden>
+      <span><i class="linea" style="background:#f0a519"></i> dorsal (divergente, crea corteza)</span>
+      <span><i class="linea" style="background:#ff6000"></i> rift continental</span>
+      <span><i class="linea" style="background:#69198c"></i> fosa (subducción)</span>
+      <span><i class="linea" style="background:#cd3c2d"></i> otro límite (transformante, sutura, arco volcánico)</span>
+      <span><i class="linea" style="background:#733e19"></i> cordillera</span>
+      <span><i class="linea" style="background:#5f5f5f"></i> línea de costa</span>
+      <span><i class="flecha">→</i> deriva de placa</span>
+      <span><i class="parche"></i> cada color de fondo = una placa</span>
+    </div>
     <div id="enlaces"></div>
     <pre id="log"></pre>
   </section>
@@ -217,7 +272,7 @@
 const $ = id => document.getElementById(id);
 const SLIDERS = ["tiempo", "cada", "ms", "resolucion", "detalle",
                  "velocidad", "mar", "continentes", "plumas",
-                 "erosion", "empuje", "momento", "rigidez"];
+                 "erosion", "empuje", "momento", "rigidez", "deriva"];
 let sondeo = null;
 let trabajo = null;
 
@@ -258,6 +313,14 @@ $("defecto").onclick = () => {
   refrescar();
 };
 
+// solo los diales del algoritmo (no toca imagen ni semilla)
+const ALGORITMO = ["velocidad", "mar", "continentes", "plumas",
+                   "erosion", "empuje", "momento", "rigidez", "deriva"];
+$("defecto-algoritmo").onclick = () => {
+  for (const k of ALGORITMO) $(k).value = $(k).defaultValue;
+  refrescar();
+};
+
 // ---- generar ----
 $("generar").onclick = async () => {
   const r = await fetch("/api/generar", {
@@ -269,7 +332,8 @@ $("generar").onclick = async () => {
   trabajo = id;
   $("generar").disabled = true;
   $("cancelar").hidden = false;
-  for (const el of ["gif", "pie-gif", "gifplacas", "pie-placas"])
+  for (const el of ["gif", "pie-gif", "gifplacas", "pie-placas",
+                    "gifmanto", "pie-manto", "leyenda"])
     $(el).hidden = true;
   $("enlaces").textContent = "";
   $("log").textContent = "";
@@ -296,16 +360,8 @@ $("generar").onclick = async () => {
     } else if (e.estado === "listo") {
       $("estado").textContent =
         `Listo en ${segs} s — semilla ${e.params.semilla}.`;
-      $("gif").src = e.gif + "?t=" + Date.now();
-      $("gif").hidden = $("pie-gif").hidden = false;
-      if (e.placas) {
-        $("gifplacas").src = e.placas + "?t=" + Date.now();
-        $("gifplacas").hidden = $("pie-placas").hidden = false;
-      }
-      $("enlaces").innerHTML =
-        `<a href="${e.gif}" download>descargar GIF</a>` +
-        (e.placas ? `<a href="${e.placas}" download>GIF de placas</a>` : "") +
-        (e.png ? `<a href="${e.png}" target="_blank">PNG final</a>` : "");
+      pintarImagenes(e);
+      cargarCorridas();          // la nueva corrida entra al historial
     } else {
       $("estado").textContent = "La simulación falló.";
       $("estado").className = "error";
@@ -325,51 +381,80 @@ $("cancelar").onclick = async () => {
   $("cancelar").disabled = false;
 };
 
-// ---- mundos guardados ----
-function pintarMundos(lista) {
+// ---- imágenes del resultado (compartido por «Generar» y «Cargar») ----
+// `d` trae {mapa, placas, manto, png}; muestra u oculta cada imagen y arma
+// los enlaces de descarga
+function pintarImagenes(d) {
+  const t = "?t=" + Date.now();
+  const par = (img, pie, url) => {
+    $(img).hidden = $(pie).hidden = !url;
+    if (url) $(img).src = url + t;
+  };
+  par("gif", "pie-gif", d.mapa);
+  $("gifplacas").hidden = $("pie-placas").hidden = $("leyenda").hidden = !d.placas;
+  if (d.placas) $("gifplacas").src = d.placas + t;
+  par("gifmanto", "pie-manto", d.manto);
+  $("enlaces").innerHTML =
+    (d.mapa ? `<a href="${d.mapa}" download>descargar GIF</a>` : "") +
+    (d.placas ? `<a href="${d.placas}" download>GIF de placas</a>` : "") +
+    (d.manto ? `<a href="${d.manto}" download>GIF del manto</a>` : "") +
+    (d.png ? `<a href="${d.png}" target="_blank">PNG final</a>` : "");
+}
+
+// ---- corridas guardadas (una carpeta con sello de tiempo por GIF) ----
+// 20260709-143022 -> 2026-07-09 14:30:22
+function etiquetaSello(s) {
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}` : s;
+}
+
+function mostrarCorrida(c) {
+  if (c.params && Object.keys(c.params).length) aplicar(c.params);
+  clearInterval(sondeo);
+  $("barra").hidden = true;
+  $("log").textContent = "";
+  $("estado").className = "";
+  $("estado").textContent =
+    `Corrida ${etiquetaSello(c.sello)}` +
+    (c.params && "semilla" in c.params ? ` — semilla ${c.params.semilla}.` : ".");
+  pintarImagenes(c);
+}
+
+function pintarCorridas(lista) {
   const caja = $("mundos");
   caja.textContent = "";
   if (!lista.length) {
-    caja.innerHTML = '<div class="vacio">Aún no hay mundos guardados.</div>';
+    caja.innerHTML = '<div class="vacio">Aún no hay corridas guardadas.</div>';
     return;
   }
-  for (const m of lista.slice().reverse()) {
-    const p = m.params;
+  for (const c of lista) {
+    const p = c.params || {};
     const div = document.createElement("div");
     div.className = "mundo";
     div.innerHTML =
       `<div class="datos"><div class="nombre"></div>
-         <div class="resumen">semilla ${p.semilla} · ${p.tiempo} pasos · ${p.resolucion}px · d${p.detalle}</div>
+         <div class="resumen">semilla ${p.semilla ?? "?"} · ${p.tiempo ?? "?"} pasos · ${p.resolucion ?? "?"}px</div>
        </div>
        <button class="cargar">Cargar</button>
        <button class="borrar" title="borrar">×</button>`;
-    div.querySelector(".nombre").textContent = m.nombre;
-    div.querySelector(".cargar").onclick = () => aplicar(p);
+    div.querySelector(".nombre").textContent = etiquetaSello(c.sello);
+    div.querySelector(".cargar").onclick = () => mostrarCorrida(c);
     div.querySelector(".borrar").onclick = async () => {
-      const r = await fetch("/api/semillas/borrar", {
+      const r = await fetch("/api/corridas/borrar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre: m.nombre }),
+        body: JSON.stringify({ sello: c.sello }),
       });
-      pintarMundos(await r.json());
+      pintarCorridas(await r.json());
     };
     caja.appendChild(div);
   }
 }
 
-$("guardar").onclick = async () => {
-  const nombre = $("nombre").value.trim();
-  if (!nombre) { $("nombre").focus(); return; }
-  const r = await fetch("/api/semillas", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nombre, params: parametros() }),
-  });
-  pintarMundos(await r.json());
-  $("nombre").value = "";
-};
-
-fetch("/api/semillas").then(r => r.json()).then(pintarMundos);
+function cargarCorridas() {
+  fetch("/api/corridas").then(r => r.json()).then(pintarCorridas);
+}
+cargarCorridas();
 </script>
 </body>
 </html>

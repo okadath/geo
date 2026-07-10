@@ -117,25 +117,28 @@ central dice qué rasgo geológico o proceso tectónico nace ahí.
 
 | # | Etapa (código) | Rasgo geológico / proceso | Ref. |
 |---|---|---|---|
-| B1 | Balsas rígidas (etiquetado de componentes + velocidad media por placa) | **Rigidez de placa** — las placas se mueven enteras; hace posibles las **colisiones continentales** | §4.1 |
+| B1 | Balsas rígidas (etiquetado de componentes + velocidad media por placa sobre su territorio Voronoi + rotación de Euler ajustada por mínimos cuadrados) | **Rigidez de placa** — las placas se mueven enteras (trasladan Y rotan); hace posibles las **colisiones continentales** | §4.1, §4.2b |
 | B2 | Momento `Pu/Pv` (media móvil exponencial, τ=50 pasos) | **Inercia de rumbo de placa** — la deriva sostiene su dirección aunque el manto cambie | §4.2 |
+| B2b | Remolque oceánico (media sobre continente + su océano Voronoi), ganancia `DERIVA` e impulso rígido `Qu/Qv` (τ=50 pasos) | **Deriva continental sostenida tipo Wegener** — el fondo oceánico adherido al margen pasivo remolca al continente; un continente en marcha conserva su impulso a través de reorganizaciones del manto y termina su viaje en colisión (fusión = colisión inelástica: los impulsos se promedian por área) | §4.2b |
 | B3 | Ridge push `P −= RIDGE_PUSH·∇(e^{−A/AGE_TAU})` | **Empuje de dorsal** — deslizamiento gravitacional desde la dorsal; motor de la deriva post-rift (ciclo de Wilson barato) | §4.3 |
 | B4 | Advección de C, F, A, Pu, Pv, D | **Deriva continental** propiamente dicha | §3.3 |
-| B5 | `transform = max(shear − 2.5·|div|, 0)` | **Fallas transformantes** (tipo San Andrés) — solo un valle de falla, sin orogenia ni fosa | §4.6 |
-| B6 | `dC/dt = −1.5·conv·C` donde F<0.4 | **Subducción** — solo la corteza oceánica se consume | §4.4 |
-| B7 | `dC/dt = +1.8·conv·C` donde F≥0.4 | **Orogenia de colisión** continente-continente (tipo **Himalaya**); el crecimiento multiplicativo focaliza cinturones estrechos | §4.4 |
-| B8 | Arco: blur de `conv·[F<0.4]` recortado por F | **Arco de subducción / cordillera costera** (tipo **Andes**), desplazada tierra adentro de la fosa | §4.5 |
-| B9 | DoG de la carga orogénica, solo render | **Cuenca de antepaís** (foreland basin) — foso flexural que se inunda como mar interior | §4.7 |
-| B10 | Rift `dC/dt = −1.2·opening·(C−C_OCEAN)` + desgarre de F con umbral 0.006 | **Rifting y ruptura continental** (tipo **Rift de África Oriental** → apertura de océano) | §4.8 |
-| B11 | Anti-difusión biestable + renormalización de F + piso de flotabilidad | **Flotabilidad continental** — los continentes se parten y deforman pero no desaparecen; costas nítidas | §4.9 |
-| B12 | Edad A: envejece advectada, renace SOLO en el eje divergente | **Dorsales meso-oceánicas** y **cuencas abisales viejas**; la subsidencia térmica da el perfil dorsal→abisal | §4.10 |
-| B13 | `trench = conv·[F<0.4]` | **Fosas de subducción** (tipo **Marianas/Perú-Chile**); también es el `sink` del slab pull | §4.11 |
-| B14 | Hotspots sobre océano con techo logístico C≤0.9 | **Islas volcánicas y cadenas de punto caliente** (tipo **Hawái**) | §4.12 |
-| B15 | Fosa difuminada × halo (excluye el núcleo) sobre océano | **Arcos de islas** intraoceánicos (tipo **Marianas**) | §4.12 |
-| B16 | `volcano_arc`, `volcano_hot` | **Volcanes activos** (puntos rojos: máximos locales de actividad) | §4.12 |
-| B17 | Detalle fractal advectado D (τ=10 pasos) | **Rugosidad del terreno / costas irregulares** (solo render) | §4.14 |
-| B18 | Erosión asimétrica (picos pierden 35%, valles reciben 100%) | **Erosión con rebote isostático** — por eso las cordilleras viejas persisten (tipo **Apalaches**) | §4.13 |
-| B19 | `boundary = (|div|+shear)·(atenuado sobre plumas)` | **Límites de placa** (el trazo rojo del mapa) | §4.15 |
+| B5 | Eje de dorsal: cresta de `opening` por supresión de no-máximos (máximo local transversal + compuertas de vigor y de fondo local) | **Dorsales meso-oceánicas continuas** — el eje NO es la pluma (un punto): es el límite divergente entre celdas de convección que UNE las plumas y recorre el océano en grandes tramos | §4.10 |
+| B6 | Compuertas de subducción: `subd = max(conv−0.008,0)·madura·lejos`, con `madura = clip(A/AGE_TAU−1)` y `lejos` = lejos del eje de dorsal | **Solo el fondo oceánico viejo (denso) subduce** — el fondo joven es flotante; un margen pasivo (misma placa, tipo Atlántico) no abre fosa | §4.11 |
+| B7 | `transform = max(shear − 2.5·|div|, 0)` | **Fallas transformantes** (tipo San Andrés) — solo un valle de falla, sin orogenia ni fosa | §4.6 |
+| B8 | `dC/dt = −1.5·subd·C` donde F<0.4 | **Subducción** — solo la corteza oceánica vieja se consume, en límites de placa reales | §4.4 |
+| B9 | `dC/dt = +1.8·conv·C` donde F≥0.4 | **Orogenia de colisión** continente-continente (tipo **Himalaya**); el crecimiento multiplicativo focaliza cinturones estrechos | §4.4 |
+| B10 | Arco: blur de `subd·[F<0.4]` recortado por F | **Arco de subducción / cordillera costera** (tipo **Andes**), desplazada tierra adentro de la fosa | §4.5 |
+| B11 | DoG de la carga orogénica, solo render | **Cuenca de antepaís** (foreland basin) — foso flexural que se inunda como mar interior | §4.7 |
+| B12 | Rift `dC/dt = −1.2·opening·(C−C_OCEAN)` + desgarre de F con umbral 0.006 | **Rifting y ruptura continental** (tipo **Rift de África Oriental** → apertura de océano) | §4.8 |
+| B13 | Anti-difusión biestable + renormalización de F + piso de flotabilidad | **Flotabilidad continental** — los continentes se parten y deforman pero no desaparecen; costas nítidas | §4.9 |
+| B14 | Edad A: envejece advectada, renace SOLO en el eje divergente | **Cuencas abisales viejas** y perfil dorsal→abisal por subsidencia térmica; A alimenta `madura` (B6) y el ridge push (B3) | §4.10 |
+| B15 | `trench = subd·[F<0.4]` | **Fosas de subducción** (tipo **Marianas/Perú-Chile**) SOLO en límites de placa con fondo viejo — nunca pegada a la dorsal; también es el `sink` del slab pull | §4.11 |
+| B16 | Hotspots sobre océano con techo logístico C≤0.9 | **Islas volcánicas y cadenas de punto caliente** (tipo **Hawái**) | §4.12 |
+| B17 | Fosa difuminada × halo (excluye el núcleo) sobre océano | **Arcos de islas** intraoceánicos (tipo **Marianas**) | §4.12 |
+| B18 | `volcano_arc`, `volcano_hot` | **Volcanes activos** (puntos rojos: máximos locales de actividad) | §4.12 |
+| B19 | Detalle fractal advectado D (τ=10 pasos) | **Rugosidad del terreno / costas irregulares** (solo render) | §4.14 |
+| B20 | Erosión asimétrica (picos pierden 35%, valles reciben 100%) | **Erosión con rebote isostático** — por eso las cordilleras viejas persisten (tipo **Apalaches**) | §4.13 |
+| B21 | `boundary = (|div|+shear)·(atenuado sobre plumas)` | **Límites de placa** (el trazo rojo del mapa) | §4.15 |
 
 ### Etapa C — Render (`elevation` → `render` / `render_placas`)
 
@@ -146,19 +149,22 @@ central dice qué rasgo geológico o proceso tectónico nace ahí.
 | C3 | Halo de F remapeado casi-binario | **Plataforma continental** con talud abrupto; los márgenes activos la pierden bajo la fosa | §5.1 |
 | C4 | `elev −= TRENCH·trench`, `elev −= 14·foreland` | Batimetría de **fosa** y **mar interior de antepaís** (solo render, invariante 11) | §5.1 |
 | C5 | Tinte hipsométrico + sombreado NW + bordes rojos + volcanes | El **mapa físico** (GIF principal) | §5.2 |
-| C6 | `render_placas`: dorsal (ámbar), rift (naranja), fosa (violeta), cordilleras (marrón), flechas de deriva | El **mapa tectónico**: la simbología sale de los MISMOS campos que la física | §5.3 |
+| C6 | `render_placas`: teselación en placas (SLIC sobre velocidad + fusión de vecinas coherentes) con color por placa, dorsal (ámbar), rift (naranja), fosa (violeta), cordilleras (marrón), flechas de deriva | El **mapa tectónico**: el dominio entero se parte en placas (grandes, medianas y micro) desde el campo de velocidad — la simbología sale de los MISMOS campos que la física. La leyenda vive en la web (`web.html`), no en el GIF | §5.3 |
 
 ---
 
 ## Retroalimentaciones (lo que hace al sistema un ciclo y no una tubería)
 
-1. **Slab pull** (B13 → A5): la fosa enfría el manto bajo ella → refuerza la
+1. **Slab pull** (B15 → A5): la fosa enfría el manto bajo ella → refuerza la
    corriente descendente → más convergencia → más fosa. Estabilizado por
    `DECAY` y la difusión.
-2. **Ridge push** (B12 → B3): la edad `A` es la única memoria de dónde
+2. **Ridge push** (B14 → B3): la edad `A` es la única memoria de dónde
    estuvo cada dorsal; su gradiente empuja las placas pendiente abajo,
    amplificado ×50 vía el momento.
-3. **Momento** (B2 → B4): la velocidad que advecta la corteza es el manto
+3. **Madurez del fondo** (B14 → B6): la misma edad `A` decide qué fondo
+   puede subducir — la fosa solo se abre sobre fondo viejo y lejos de la
+   dorsal, nunca en el anillo de convergencia de una pluma recién nacida.
+4. **Momento** (B2 → B4): la velocidad que advecta la corteza es el manto
    filtrado paso-bajo a 50 pasos, no el instantáneo.
 
 ## Invariantes arquitectónicos (resumen; lista completa en ALGORITMO.md §7)
@@ -169,4 +175,6 @@ central dice qué rasgo geológico o proceso tectónico nace ahí.
 - Blurs siempre con shifts crecientes (1,2,3…), nunca stride fijo.
 - Umbrales relativos (percentiles), no absolutos, para hotspots y bordes.
 - Fosa y antepaís viven en el render, no en `C`.
+- Solo el fondo oceánico VIEJO y lejos de la dorsal subduce (`subd`);
+  la fosa es un límite de placas, nunca la sombra de una pluma.
 - Estado de reanudación en float64 e incluye `trench` y el estado del RNG.
