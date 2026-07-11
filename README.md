@@ -229,6 +229,26 @@ hipsométrico (abisal → costa → verde → marrón → nieve), sombreado por
 pendiente, y bordes de placa en rojo donde `|divergencia| + |cizalla|` supera
 el percentil 98.
 
+## Capa climática
+
+Un cuarto mapa (`clima.gif`, y `clima_*.png` en el reproductor) que se calcula
+**a partir de la geografía de cada cuadro** en `clima.py`: temperatura del aire,
+vientos (alisios/westerlies), corrientes marinas, lluvia con sombra orográfica,
+glaciares y banquisa, ríos con lagos y estuarios, y **biomas** (selva, sabana,
+desierto, estepa, pradera, bosque templado, taiga, tundra, hielo).
+
+Es una capa de **snapshots, no retroactiva**: el clima es una función pura de la
+elevación del frame, no retroalimenta la tectónica, no se guarda en los `.npz`
+(se recalcula al reconstruir/extrapolar) y **no consume el generador aleatorio**
+de la simulación, así que la continuación de un mundo sigue siendo bit-exacta.
+
+Dos diales globales (grupo *algoritmo* del CLI, también en la web):
+
+- `--temperatura` (−1 … 0 … +1): de bola de nieve a templado (Tierra) a
+  invernadero; desplaza toda la curva térmica del planeta.
+- `--humedad` (0.2 … 1 … 2): de árido a normal a muy húmedo; escala la
+  evaporación, la lluvia, los ríos y la extensión de selva.
+
 ## Diales interesantes (constantes al inicio de `tecto.py`)
 
 - `k0` en `poisson_fft` — número de celdas de convección ⇒ número de placas.

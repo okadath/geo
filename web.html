@@ -63,6 +63,28 @@
     white-space: nowrap;
   }
   button:hover { border-color: var(--acento); }
+  /* reproductor por cuadros */
+  #reproductor { margin: 6px 0 12px; }
+  #reproductor #scrub { margin: 6px 0; }
+  .reloj-fila { display: flex; align-items: baseline; gap: 12px; }
+  #reloj { font-size: 22px; font-weight: 700; color: var(--acento);
+           font-variant-numeric: tabular-nums; }
+  #repro-info { font-variant-numeric: tabular-nums; }
+  .repro-btns { display: flex; gap: 6px; align-items: center; }
+  .repro-btns button { padding: 6px 12px; font-size: 15px; }
+  .repro-btns select { background: var(--fondo); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 8px; padding: 4px 6px; }
+  .repro-extrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--borde); }
+  .repro-extrap input[type=number] { width: 90px; }
+  .repro-extrap input[type=range] { width: 80px; margin: 0; vertical-align: middle; }
+  .repro-extrap select { background: var(--fondo); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 8px; padding: 4px 6px; }
+  /* cuadros detallados: PNG gigantes de un solo frame */
+  #detalles { margin-top: 18px; }
+  #detalles-lista .detalle { margin: 12px 0; }
+  #detalles-lista img { width: 100%; display: block; border-radius: 10px;
+    border: 1px solid var(--borde); cursor: zoom-in; }
   button.primario {
     background: var(--acento); border-color: var(--acento); color: #08211f;
     font-weight: 650; width: 100%; padding: 10px; font-size: 15px; margin-top: 4px;
@@ -98,20 +120,69 @@
   #estado { font-size: 13.5px; color: #8090a5; }
   #estado.error { color: var(--rojo); }
   pre#log { font-size: 12px; color: #8090a5; white-space: pre-wrap; margin: 8px 0 0; }
-  /* leyenda del mapa de placas (vive aquí, no dentro del GIF) */
-  #leyenda {
+  /* leyenda del mapa de placas y de biomas (viven aquí, no dentro del GIF) */
+  #leyenda, #leyenda-clima {
     display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px;
     padding: 10px 12px; background: var(--fondo); border: 1px solid var(--borde);
     border-radius: 8px; font-size: 12.5px; color: var(--texto);
     max-width: 640px;
   }
-  #leyenda span { display: inline-flex; align-items: center; gap: 6px; }
-  #leyenda i.linea { display: inline-block; width: 18px; height: 4px;
+  #leyenda span, #leyenda-clima span { display: inline-flex; align-items: center; gap: 6px; }
+  #leyenda i.linea, #leyenda-clima i.linea { display: inline-block; width: 18px; height: 4px;
                      border-radius: 2px; }
-  #leyenda i.flecha { font-style: normal; font-weight: 700; }
+  #leyenda i.flecha, #leyenda-clima i.flecha { font-style: normal; font-weight: 700; }
+  #leyenda-clima i.cuad { display: inline-block; width: 13px; height: 13px;
+                     border-radius: 3px; border: 1px solid var(--borde); }
   #leyenda i.parche {
     display: inline-block; width: 18px; height: 11px; border-radius: 3px;
     background: linear-gradient(90deg, #a6cee3 33%, #b2df8a 33% 66%, #fdbf6f 66%);
+  }
+  /* visor de clima HD: base climahd + capas combinables con zoom/paneo */
+  .detalle-hd { margin: 16px 0; }
+  .visor-ctrl { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+                margin: 8px 0; font-size: 13px; }
+  .visor-ctrl label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .visor-ctrl input[type=checkbox] { accent-color: var(--acento); }
+  .visor-ctrl .reset { padding: 3px 8px; font-size: 12.5px; }
+  .visor-ctrl .abrir { color: var(--acento); margin-left: auto; }
+  .visor-fila { display: flex; gap: 12px; align-items: flex-start; }
+  @media (max-width: 700px) { .visor-fila { flex-direction: column; } }
+  .visor {
+    position: relative; flex: 1 1 auto; min-width: 0; width: 100%; max-width: 100%;
+    overflow: hidden; border-radius: 10px; border: 1px solid var(--borde);
+    background: #0b0e14; cursor: grab; touch-action: none;
+  }
+  .visor.agarrando { cursor: grabbing; }
+  .visor-lienzo { position: absolute; inset: 0; transform-origin: 0 0; }
+  .capa { position: absolute; top: 0; left: 0; display: block; }
+  img.capa { width: 100%; height: 100%; pointer-events: none;
+             -webkit-user-drag: none; user-select: none; }
+  canvas.capa { pointer-events: none; }
+  img.capa-koppen { opacity: .55; image-rendering: auto; }
+  img.capa-cuencas { image-rendering: auto; }
+  .visor-lado { flex: 0 0 214px; display: flex; flex-direction: column; gap: 10px; }
+  @media (max-width: 700px) { .visor-lado { flex-basis: auto; width: 100%; } }
+  .inspector, .leyenda-koppen {
+    background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px;
+  }
+  .inspector h3, .leyenda-koppen .ley-tit {
+    margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--tenue); font-weight: 600;
+  }
+  .inspector .fila-dato { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+  .inspector .fila-dato span { color: var(--tenue); }
+  .inspector .fila-dato b { font-weight: 600; color: var(--texto);
+                            font-variant-numeric: tabular-nums; text-align: right; }
+  .leyenda-koppen { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .leyenda-koppen .ley-tit { flex-basis: 100%; }
+  .leyenda-koppen span { display: inline-flex; align-items: center; gap: 6px; }
+  .leyenda-koppen i.cuad { display: inline-block; width: 13px; height: 13px;
+    border-radius: 3px; border: 1px solid var(--borde); }
+  .tip-rio {
+    position: absolute; z-index: 5; pointer-events: none; transform: translate(10px, 10px);
+    background: rgba(10,14,20,.92); border: 1px solid var(--borde); border-radius: 6px;
+    padding: 3px 7px; font-size: 12px; color: var(--texto); white-space: nowrap;
   }
 </style>
 </head>
@@ -221,8 +292,26 @@
 
       <div class="control">
         <label>Deriva continental <output id="v-deriva"></output></label>
-        <input type="range" id="deriva" min="1" max="10" step="0.5" value="6">
+        <input type="range" id="deriva" min="1" max="10" step="0.5" value="8">
         <div class="pista">cuánto remolcan al continente su margen oceánico y el manto</div>
+      </div>
+
+      <div class="control">
+        <label>Escala de tiempo <output id="v-anos_paso"></output></label>
+        <input type="range" id="anos_paso" min="0.1" max="10" step="0.1" value="1">
+        <div class="pista">millones de años (Ma) por paso: el reloj geológico rotulado en los frames</div>
+      </div>
+
+      <div class="control">
+        <label>Temperatura global <output id="v-temperatura"></output></label>
+        <input type="range" id="temperatura" min="-1" max="1" step="0.05" value="0">
+        <div class="pista">frío ↔ cálido · −1 bola de nieve · +1 invernadero</div>
+      </div>
+
+      <div class="control">
+        <label>Humedad global <output id="v-humedad"></output></label>
+        <input type="range" id="humedad" min="0.2" max="2" step="0.05" value="1">
+        <div class="pista">árido ↔ húmedo · evaporación y lluvia del planeta</div>
       </div>
 
       <button id="defecto-algoritmo" style="width:100%"
@@ -245,6 +334,56 @@
       <button id="cancelar" hidden>Cancelar</button>
     </div>
     <div id="barra" hidden><div></div></div>
+
+    <div id="reproductor" hidden>
+      <div class="reloj-fila">
+        <span id="reloj">0 Ma</span>
+        <span id="repro-info" class="pista"></span>
+      </div>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1">
+      <div class="repro-btns">
+        <button id="b-inicio" title="primer cuadro">⏮</button>
+        <button id="b-atras" title="un cuadro atrás">◀</button>
+        <button id="b-play" title="reproducir / pausar">▶</button>
+        <button id="b-adel" title="un cuadro adelante">▶▐</button>
+        <button id="b-fin" title="último cuadro">⏭</button>
+        <label class="pista" style="margin-left:auto">velocidad
+          <select id="repro-vel">
+            <option value="2">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="0.5">2×</option>
+            <option value="0.25">4×</option>
+          </select>
+        </label>
+      </div>
+      <div class="repro-extrap" id="repro-extrap" hidden>
+        <span class="pista">Desde este cuadro, extrapola una rama nueva (no toca
+          esta corrida):</span>
+        <label class="pista">+<input type="number" id="extrap-pasos" min="50"
+          max="40000" step="50" value="800"> pasos</label>
+        <button id="b-extrap">Extrapolar desde aquí ▶</button>
+      </div>
+      <div class="repro-extrap" id="repro-detalle" hidden>
+        <span class="pista">O detalla ESTE cuadro: PNG gigante con geografía
+          menor por ruido (islas, mares, casquetes; no toca la corrida):</span>
+        <label class="pista">aumento
+          <select id="det-factor">
+            <option value="4">4×</option>
+            <option value="8" selected>8×</option>
+            <option value="16">16×</option>
+          </select></label>
+        <label class="pista">ruido <input type="number" id="det-semilla"
+          min="0" value="0"></label>
+        <label class="pista">casquetes <input type="range" id="det-casq" min="0"
+          max="0.45" step="0.01" value="0.18" style="width:80px">
+          <span id="v-det-casq">0.18</span></label>
+        <label class="pista">relieve <input type="range" id="det-relieve" min="0.2"
+          max="3" step="0.1" value="1" style="width:80px">
+          <span id="v-det-relieve">1.0</span></label>
+        <button id="b-detalle">Detallar este cuadro 🔍</button>
+      </div>
+    </div>
+
     <img id="gif" hidden alt="mapa">
     <div class="pie-img" id="pie-gif" hidden>mapa</div>
     <img id="gifplacas" hidden alt="placas tectónicas">
@@ -263,7 +402,38 @@
       <span><i class="flecha">→</i> deriva de placa</span>
       <span><i class="parche"></i> cada color de fondo = una placa</span>
     </div>
+    <img id="gifclima" hidden alt="clima: biomas, ríos y corrientes">
+    <div class="pie-img" id="pie-clima" hidden>clima: biomas, ríos y corrientes</div>
+    <div id="leyenda-clima" hidden>
+      <span><i class="cuad" style="background:rgb(238,244,250)"></i> hielo</span>
+      <span><i class="cuad" style="background:rgb(170,180,160)"></i> tundra</span>
+      <span><i class="cuad" style="background:rgb(75,115,88)"></i> taiga</span>
+      <span><i class="cuad" style="background:rgb(205,185,115)"></i> estepa</span>
+      <span><i class="cuad" style="background:rgb(235,205,140)"></i> desierto</span>
+      <span><i class="cuad" style="background:rgb(192,176,148)"></i> desierto frío</span>
+      <span><i class="cuad" style="background:rgb(160,185,90)"></i> pradera</span>
+      <span><i class="cuad" style="background:rgb(85,140,70)"></i> bosque templado</span>
+      <span><i class="cuad" style="background:rgb(152,158,62)"></i> bosque seco</span>
+      <span><i class="cuad" style="background:rgb(196,188,80)"></i> sabana</span>
+      <span><i class="cuad" style="background:rgb(26,105,46)"></i> bosque húmedo</span>
+      <span><i class="linea" style="background:rgb(40,90,180)"></i> río</span>
+      <span><i class="cuad" style="background:rgb(70,200,220)"></i> estuario</span>
+      <span><i class="cuad" style="background:rgb(60,130,200)"></i> lago</span>
+      <span><i class="cuad" style="background:rgb(214,228,240)"></i> banquisa</span>
+      <span><i class="flecha" style="color:rgb(230,80,60)">→</i> corriente cálida</span>
+      <span><i class="flecha" style="color:rgb(90,150,235)">→</i> corriente fría</span>
+    </div>
     <div id="enlaces"></div>
+    <div id="detalles" hidden>
+      <h2>Cuadros detallados</h2>
+      <div class="pista">Un solo cuadro ampliado con geografía menor generada
+        por ruido (islas, mares interiores, casquetes polares). La misma
+        semilla de ruido reproduce el mismo detalle; la corrida y su evolución
+        no cambian. Cada detalle incluye además su mapa climático del mismo
+        cuadro (biomas, ríos, corrientes y hielo). Clic en la imagen para
+        abrirla a tamaño completo.</div>
+      <div id="detalles-lista"></div>
+    </div>
     <pre id="log"></pre>
   </section>
 </main>
@@ -272,7 +442,8 @@
 const $ = id => document.getElementById(id);
 const SLIDERS = ["tiempo", "cada", "ms", "resolucion", "detalle",
                  "velocidad", "mar", "continentes", "plumas",
-                 "erosion", "empuje", "momento", "rigidez", "deriva"];
+                 "erosion", "empuje", "momento", "rigidez", "deriva", "anos_paso",
+                 "temperatura", "humedad"];
 let sondeo = null;
 let trabajo = null;
 
@@ -315,7 +486,8 @@ $("defecto").onclick = () => {
 
 // solo los diales del algoritmo (no toca imagen ni semilla)
 const ALGORITMO = ["velocidad", "mar", "continentes", "plumas",
-                   "erosion", "empuje", "momento", "rigidez", "deriva"];
+                   "erosion", "empuje", "momento", "rigidez", "deriva", "anos_paso",
+                   "temperatura", "humedad"];
 $("defecto-algoritmo").onclick = () => {
   for (const k of ALGORITMO) $(k).value = $(k).defaultValue;
   refrescar();
@@ -333,8 +505,10 @@ $("generar").onclick = async () => {
   $("generar").disabled = true;
   $("cancelar").hidden = false;
   for (const el of ["gif", "pie-gif", "gifplacas", "pie-placas",
-                    "gifmanto", "pie-manto", "leyenda"])
+                    "gifmanto", "pie-manto", "leyenda",
+                    "gifclima", "pie-clima", "leyenda-clima", "reproductor"])
     $(el).hidden = true;
+  detenerRepro();
   $("enlaces").textContent = "";
   $("log").textContent = "";
   $("barra").hidden = false;
@@ -382,24 +556,578 @@ $("cancelar").onclick = async () => {
 };
 
 // ---- imágenes del resultado (compartido por «Generar» y «Cargar») ----
-// `d` trae {mapa, placas, manto, png}; muestra u oculta cada imagen y arma
-// los enlaces de descarga
+// `d` trae {mapa, placas, manto, png, repro, sello, extrapolable}. Si hay
+// `repro` (cuadros por frame) se usa el REPRODUCTOR (adelante/reversa/pausa);
+// si no, se cae al GIF animado. Los GIF quedan siempre como descarga.
 function pintarImagenes(d) {
   const t = "?t=" + Date.now();
-  const par = (img, pie, url) => {
-    $(img).hidden = $(pie).hidden = !url;
-    if (url) $(img).src = url + t;
-  };
-  par("gif", "pie-gif", d.mapa);
+  $("gif").hidden = $("pie-gif").hidden = !d.mapa;
   $("gifplacas").hidden = $("pie-placas").hidden = $("leyenda").hidden = !d.placas;
-  if (d.placas) $("gifplacas").src = d.placas + t;
-  par("gifmanto", "pie-manto", d.manto);
+  $("gifmanto").hidden = $("pie-manto").hidden = !d.manto;
+  // clima: solo si la corrida lo trae (corridas viejas no lo tienen)
+  $("gifclima").hidden = $("pie-clima").hidden = $("leyenda-clima").hidden = !d.clima;
   $("enlaces").innerHTML =
     (d.mapa ? `<a href="${d.mapa}" download>descargar GIF</a>` : "") +
     (d.placas ? `<a href="${d.placas}" download>GIF de placas</a>` : "") +
     (d.manto ? `<a href="${d.manto}" download>GIF del manto</a>` : "") +
+    (d.clima ? `<a href="${d.clima}" download>GIF del clima</a>` : "") +
     (d.png ? `<a href="${d.png}" target="_blank">PNG final</a>` : "");
+  if (d.repro && d.sello) {
+    cargarReproductor(d);                 // recorrer cuadro a cuadro
+  } else {                                // corrida vieja sin cuadros: GIF animado
+    detenerRepro();
+    $("reproductor").hidden = true;
+    if (d.mapa) $("gif").src = d.mapa + t;
+    if (d.placas) $("gifplacas").src = d.placas + t;
+    if (d.manto) $("gifmanto").src = d.manto + t;
+    if (d.clima) $("gifclima").src = d.clima + t;
+    if (d.mapa)                           // explicar por qué no hay pausa/play
+      $("estado").textContent += " Corrida antigua sin cuadros: se muestra el " +
+        "GIF animado. Genera un GIF nuevo para tener pausa, play y scrubber.";
+  }
+  pintarDetalles(d.detalles || []);       // cuadros detallados ya generados
 }
+
+// ---- cuadros detallados: PNG gigante de UN frame con geografía por ruido ----
+function pieDetalle(d) {
+  const res = d.resolucion ? ` (${d.resolucion[0]}×${d.resolucion[1]}px)` : "";
+  return `cuadro del paso ${d.paso} · ${fmtMa(d.ma || 0)} · ${d.factor}×${res}` +
+    ` · ruido ${d.semilla_detalle} · casquetes ${d.casquetes} · relieve ${d.relieve}`;
+}
+
+function pintarDetalles(lista) {
+  const caja = $("detalles-lista");
+  caja.textContent = "";
+  $("detalles").hidden = !lista.length;
+  for (const d of lista.slice().reverse()) {     // el más nuevo arriba
+    // detalle nuevo (con clima HD) -> visor interactivo; viejo -> como siempre
+    if (d.climahd) { caja.appendChild(crearVisorHD(d)); continue; }
+    const div = document.createElement("div");
+    div.className = "detalle";
+    div.innerHTML = `<a target="_blank"><img loading="lazy"></a>
+      <div class="pie-img"></div>`;
+    div.querySelector("a").href = d.png;
+    div.querySelector("img").src = d.png;
+    div.querySelector(".pie-img").textContent = pieDetalle(d);
+    if (d.clima) {
+      const a = document.createElement("a");
+      a.target = "_blank"; a.href = d.clima;
+      const im = document.createElement("img");
+      im.loading = "lazy"; im.src = d.clima;
+      a.appendChild(im);
+      const pie = document.createElement("div");
+      pie.className = "pie-img";
+      pie.textContent = "clima del mismo cuadro: biomas, ríos, corrientes y hielo";
+      div.appendChild(a);
+      div.appendChild(pie);
+    }
+    caja.appendChild(div);
+  }
+}
+
+// ---- visor de clima HD: base climahd + capas combinables (Köppen, vientos e
+// isoyetas, cuencas y ríos, inspector) con zoom hacia el cursor y paneo. Todas
+// las capas viven en el mismo lienzo transformado. capas.json se carga perezoso.
+function crearVisorHD(d) {
+  const [nx, ny] = d.resolucion || [1024, 1024];
+  const st = { scale: 1, tx: 0, ty: 0, capas: null, cargando: null,
+               insp: null, inspCargando: false };
+
+  const wrap = document.createElement("div");
+  wrap.className = "detalle detalle-hd";
+
+  const pie = document.createElement("div");
+  pie.className = "pie-img";
+  pie.textContent = pieDetalle(d) + " · clima HD interactivo";
+
+  const ctrl = document.createElement("div");
+  ctrl.className = "visor-ctrl";
+  ctrl.innerHTML =
+    `<label><input type="checkbox" data-capa="koppen">Köppen</label>` +
+    `<label><input type="checkbox" data-capa="vientos">vientos e isoyetas</label>` +
+    `<label><input type="checkbox" data-capa="cuencas">cuencas y ríos</label>` +
+    `<label><input type="checkbox" data-capa="inspector">inspector</label>` +
+    `<button type="button" class="reset">⟲ zoom</button>` +
+    `<a class="abrir" target="_blank">abrir HD</a>`;
+  ctrl.querySelector(".abrir").href = d.climahd;
+
+  const fila = document.createElement("div");
+  fila.className = "visor-fila";
+
+  const visor = document.createElement("div");
+  visor.className = "visor";
+  visor.style.aspectRatio = nx + " / " + ny;
+
+  const lienzo = document.createElement("div");
+  lienzo.className = "visor-lienzo";
+
+  const base = new Image();
+  base.className = "capa capa-base"; base.alt = "clima HD"; base.src = d.climahd;
+  const koppen = new Image();
+  koppen.className = "capa capa-koppen"; koppen.hidden = true;
+  const cuencas = new Image();
+  cuencas.className = "capa capa-cuencas"; cuencas.hidden = true;
+  const cvVec = document.createElement("canvas");
+  cvVec.className = "capa capa-vec"; cvVec.hidden = true;
+  const cvRio = document.createElement("canvas");
+  cvRio.className = "capa capa-rio"; cvRio.hidden = true;
+  lienzo.append(base, koppen, cuencas, cvVec, cvRio);
+
+  const tip = document.createElement("div");
+  tip.className = "tip-rio"; tip.hidden = true;
+  visor.append(lienzo, tip);
+
+  const lado = document.createElement("div");
+  lado.className = "visor-lado";
+  const insp = document.createElement("div");
+  insp.className = "inspector"; insp.hidden = true;
+  insp.innerHTML = `<h3>inspector</h3><div class="insp-cuerpo">` +
+    `<div class="vacio">mueve el cursor sobre el mapa</div></div>`;
+  const leyK = document.createElement("div");
+  leyK.className = "leyenda-koppen"; leyK.hidden = true;
+  lado.append(insp, leyK);
+
+  fila.append(visor, lado);
+  wrap.append(pie, ctrl, fila);
+
+  // -- carga perezosa de capas.json (primera capa encendida o primera interacción)
+  function asegurarCapas() {
+    if (st.capas) return Promise.resolve(st.capas);
+    if (st.cargando) return st.cargando;
+    st.cargando = fetch(d.capas).then(r => r.json())
+      .then(j => { st.capas = j; return j; }).catch(() => null);
+    return st.cargando;
+  }
+
+  // -- transformación (zoom/paneo) compartida por todas las capas
+  function aplicar() {
+    lienzo.style.transform =
+      `translate(${st.tx}px,${st.ty}px) scale(${st.scale})`;
+  }
+  function acotar() {
+    const W = visor.clientWidth, H = visor.clientHeight;
+    const sw = W * st.scale, sh = H * st.scale;
+    st.tx = sw <= W ? (W - sw) / 2 : Math.min(0, Math.max(W - sw, st.tx));
+    st.ty = sh <= H ? (H - sh) / 2 : Math.min(0, Math.max(H - sh, st.ty));
+  }
+  function redibujar() {
+    if (!cvVec.hidden) dibujarVec();
+    if (!cvRio.hidden) dibujarRio();
+  }
+
+  visor.addEventListener("wheel", e => {
+    e.preventDefault();
+    asegurarCapas();
+    const r = visor.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const wx = (mx - st.tx) / st.scale, wy = (my - st.ty) / st.scale;
+    const f = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+    const ns = Math.min(16, Math.max(1, st.scale * f));
+    st.tx = mx - wx * ns; st.ty = my - wy * ns; st.scale = ns;
+    acotar(); aplicar(); redibujar();
+  }, { passive: false });
+
+  let arr = false, lx = 0, ly = 0;
+  visor.addEventListener("mousedown", e => {
+    arr = true; lx = e.clientX; ly = e.clientY; visor.classList.add("agarrando");
+  });
+  window.addEventListener("mouseup", () => {
+    if (arr) { arr = false; visor.classList.remove("agarrando"); }
+  });
+  visor.addEventListener("mousemove", e => {
+    if (arr) {
+      st.tx += e.clientX - lx; st.ty += e.clientY - ly;
+      lx = e.clientX; ly = e.clientY;
+      acotar(); aplicar(); return;
+    }
+    hover(e);
+  });
+  visor.addEventListener("mouseleave", () => { tip.hidden = true; });
+
+  ctrl.querySelector(".reset").onclick = () => {
+    st.scale = 1; st.tx = 0; st.ty = 0; acotar(); aplicar(); redibujar();
+  };
+
+  // -- coordenadas del cursor en píxeles de render (donde viven los vectores)
+  function coord(e) {
+    const r = visor.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const W = visor.clientWidth, H = visor.clientHeight;
+    const wx = (mx - st.tx) / st.scale, wy = (my - st.ty) / st.scale;
+    return { mx, my, W, H, rx: wx * nx / W, ry: wy * ny / H };
+  }
+
+  // -- lienzo de un canvas de capa, nítido según el zoom (supermuestreo ≤8×)
+  function prep(cv) {
+    const W = visor.clientWidth, H = visor.clientHeight;
+    const ss = Math.min(8, Math.max(1, st.scale));
+    const bw = Math.max(1, Math.round(W * ss)), bh = Math.max(1, Math.round(H * ss));
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    cv.width = bw; cv.height = bh;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, bw, bh);
+    // px de pantalla -> px de backing (para grosores de línea constantes)
+    const aPx = p => p * ss / st.scale;
+    return { ctx, kx: bw / nx, ky: bh / ny, aPx };
+  }
+
+  function flecha(ctx, x0, y0, x1, y1, cab) {
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    const a = Math.atan2(y1 - y0, x1 - x0);
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - cab * Math.cos(a - 0.4), y1 - cab * Math.sin(a - 0.4));
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - cab * Math.cos(a + 0.4), y1 - cab * Math.sin(a + 0.4));
+    ctx.stroke();
+  }
+
+  function dibujarVec() {
+    if (cvVec.hidden || !st.capas) return;
+    const c = st.capas, { ctx, kx, ky, aPx } = prep(cvVec);
+    // isoyetas (polilíneas azules por nivel)
+    const iso = (c.isoyetas && c.isoyetas.lineas) || [];
+    ctx.lineWidth = aPx(1.2); ctx.strokeStyle = "rgba(70,150,235,.85)";
+    ctx.lineJoin = "round";
+    for (const ln of iso) {
+      const p = ln.puntos || [];
+      if (p.length < 2) continue;
+      ctx.beginPath(); ctx.moveTo(p[0][0] * kx, p[0][1] * ky);
+      for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0] * kx, p[i][1] * ky);
+      ctx.stroke();
+    }
+    // vientos (gris claro sobre tierra)
+    const vi = c.vientos || [], co = c.corrientes || [];
+    let mv = 1e-6; for (const a of vi) mv = Math.max(mv, Math.hypot(a.u, a.v));
+    let mc = 1e-6; for (const a of co) mc = Math.max(mc, Math.hypot(a.u, a.v));
+    const objetivo = (nx / 26) * 0.8, cab = aPx(4);
+    ctx.lineWidth = aPx(1.1); ctx.strokeStyle = "rgba(210,214,224,.85)";
+    for (const a of vi) {
+      const L = objetivo / mv;
+      flecha(ctx, a.x * kx, a.y * ky, (a.x + a.u * L) * kx, (a.y + a.v * L) * ky, cab);
+    }
+    // corrientes (tintadas por anomalía: cálida rojo, fría azul)
+    ctx.lineWidth = aPx(1.4);
+    for (const a of co) {
+      const L = objetivo / mc;
+      const t = Math.max(0, Math.min(1, Math.abs(a.anom || 0)));
+      ctx.strokeStyle = (a.anom || 0) >= 0
+        ? `rgba(230,80,60,${0.5 + 0.45 * t})` : `rgba(90,150,235,${0.5 + 0.45 * t})`;
+      flecha(ctx, a.x * kx, a.y * ky, (a.x + a.u * L) * kx, (a.y + a.v * L) * ky, cab);
+    }
+  }
+
+  function dibujarRio() {
+    if (cvRio.hidden || !st.capas) return;
+    const c = st.capas, { ctx, kx, ky, aPx } = prep(cvRio);
+    ctx.strokeStyle = "rgba(40,90,180,.9)"; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const r of (c.rios || [])) {
+      const p = r.puntos || [];
+      if (p.length < 2) continue;
+      ctx.lineWidth = aPx(1 + 3 * Math.max(0, Math.min(1, r.caudal || 0)));
+      ctx.beginPath(); ctx.moveTo(p[0][0] * kx, p[0][1] * ky);
+      for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0] * kx, p[i][1] * ky);
+      ctx.stroke();
+    }
+  }
+
+  // -- leyenda de clases Köppen desde capas.json
+  function construirLeyenda() {
+    if (leyK.dataset.listo || !st.capas) return;
+    const cl = (st.capas.koppen && st.capas.koppen.clases) || [];
+    leyK.innerHTML = `<div class="ley-tit">Köppen</div>` + cl.map(c =>
+      `<span><i class="cuad" style="background:rgb(${(c.rgb || [0, 0, 0]).join(",")})">` +
+      `</i>${c.cod} · ${c.nombre}</span>`).join("");
+    leyK.dataset.listo = "1";
+  }
+
+  // -- inspector: datos.png/datos2.png a canvas offscreen, getImageData una vez
+  function cargarImg(url) {
+    return new Promise((ok, mal) => {
+      const im = new Image();
+      im.onload = () => ok(im); im.onerror = mal; im.src = url;
+    });
+  }
+  function pixeles(im) {
+    const cv = document.createElement("canvas");
+    cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+    const ctx = cv.getContext("2d");
+    ctx.drawImage(im, 0, 0);
+    return { d: ctx.getImageData(0, 0, cv.width, cv.height).data,
+             w: cv.width, h: cv.height };
+  }
+  function cargarInspector() {
+    if (st.insp || st.inspCargando || !d.datos || !d.datos2) return;
+    st.inspCargando = true;
+    Promise.all([cargarImg(d.datos), cargarImg(d.datos2)])
+      .then(([a, b]) => { st.insp = { a: pixeles(a), b: pixeles(b) }; })
+      .catch(() => {});
+  }
+  const CUAL_T = ["muy fría", "fría", "templada", "cálida", "muy cálida"];
+  const CUAL_LL = ["árida", "seca", "media", "húmeda", "muy húmeda"];
+  const CUAL_ALT = ["baja", "media", "alta", "muy alta"];
+  function cual(t, etq) {
+    return etq[Math.min(etq.length - 1, Math.max(0, Math.floor(t * etq.length)))];
+  }
+  function muestra(P, rx, ry) {
+    let x = Math.floor(rx * P.w / nx), y = Math.floor(ry * P.h / ny);
+    x = Math.max(0, Math.min(P.w - 1, x)); y = Math.max(0, Math.min(P.h - 1, y));
+    const o = (y * P.w + x) * 4; return [P.d[o], P.d[o + 1], P.d[o + 2]];
+  }
+  function filaDato(rot, val) {
+    return `<div class="fila-dato"><span>${rot}</span><b>${val}</b></div>`;
+  }
+  function actualizarInspector(c) {
+    if (!st.insp || !st.capas) return;
+    const esc = st.capas.escalas || {};
+    const [tr, tp, ta] = muestra(st.insp.a, c.rx, c.ry);   // tair, precip, alt
+    const [bi, ko, hi] = muestra(st.insp.b, c.rx, c.ry);   // bioma, köppen, hielo
+    const mar = bi === 255;
+    const tair = esc.tair
+      ? esc.tair[0] + (tr / 255) * (esc.tair[1] - esc.tair[0]) : tr / 255;
+    const precip = tp / 255, alt = ta / 255, hielo = hi / 255;
+    const bioma = mar ? "mar"
+      : (((st.capas.biomas || []).find(x => x.id === bi) || {}).nombre || `#${bi}`);
+    let kop = "mar";
+    if (!mar) {
+      const k = ((st.capas.koppen && st.capas.koppen.clases) || []).find(x => x.id === ko);
+      kop = k ? `${k.cod} · ${k.nombre}` : `#${ko}`;
+    }
+    const hlab = hielo > 0.5 ? "hielo permanente" : hielo > 0.05 ? "algo de hielo" : "sin hielo";
+    insp.querySelector(".insp-cuerpo").innerHTML =
+      filaDato("bioma", bioma) + filaDato("Köppen", kop) +
+      filaDato("temperatura", `${tair.toFixed(2)} · ${cual(tr / 255, CUAL_T)}`) +
+      filaDato("lluvia", `${precip.toFixed(2)} · ${cual(precip, CUAL_LL)}`) +
+      filaDato("altitud", mar ? "— (mar)" : `${alt.toFixed(2)} · ${cual(alt, CUAL_ALT)}`) +
+      filaDato("hielo", `${hielo.toFixed(2)} · ${hlab}`);
+  }
+
+  // -- hover: inspector + tooltip de río bajo el cursor
+  function distSeg2(px, py, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const l = dx * dx + dy * dy || 1e-9;
+    let t = ((px - a[0]) * dx + (py - a[1]) * dy) / l;
+    t = Math.max(0, Math.min(1, t));
+    const cx = a[0] + t * dx, cy = a[1] + t * dy;
+    return (px - cx) ** 2 + (py - cy) ** 2;
+  }
+  function hover(e) {
+    const c = coord(e);
+    if (!insp.hidden) actualizarInspector(c);
+    if (!cvRio.hidden && st.capas) {
+      const tol = 6 * nx / (c.W * st.scale);   // 6 px de pantalla en px de render
+      let best = null, bd = tol * tol;
+      for (const r of (st.capas.rios || [])) {
+        const p = r.puntos || [];
+        for (let i = 1; i < p.length; i++) {
+          const dd = distSeg2(c.rx, c.ry, p[i - 1], p[i]);
+          if (dd < bd) { bd = dd; best = r; }
+        }
+      }
+      if (best) {
+        tip.hidden = false; tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
+        tip.textContent = `${best.nombre} · caudal ${(best.caudal || 0).toFixed(2)}`;
+      } else tip.hidden = true;
+    }
+  }
+
+  // -- toggles independientes y combinables
+  ctrl.addEventListener("change", e => {
+    const cb = e.target;
+    if (!cb.dataset || !cb.dataset.capa) return;
+    const capa = cb.dataset.capa, on = cb.checked;
+    asegurarCapas().then(() => {
+      if (capa === "koppen") {
+        if (on && d.koppen && !koppen.src) koppen.src = d.koppen;
+        koppen.hidden = !(on && d.koppen);
+        leyK.hidden = !on; if (on) construirLeyenda();
+      } else if (capa === "vientos") {
+        cvVec.hidden = !on; if (on) dibujarVec();
+      } else if (capa === "cuencas") {
+        if (on && d.cuencas && !cuencas.src) cuencas.src = d.cuencas;
+        cuencas.hidden = !(on && d.cuencas);
+        cvRio.hidden = !on; if (on) dibujarRio(); else tip.hidden = true;
+      } else if (capa === "inspector") {
+        insp.hidden = !on; if (on) cargarInspector();
+      }
+    });
+  });
+
+  aplicar();
+  return wrap;
+}
+
+// ---- reproductor por cuadros: adelante / reversa / pausa / scrubber ----
+// coordina el reloj geológico (Ma) y los valores intermedios (nivel del mar,
+// plumas, tierra) con el cuadro que se muestra, leídos del repro.json
+let repro = null, reproSello = null, reproIdx = 0, reproTimer = null;
+
+function fmtMa(ma) {
+  return Math.round(ma).toLocaleString("es") + " Ma";
+}
+
+function urlCuadro(tipo, i) {
+  return `/salidas/${reproSello}/${repro.cuadros}/${tipo}_${String(i).padStart(4, "0")}.png`;
+}
+
+async function cargarReproductor(d) {
+  detenerRepro();
+  reproSello = d.sello; repro = null;
+  try { repro = await (await fetch(d.repro + "?t=" + Date.now())).json(); }
+  catch (e) { repro = null; }
+  if (!repro || !repro.nframes) { $("reproductor").hidden = true; return; }
+  $("scrub").max = repro.nframes - 1;
+  $("repro-extrap").hidden = !d.extrapolable;
+  $("repro-detalle").hidden = !d.extrapolable;   // detallar usa los checkpoints
+  $("reproductor").hidden = false;
+  irACuadro(repro.nframes - 1);           // arranca en el estado final
+  for (let i = 0; i < repro.nframes; i++) // precargar para un scrub fluido
+    ["mapa", "placas", "manto", "clima"].forEach(tp => { new Image().src = urlCuadro(tp, i); });
+}
+
+function irACuadro(i) {
+  if (!repro) return;
+  reproIdx = Math.max(0, Math.min(repro.nframes - 1, i));
+  const f = repro.frames[reproIdx];
+  $("gif").src = urlCuadro("mapa", reproIdx);
+  $("gifplacas").src = urlCuadro("placas", reproIdx);
+  $("gifmanto").src = urlCuadro("manto", reproIdx);
+  if (!$("gifclima").hidden) $("gifclima").src = urlCuadro("clima", reproIdx);
+  $("scrub").value = reproIdx;
+  $("reloj").textContent = fmtMa(f.ma);
+  const dmar = f.mar - 0.52;
+  $("repro-info").textContent =
+    `cuadro ${reproIdx + 1}/${repro.nframes} · mar ${dmar >= 0 ? "+" : ""}${dmar.toFixed(3)}` +
+    ` · ${f.plumas} plumas · ${Math.round(f.tierra * 100)}% tierra` +
+    (f.checkpoint ? " · ⦿ checkpoint" : "");
+}
+
+function detenerRepro() {
+  clearInterval(reproTimer); reproTimer = null;
+  $("b-play").textContent = "▶";
+}
+
+function reproducir() {
+  if (!repro) return;
+  if (reproTimer) { detenerRepro(); return; }
+  if (reproIdx >= repro.nframes - 1) reproIdx = 0;
+  $("b-play").textContent = "⏸";
+  const vel = parseFloat($("repro-vel").value);
+  reproTimer = setInterval(() => {
+    if (reproIdx >= repro.nframes - 1) { detenerRepro(); return; }
+    irACuadro(reproIdx + 1);
+  }, Math.max(40, repro.ms * vel));
+}
+
+$("b-play").onclick = reproducir;
+$("b-atras").onclick = () => { detenerRepro(); irACuadro(reproIdx - 1); };
+$("b-adel").onclick = () => { detenerRepro(); irACuadro(reproIdx + 1); };
+$("b-inicio").onclick = () => { detenerRepro(); irACuadro(0); };
+$("b-fin").onclick = () => { detenerRepro(); irACuadro(repro ? repro.nframes - 1 : 0); };
+$("scrub").addEventListener("input", () => { detenerRepro(); irACuadro(parseInt($("scrub").value)); });
+$("repro-vel").addEventListener("change", () => { if (reproTimer) { detenerRepro(); reproducir(); } });
+
+// extrapolación no destructiva desde el cuadro pausado -> rama nueva
+$("b-extrap").onclick = async () => {
+  if (!repro || !reproSello) return;
+  const f = repro.frames[reproIdx];
+  const pasos = Math.max(50, parseInt($("extrap-pasos").value) || 800);
+  detenerRepro();
+  $("b-extrap").disabled = true;
+  $("estado").className = "";
+  $("estado").textContent = `Extrapolando ${pasos} pasos desde ${fmtMa(f.ma)}…`;
+  $("barra").hidden = false;
+  let res;
+  try {
+    res = await (await fetch("/api/extrapolar", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sello: reproSello, paso: f.paso, pasos }),
+    })).json();
+  } catch (e) { res = { error: "sin conexión" }; }
+  if (res.error) {
+    $("estado").textContent = "No se pudo extrapolar: " + res.error;
+    $("estado").className = "error";
+    $("b-extrap").disabled = false; $("barra").hidden = true; return;
+  }
+  const t0 = Date.now();
+  clearInterval(sondeo);
+  sondeo = setInterval(async () => {
+    const e = await (await fetch("/api/estado?id=" + res.id)).json();
+    const segs = Math.round((Date.now() - t0) / 1000);
+    $("barra").firstElementChild.style.width = (e.progreso * 100) + "%";
+    if (e.estado === "corriendo") {
+      $("estado").textContent = `Extrapolando… ${Math.round(e.progreso * 100)} % (${segs} s)`;
+      return;
+    }
+    clearInterval(sondeo);
+    $("b-extrap").disabled = false; $("barra").hidden = true;
+    if (e.estado === "listo") {
+      $("estado").textContent = `Rama lista en ${segs} s (extrapolada desde ${fmtMa(f.ma)}).`;
+      pintarImagenes(e);
+      cargarCorridas();
+    } else {
+      $("estado").textContent = "La extrapolación falló.";
+      $("estado").className = "error"; $("log").textContent = e.log || "";
+    }
+  }, 700);
+};
+
+// detallar el cuadro pausado: PNG gigante con geografía menor por ruido
+// (islas, mares interiores, casquetes); no toca la corrida ni su evolución
+$("det-casq").addEventListener("input",
+  () => $("v-det-casq").textContent = $("det-casq").value);
+$("det-relieve").addEventListener("input",
+  () => $("v-det-relieve").textContent = parseFloat($("det-relieve").value).toFixed(1));
+
+$("b-detalle").onclick = async () => {
+  if (!repro || !reproSello) return;
+  const f = repro.frames[reproIdx];
+  detenerRepro();
+  $("b-detalle").disabled = true;
+  $("estado").className = "";
+  $("estado").textContent =
+    `Detallando el cuadro de ${fmtMa(f.ma)} a ${$("det-factor").value}×…`;
+  $("barra").hidden = false;
+  let res;
+  try {
+    res = await (await fetch("/api/detallar", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sello: reproSello, paso: f.paso,
+        factor: parseInt($("det-factor").value),
+        semilla: Math.max(0, parseInt($("det-semilla").value) || 0),
+        casquetes: parseFloat($("det-casq").value),
+        relieve: parseFloat($("det-relieve").value),
+      }),
+    })).json();
+  } catch (e) { res = { error: "sin conexión" }; }
+  if (res.error) {
+    $("estado").textContent = "No se pudo detallar: " + res.error;
+    $("estado").className = "error";
+    $("b-detalle").disabled = false; $("barra").hidden = true; return;
+  }
+  const t0 = Date.now();
+  clearInterval(sondeo);
+  sondeo = setInterval(async () => {
+    const e = await (await fetch("/api/estado?id=" + res.id)).json();
+    const segs = Math.round((Date.now() - t0) / 1000);
+    $("barra").firstElementChild.style.width = (e.progreso * 100) + "%";
+    if (e.estado === "corriendo") {
+      $("estado").textContent = `Detallando… ${segs} s`;
+      return;
+    }
+    clearInterval(sondeo);
+    $("b-detalle").disabled = false; $("barra").hidden = true;
+    if (e.estado === "listo") {
+      $("estado").textContent =
+        `Cuadro de ${fmtMa(f.ma)} detallado en ${segs} s.`;
+      pintarDetalles(e.detalles || []);
+      $("detalles").scrollIntoView({ behavior: "smooth" });
+    } else {
+      $("estado").textContent = "El detallado falló.";
+      $("estado").className = "error"; $("log").textContent = e.log || "";
+    }
+  }, 700);
+};
 
 // ---- corridas guardadas (una carpeta con sello de tiempo por GIF) ----
 // 20260709-143022 -> 2026-07-09 14:30:22

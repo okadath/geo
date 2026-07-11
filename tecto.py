@@ -22,6 +22,12 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
+import clima            # capa climatica: funcion PURA de la geografia de cada
+                        # cuadro (temperatura, vientos, corrientes, lluvia,
+                        # biomas, rios). NO retroalimenta la tectonica ni consume
+                        # el rng global -> la continuacion de mundos sigue
+                        # bit-exacta; se calcula solo al renderizar un frame
+
 rng = np.random.default_rng(7)
 
 # ---------------- parametros ----------------
@@ -88,6 +94,18 @@ PLUME_FUERZA_MIN = 0.30 # intensidad (hot) por debajo de la cual una pluma es
                         # "sin fuerza": hotspot/domo local (LIP) que NO organiza
                         # un eje de expansion; ver la regla pluma-dorsal en
                         # Crust.step
+ANOS_POR_PASO = 1.0     # millones de anos (Ma) que representa cada paso de
+                        # simulacion: fija la escala de tiempo geologico que se
+                        # rotula en los frames (un ciclo de Wilson ~ 400-500 Ma)
+MAR_AMPLITUD = 0.03     # amplitud de la variacion eustatica del nivel del mar:
+                        # transgresiones/regresiones lentas que inundan o
+                        # exponen las plataformas continentales (no toca la
+                        # tectonica, solo la linea de costa del render)
+# --- diales de la capa climatica (solo render, ver clima.py) ---
+TEMPERATURA = 0.0       # -1 = bola de nieve .. 0 = templado (Tierra) .. +1 =
+                        # invernadero; desplaza toda la curva termica del planeta
+HUMEDAD = 1.0           # 0.2 = arido .. 1 = normal .. 2 = muy humedo; escala la
+                        # evaporacion/lluvia (mas humedo = mas selva y rios)
 
 # ---------------- utilidades ----------------
 def grad_periodic(f):
@@ -145,6 +163,45 @@ def sample_nearest(f, ny, nx):
     x = np.arange(nx) * f.shape[1] // nx
     return f[np.ix_(y, x)]
 
+def _upsample_suave(f, ny, nx):
+    """Como upsample pero con interpolacion smoothstep: sin los rombos que la
+    bilineal pura deja en el ruido (para las octavas del fBm de detallar)."""
+    y = np.arange(ny) * f.shape[0] / ny
+    x = np.arange(nx) * f.shape[1] / nx
+    y0 = np.floor(y).astype(int); x0 = np.floor(x).astype(int)
+    fy = (y - y0)[:, None]; fx = (x - x0)[None, :]
+    fy = fy * fy * (3.0 - 2.0 * fy); fx = fx * fx * (3.0 - 2.0 * fx)
+    y1 = (y0 + 1) % f.shape[0]; x1 = (x0 + 1) % f.shape[1]
+    return (f[np.ix_(y0, x0)] * (1 - fy) * (1 - fx) + f[np.ix_(y0, x1)] * (1 - fy) * fx
+            + f[np.ix_(y1, x0)] * fy * (1 - fx) + f[np.ix_(y1, x1)] * fy * fx)
+
+def _upsample_bicubico(f, factor):
+    """Bicubico periodico via PIL para los campos de detallar: continuo y sin
+    los rombos/mesetas que bilineal o smoothstep dejan a grandes aumentos.
+    Rellena un margen toroidal, escala y recorta."""
+    m = 4
+    g = np.pad(np.asarray(f, np.float32), m, mode="wrap")
+    im = Image.fromarray(g, mode="F").resize(
+        (g.shape[1] * factor, g.shape[0] * factor), Image.BICUBIC)
+    a = np.asarray(im)
+    return a[m * factor:-m * factor, m * factor:-m * factor]
+
+def _fbm(rng_d, ny, nx, esc0=8, persistencia=0.55):
+    """Ruido fractal (fBm) periodico ~[-1,1]: suma de rejillas aleatorias
+    suavizadas, cada octava con el doble de frecuencia y `persistencia` de la
+    amplitud de la anterior. `rng_d` es un generador propio del detalle: no
+    toca el rng de la simulacion."""
+    out = np.zeros((ny, nx), np.float32)
+    amp, esc = 1.0, int(esc0)
+    while esc <= ny:
+        g = rng_d.random((min(esc, ny), min(esc, nx)), dtype=np.float32) * 2 - 1
+        out += (amp * _upsample_suave(g, ny, nx)).astype(np.float32)
+        amp *= persistencia
+        esc *= 2
+    # a escala unitaria por percentil (la suma de octavas casi nunca llega a
+    # +-1): asi las amplitudes con que se mezcla significan lo que dicen
+    return out / np.float32(np.percentile(np.abs(out), 99.5) + 1e-9)
+
 def label_components(mask):
     """Componentes conexas en malla periodica por propagacion de maximos.
 
@@ -172,6 +229,18 @@ def label_components(mask):
             break
         lab = nxt
     return lab
+
+def nivel_mar(paso):
+    """Variacion eustatica del nivel del mar en el paso `paso`: pequena y lenta,
+    suma de senos de varios periodos (ciclos tectonicos de volumen de dorsal +
+    ciclos mas cortos tipo glacial). Sube -> transgresion (inunda plataformas);
+    baja -> regresion (las expone). Determinista en el paso, asi la reconstruccion
+    y la continuacion de un mundo dan el MISMO nivel. Devuelve el desplazamiento
+    a sumar a SEA_LEVEL (no toca la tectonica, solo la costa del render)."""
+    p = float(paso)
+    return MAR_AMPLITUD * (0.60 * np.sin(2 * np.pi * p / 430.0)
+                           + 0.30 * np.sin(2 * np.pi * p / 150.0 + 1.1)
+                           + 0.10 * np.sin(2 * np.pi * p / 57.0 + 2.3))
 
 # ---------------- 1. manto 3D ----------------
 class Mantle:
@@ -286,6 +355,7 @@ class Crust:
                                           # ensancharla (se le extrae la cresta)
         self.fosa = np.zeros((NY, NX))    # eje DELGADO de la fosa (render/placas)
         self.rift = np.zeros((NY, NX))    # desgarre continental activo
+        self.sea = SEA_LEVEL              # nivel del mar del paso (con eustasia)
 
     def step(self, um, vm, hot=None):
         u = upsample(um, NY, NX) * VEL_SCALE
@@ -670,20 +740,27 @@ class Crust:
         # tipo Hawai; la placa que deriva encima deja una cadena) y el domo
         # termico rejuvenece el fondo (queda somero)
         isl = hs * (F < 0.4)
-        # el edificio crece apenas sobre el nivel del mar: islas volcanicas
-        # pequenas (el volcanismo domina sobre la creacion de tierra)
-        C += 0.12 * isl * np.clip(0.9 - C, 0, 1) * DT
+        # el edificio volcanico crece y EMERGE como isla (Hawai, Polinesia): la
+        # placa que deriva sobre el punto caliente casi-fijo deja una CADENA de
+        # islas —el edificio viaja advectado con C y, al alejarse del foco, su
+        # fondo envejece y se hunde (isla -> guyot -> monte submarino). Emerge
+        # claro sobre el mar pero sigue siendo volcanismo puntual, no continente
+        C += 0.22 * isl * np.clip(1.05 - C, 0, 1) * DT
+        # el foco rejuvenece el fondo justo debajo (domo termico somero); al
+        # alejarse la isla ya no se rejuvenece y empieza a subsidir -> la cadena
+        # se hunde progresivamente con la distancia al punto caliente
         self.A *= np.clip(1 - 3 * isl, 0.2, 1)
-        # arco de islas: la subduccion intraoceanica (tipo Marianas) tambien
-        # construye un arco volcanico de islas junto a su fosa
+        # arco de ISLAS: la subduccion intraoceanica (tipo Marianas, Caribe,
+        # arco de Japon) construye un arco volcanico de islas paralelo a su
+        # fosa. Emerge junto a la fosa, no encima (ahi la subduccion se lo
+        # comeria): el halo excluye el nucleo de la fosa y el arco crece a un
+        # lado como una cadena de islas que rompe la superficie
         iarc = self.trench
         for sh in (1, 2):
             iarc = 0.2 * (iarc + np.roll(iarc, sh, 0) + np.roll(iarc, -sh, 0)
                           + np.roll(iarc, sh, 1) + np.roll(iarc, -sh, 1))
-        # el arco emerge junto a la fosa, no encima (ahi la subduccion se lo
-        # comeria): se excluye el nucleo de la fosa
         halo = np.clip(1 - self.trench * 50, 0, 1)
-        C += 2.0 * iarc * halo * (F < 0.4) * np.clip(1.1 - C, 0, 1) * DT
+        C += 2.6 * iarc * halo * (F < 0.4) * np.clip(1.18 - C, 0, 1) * DT
         # actividad volcanica para el render: arcos de subduccion
         # (continentales y de islas) + cabezas de pluma
         self.volcano_arc = arc * F + iarc * (F < 0.4)
@@ -695,7 +772,7 @@ class Crust:
         # cortical empuja de vuelta hacia arriba, asi que solo ~35% de lo
         # erosionado se pierde en las cimas (por eso los Apalaches persisten);
         # lo depositado en los valles se conserva completo
-        land = C > SEA_LEVEL
+        land = C > getattr(self, "sea", SEA_LEVEL)
         d = EROSION * lap_periodic(C) * land * (1 - 0.7 * F)
         C += np.where(d < 0, 0.35 * d, d)
         # suavizado debil global: borra los "anillos de crecimiento" de la
@@ -715,7 +792,11 @@ class Crust:
         return boundary
 
     def elevation(self, detail=0.6):
-        elev = (self.C - SEA_LEVEL) * 1.1
+        # nivel del mar con su variacion eustatica del paso actual (self.sea lo
+        # fija el bucle de simulacion / la reconstruccion); mundos viejos o un
+        # render suelto caen al nivel base
+        sea = getattr(self, "sea", SEA_LEVEL)
+        elev = (self.C - sea) * 1.1
         # en tierra la escala es cuadratica: llanuras verdes cerca del mar,
         # solo las zonas de colision llegan a cordillera/nieve
         elev = np.where(elev > 0, 0.5 * elev ** 2 + 0.03, elev)
@@ -1403,12 +1484,14 @@ CAMPOS_ESTADO = ("C", "F", "A", "Pu", "Pv", "Qu", "Qv", "D", "trench", "dorsal",
 def _parametros_de(args):
     claves = ("tiempo", "cada", "ms", "semilla", "resolucion", "detalle",
               "velocidad", "mar", "continentes", "plumas", "erosion",
-              "empuje", "momento", "rigidez", "deriva")
+              "empuje", "momento", "rigidez", "deriva", "anos_paso",
+              "temperatura", "humedad")
     return {k: getattr(args, k) for k in claves}
 
 def _aplicar_parametros(p):
     global NX, NY, VEL_SCALE, SEA_LEVEL, CONT_UMBRAL, PLUME_EVERY
-    global EROSION, RIDGE_PUSH, MOMENTUM, RIGID, DERIVA
+    global EROSION, RIDGE_PUSH, MOMENTUM, RIGID, DERIVA, ANOS_POR_PASO
+    global TEMPERATURA, HUMEDAD
     NX = NY = int(p["resolucion"])
     VEL_SCALE, SEA_LEVEL = float(p["velocidad"]), float(p["mar"])
     CONT_UMBRAL = float(p["continentes"])
@@ -1417,18 +1500,67 @@ def _aplicar_parametros(p):
     RIGID = min(max(float(p["rigidez"]), 0.0), 1.0)
     # .get: los mundos guardados antes de este dial no traen la clave
     DERIVA = float(p.get("deriva", DERIVA))
+    ANOS_POR_PASO = float(p.get("anos_paso", ANOS_POR_PASO))
+    # diales de clima: mundos guardados antes de la capa climatica no los traen
+    TEMPERATURA = float(p.get("temperatura", TEMPERATURA))
+    HUMEDAD = float(p.get("humedad", HUMEDAD))
+
+def _crear_mundo_en(carpeta, params, nombre, crust=None):
+    """Crea la estructura de un mundo (estado reanudable) en `carpeta`:
+    config.json (parametros) + frames/ (estado por checkpoint) + base.npz (la
+    textura de detalle y la masa continental, constantes de la corrida)."""
+    from datetime import datetime
+    carpeta = Path(carpeta)
+    (carpeta / "frames").mkdir(parents=True, exist_ok=True)
+    cfg = {"nombre": nombre,
+           "creado": datetime.now().isoformat(timespec="seconds"),
+           "version": 1, "parametros": params}
+    (carpeta / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+    if crust is not None:
+        np.savez_compressed(carpeta / "base.npz", D0=crust.D0,
+                            F_total=crust.F_total)
+    return carpeta
 
 def _crear_mundo(args):
     from datetime import datetime
     p = _parametros_de(args)
     nombre = f"{Path(args.salida).name}_s{p['semilla']}_{datetime.now():%Y%m%d-%H%M%S}"
-    carpeta = Path("mundos") / nombre
-    (carpeta / "frames").mkdir(parents=True, exist_ok=True)
-    cfg = {"nombre": nombre,
-           "creado": datetime.now().isoformat(timespec="seconds"),
-           "version": 1, "parametros": p}
-    (carpeta / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
-    return carpeta
+    return _crear_mundo_en(Path("mundos") / nombre, p, nombre)
+
+def _cargar_estado(carpeta, npz_path):
+    """Reconstruye (mantle, crust, sink) desde el estado completo guardado en
+    `npz_path` (+ base.npz de `carpeta`) y deja el rng global donde iba. Es el
+    inverso de guardar_frame; lo usan continuar y extrapolar. Devuelve tambien
+    el paso del checkpoint cargado."""
+    global rng
+    carpeta = Path(carpeta)
+    d = np.load(npz_path)
+    meta = json.loads(d["meta"].item())
+    rng = np.random.default_rng(0)   # temporal: los constructores consumen rng
+    mantle, crust = Mantle(), Crust()
+    mantle.T = d["T"].astype(float)
+    mantle.t = meta["t"]
+    mantle.plumes = meta["plumes"]
+    for k in CAMPOS_ESTADO:
+        # mundos guardados antes de un dial no traen su campo: se dejan como
+        # los sembro el constructor y el primer paso los reconstruye
+        if k in d.files:
+            setattr(crust, k, d[k].astype(float))
+    crust.trench = d["trench"].astype(float)
+    # derivados de render (f16 en el npz): un paso de simulacion los recalcula,
+    # pero detallar puede renderizar el cuadro EXACTO de un checkpoint sin
+    # avanzar ninguno — ahi hacen falta tal como quedaron guardados
+    for k, attr in (("fosa", "fosa"), ("foreland", "foreland"), ("rift", "rift"),
+                    ("va", "volcano_arc"), ("vh", "volcano_hot")):
+        if k in d.files:
+            setattr(crust, attr, d[k].astype(float))
+    base = np.load(carpeta / "base.npz")
+    crust.D0 = base["D0"].astype(float)
+    crust.F_total = float(base["F_total"])
+    rng = np.random.default_rng()
+    rng.bit_generator.state = meta["rng"]   # el azar sigue donde iba
+    sink = upsample(crust.trench, MY, MX)
+    return mantle, crust, sink, int(meta.get("paso", int(Path(npz_path).stem)))
 
 def guardar_frame(carpeta, paso, mantle, crust, boundary):
     """Estado completo de un frame: reproducible y reanudable."""
@@ -1452,12 +1584,18 @@ def guardar_frame(carpeta, paso, mantle, crust, boundary):
         u=crust.u_vis.astype(f16), v=crust.v_vis.astype(f16))
 
 def _simular(mantle, crust, pasos, cada, carpeta=None, detalle=None,
-             paso0=0, sink=None):
-    """Corre la simulacion; si detalle no es None devuelve los frames
-    renderizados (mapa, placas y manto); si carpeta no es None guarda el estado."""
-    frames_m, frames_p, frames_ma, boundary = [], [], [], None
+             paso0=0, sink=None, paso_estado=None):
+    """Corre la simulacion. Si detalle no es None devuelve los frames
+    renderizados (mapa, placas, manto) + el timeline por cuadro. Si carpeta no
+    es None guarda el ESTADO completo: en cada frame si paso_estado es None
+    (mundo --datos), o solo cada paso_estado pasos si se da (checkpoints del
+    reproductor, para extrapolar desde cualquier cuadro sin guardar todo)."""
+    frames_m, frames_p, frames_ma, frames_c, boundary = [], [], [], [], None
+    meta_frames = []
+    checkpoints = []
     for i in range(paso0, paso0 + pasos):
         u, v = mantle.step(sink)
+        crust.sea = SEA_LEVEL + nivel_mar(i)   # eustasia del paso actual
         boundary = crust.step(u, v, mantle.hot)
         sink = upsample(crust.trench, MY, MX)  # la losa fria ancla la bajada
         if i % cada == 0:
@@ -1467,19 +1605,71 @@ def _simular(mantle, crust, pasos, cada, carpeta=None, detalle=None,
                 frames_m.append(render(elev, boundary, vol))
                 frames_p.append(render_placas(crust, boundary, elev))
                 frames_ma.append(render_manto(mantle.T, mantle.plumes))
-            if carpeta is not None:
+                # clima: funcion PURA del elev ya calculado (mismos diales para
+                # todo el mundo). Corre DESPUES de la fisica y no toca el rng
+                # global -> la continuacion de mundos sigue bit-exacta
+                campos = clima.simular_clima(elev, temperatura=TEMPERATURA,
+                                             humedad=HUMEDAD)
+                frames_c.append(clima.render_clima(campos, elev))
+                # timeline por frame: tiempo geologico y valores intermedios
+                # (nivel del mar, nº de plumas, fraccion de tierra) que el
+                # reproductor web lee para rotular cada cuadro coordinado
+                es_cp = carpeta is not None and (
+                    paso_estado is None or i % paso_estado == 0)
+                # resumen climatico del cuadro para el reloj web: temperatura
+                # media del aire sobre tierra (NaN-safe si el mundo es oceano
+                # total) y fraccion de superficie helada
+                tierra_c = elev > 0
+                tmedia = (round(float(campos["tair"][tierra_c].mean()), 3)
+                          if tierra_c.any() else None)
+                meta_frames.append({
+                    "paso": int(i), "ma": round(i * ANOS_POR_PASO, 3),
+                    "mar": round(float(crust.sea), 4),
+                    "plumas": len(mantle.plumes),
+                    "tierra": round(float((elev > 0).mean()), 4),
+                    "clima": {"tmedia": tmedia,
+                              "hielo": round(float((campos["hielo"] > 0.5).mean()), 4)},
+                    "checkpoint": bool(es_cp)})
+            if carpeta is not None and (paso_estado is None or i % paso_estado == 0):
                 guardar_frame(carpeta, i, mantle, crust, boundary)
+                checkpoints.append(int(i))
         rel = i - paso0
         if rel % 200 == 0 and rel:
             print(f"  paso {rel}/{pasos}...")
-    return frames_m, frames_p, frames_ma, boundary
+    return frames_m, frames_p, frames_ma, frames_c, boundary, meta_frames
 
-def _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, ms):
+def _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, frames_c, ms):
     frames_m[-1].save(carpeta / "mapa_final.png")
     for nombre, fr in (("mapa.gif", frames_m), ("placas.gif", frames_p),
-                       ("manto.gif", frames_ma)):
+                       ("manto.gif", frames_ma), ("clima.gif", frames_c)):
         fr[0].save(carpeta / nombre, save_all=True, append_images=fr[1:],
                    duration=ms, loop=0)
+
+def _guardar_reproductor(salida, frames_m, frames_p, frames_ma, frames_c,
+                         meta_frames, cada, ms, mundo_nombre=None):
+    """Guarda, en la carpeta de resultados, los CUADROS individuales (PNG de
+    mapa/placas/manto por frame) y un JSON con la configuracion y el timeline
+    (tiempo Ma + valores intermedios por cuadro). Es lo que permite el
+    reproductor web recorrer el mapa cuadro a cuadro —adelante, reversa, pausa
+    en un punto dado— con el reloj geologico coordinado; el GIF no se puede
+    recorrer en el navegador. `mundo_nombre` es la carpeta de checkpoints
+    (estado completo) desde la que la web extrapola. `salida` = prefijo de -o."""
+    base = Path(f"{salida}_cuadros")
+    if base.exists():
+        shutil.rmtree(base)               # una tanda limpia de cuadros por corrida
+    base.mkdir(parents=True, exist_ok=True)
+    for f, (fm, fp, fma, fc) in enumerate(
+            zip(frames_m, frames_p, frames_ma, frames_c)):
+        fm.save(base / f"mapa_{f:04d}.png")
+        fp.save(base / f"placas_{f:04d}.png")
+        fma.save(base / f"manto_{f:04d}.png")
+        fc.save(base / f"clima_{f:04d}.png")
+    cfg = {"anos_por_paso": ANOS_POR_PASO, "cada": int(cada), "ms": int(ms),
+           "nframes": len(meta_frames), "cuadros": base.name,
+           "mundo": mundo_nombre, "frames": meta_frames}
+    Path(f"{salida}_repro.json").write_text(
+        json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+    return len(meta_frames)
 
 def reconstruir(ruta):
     """Re-renderiza mapa.gif y placas.gif desde los datos guardados."""
@@ -1490,7 +1680,7 @@ def reconstruir(ruta):
     ficheros = sorted((carpeta / "frames").glob("*.npz"))
     if not ficheros:
         raise SystemExit(f"no hay frames guardados en {carpeta}/frames")
-    frames_m, frames_p, frames_ma = [], [], []
+    frames_m, frames_p, frames_ma, frames_c = [], [], [], []
     for fz in ficheros:
         d = np.load(fz)
         c = Crust.__new__(Crust)   # cascaron: solo los campos del render
@@ -1506,21 +1696,28 @@ def reconstruir(ruta):
         c.volcano_hot = d["vh"].astype(float)
         c.u_vis, c.v_vis = d["u"].astype(float), d["v"].astype(float)
         boundary = d["boundary"].astype(float)
+        meta = json.loads(d["meta"].item())
+        paso = meta.get("paso", int(fz.stem))
+        c.sea = SEA_LEVEL + nivel_mar(paso)   # mismo nivel eustatico que en vivo
         elev = c.elevation(p["detalle"])
         vol = ((c.volcano_arc, 0.003, 3), (c.volcano_hot, 0.012, 2))
         frames_m.append(render(elev, boundary, vol))
         frames_p.append(render_placas(c, boundary, elev))
-        meta = json.loads(d["meta"].item())
         frames_ma.append(render_manto(d["T"].astype(float), meta["plumes"]))
-    _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, p["ms"])
-    print(f"-> {carpeta}/mapa.gif, placas.gif, manto.gif y mapa_final.png "
-          f"({len(frames_m)} frames reconstruidos)")
+        # clima: derivado puro, no se guarda en el npz -> se recalcula desde el
+        # elev de este cuadro con los diales del mundo (.get para mundos viejos)
+        campos = clima.simular_clima(
+            elev, temperatura=float(p.get("temperatura", TEMPERATURA)),
+            humedad=float(p.get("humedad", HUMEDAD)))
+        frames_c.append(clima.render_clima(campos, elev))
+    _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, frames_c, p["ms"])
+    print(f"-> {carpeta}/mapa.gif, placas.gif, manto.gif, clima.gif y "
+          f"mapa_final.png ({len(frames_m)} frames reconstruidos)")
 
 def continuar(ruta, pasos, desde=None):
     """Retoma la simulacion desde un frame guardado (el ultimo por defecto)
     y reconstruye ambos GIFs. Con --desde se parte de ese paso y los frames
     posteriores se descartan (la historia se reescribe desde ahi)."""
-    global rng
     import time
     carpeta = Path(ruta)
     cfg = json.loads((carpeta / "config.json").read_text())
@@ -1537,25 +1734,7 @@ def continuar(ruta, pasos, desde=None):
         for q, f in disponibles.items():
             if q > desde:
                 f.unlink()
-    d = np.load(disponibles[paso0])
-    meta = json.loads(d["meta"].item())
-    rng = np.random.default_rng(0)   # temporal: los constructores consumen rng
-    mantle, crust = Mantle(), Crust()
-    mantle.T = d["T"].astype(float)
-    mantle.t = meta["t"]
-    mantle.plumes = meta["plumes"]
-    for k in CAMPOS_ESTADO:
-        # mundos guardados antes del impulso de placa no traen Qu/Qv: se
-        # dejan en None y el primer paso los siembra desde el empuje actual
-        if k in d.files:
-            setattr(crust, k, d[k].astype(float))
-    crust.trench = d["trench"].astype(float)
-    base = np.load(carpeta / "base.npz")
-    crust.D0 = base["D0"].astype(float)
-    crust.F_total = float(base["F_total"])
-    rng = np.random.default_rng()
-    rng.bit_generator.state = meta["rng"]   # el azar sigue donde iba
-    sink = upsample(crust.trench, MY, MX)
+    mantle, crust, sink, paso0 = _cargar_estado(carpeta, disponibles[paso0])
     print(f"continuando '{cfg['nombre']}' desde el paso {paso0} (+{pasos} pasos)")
     t0 = time.time()
     _simular(mantle, crust, pasos, p["cada"], carpeta, paso0=paso0 + 1, sink=sink)
@@ -1566,6 +1745,254 @@ def continuar(ruta, pasos, desde=None):
          "fecha": datetime.now().isoformat(timespec="seconds")})
     (carpeta / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
     reconstruir(carpeta)
+
+def extrapolar(mundo, desde_paso, pasos, salida, ms=None, detalle=None,
+               cada=None, cada_estado=10):
+    """Extrapolacion NO destructiva desde un solo cuadro. Carga el checkpoint
+    completo mas cercano <= desde_paso, avanza en SILENCIO (bit-exacto) hasta
+    reproducir el estado exacto de ese cuadro y luego simula `pasos` mas,
+    escribiendo un reproductor NUEVO (cuadros + repro.json + su propio mundo de
+    checkpoints) en el prefijo `salida`. No toca el mundo de origen: la
+    evolucion original queda intacta y esta es una rama independiente."""
+    import time
+    from datetime import datetime
+    mundo = Path(mundo)
+    cfg = json.loads((mundo / "config.json").read_text())
+    p = dict(cfg["parametros"])
+    _aplicar_parametros(p)
+    cada = int(cada or p["cada"])
+    ms = int(ms if ms is not None else p["ms"])
+    detalle = float(detalle if detalle is not None else p["detalle"])
+    cps = sorted(int(f.stem) for f in (mundo / "frames").glob("*.npz"))
+    if not cps:
+        raise SystemExit(f"no hay checkpoints en {mundo}/frames")
+    previos = [c for c in cps if c <= desde_paso]
+    cp = previos[-1] if previos else cps[0]
+    mantle, crust, sink, cp = _cargar_estado(mundo, mundo / "frames" / f"{cp:06d}.npz")
+    # avance silencioso checkpoint -> desde_paso: reproduce el estado EXACTO del
+    # cuadro pausado (determinista con f64) sin renderizar ni guardar
+    for i in range(cp + 1, desde_paso + 1):
+        u, v = mantle.step(sink)
+        crust.sea = SEA_LEVEL + nivel_mar(i)
+        boundary = crust.step(u, v, mantle.hot)
+        sink = upsample(crust.trench, MY, MX)
+    # rama nueva: su propio mundo de checkpoints para poder re-extrapolar
+    rama_mundo = Path(f"{salida}_mundo")
+    if rama_mundo.exists():
+        shutil.rmtree(rama_mundo)
+    _crear_mundo_en(rama_mundo, p, Path(salida).name, crust)
+    print(f"extrapolando desde el paso {desde_paso} (checkpoint {cp}) "
+          f"+{pasos} pasos -> rama '{Path(salida).name}'")
+    t0 = time.time()
+    fm, fp, fma, fc, boundary, meta_frames = _simular(
+        mantle, crust, pasos, cada, rama_mundo, detalle,
+        paso0=desde_paso + 1, sink=sink, paso_estado=cada * max(int(cada_estado), 1))
+    if not fm:
+        raise SystemExit("la extrapolacion no produjo cuadros (revisa -t y --cada)")
+    print(f"{pasos} pasos en {time.time()-t0:.1f}s")
+    fm[-1].save(f"{salida}_final.png")
+    for suf, fr in (("", fm), ("_placas", fp), ("_manto", fma), ("_clima", fc)):
+        fr[0].save(f"{salida}{suf}.gif", save_all=True,
+                   append_images=fr[1:], duration=ms, loop=0)
+    _guardar_reproductor(salida, fm, fp, fma, fc, meta_frames, cada, ms,
+                         mundo_nombre=rama_mundo.name)
+    cfg_rama = json.loads((rama_mundo / "config.json").read_text())
+    cfg_rama["rama_de"] = {"mundo": str(mundo), "desde_paso": int(desde_paso),
+                           "fecha": datetime.now().isoformat(timespec="seconds")}
+    (rama_mundo / "config.json").write_text(
+        json.dumps(cfg_rama, indent=2, ensure_ascii=False))
+    print(f"-> {salida}.gif, _placas, _manto, _clima, _cuadros/, _repro.json, _mundo/")
+    return len(meta_frames)
+
+def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0):
+    """Detallado NO destructivo de UN solo cuadro. Igual que extrapolar, carga
+    el checkpoint mas cercano <= `paso` y avanza en silencio hasta el estado
+    EXACTO de ese cuadro; pero en vez de seguir la simulacion, super-muestrea
+    ese unico frame a `factor` veces la resolucion y le anade la geografia
+    menor que la tectonica no resuelve, por METODOS DE RUIDO (fBm periodico +
+    deformacion de dominio) condicionados por los campos fisicos del cuadro:
+    costas rotas e islitas de plataforma, colinas abisales, cadenas de islas
+    sobre los puntos calientes, arcos insulares sobre el volcanismo de
+    subduccion, mares interiores en las cuencas continentales bajas y
+    casquetes polares. Rinde <salida>.png (relieve; bajo el mar solo la
+    plataforma continental, sin fondo abisal) + <salida>_clima.png (mapa
+    fisico-climatico snapshot a PLENA resolucion del detalle: biomas
+    reclasificados pixel a pixel con la geografia fina, relieve sombreado, rios,
+    corrientes y hielo; la fisica se calcula sobre una malla capada por costo
+    pero el render va a la resolucion completa) + .json con los metadatos. El
+    mundo de origen NO se toca: su evolucion subsiguiente queda intacta, y la
+    misma semilla de ruido reproduce el mismo detalle."""
+    import time
+    from datetime import datetime
+    mundo = Path(mundo)
+    cfg = json.loads((mundo / "config.json").read_text())
+    p = dict(cfg["parametros"])
+    _aplicar_parametros(p)
+    factor = min(max(int(factor), 2), 32)
+    cps = sorted(int(f.stem) for f in (mundo / "frames").glob("*.npz"))
+    if not cps:
+        raise SystemExit(f"no hay checkpoints en {mundo}/frames")
+    previos = [c for c in cps if c <= paso]
+    cp = previos[-1] if previos else cps[0]
+    mantle, crust, sink, cp = _cargar_estado(mundo, mundo / "frames" / f"{cp:06d}.npz")
+    paso = max(paso, cp)
+    faltan = paso - cp
+    for i in range(cp + 1, paso + 1):   # avance silencioso: estado exacto del cuadro
+        u, v = mantle.step(sink)
+        crust.sea = SEA_LEVEL + nivel_mar(i)
+        crust.step(u, v, mantle.hot)
+        sink = upsample(crust.trench, MY, MX)
+        if (i - cp) % 20 == 0:
+            print(f"  paso {i - cp}/{faltan}...")
+    crust.sea = SEA_LEVEL + nivel_mar(paso)
+    ny, nx = NY * factor, NX * factor
+    print(f"detallando el cuadro del paso {paso} (checkpoint {cp}) a {nx}x{ny} "
+          f"({factor}x, ruido {semilla})...")
+    t0 = time.time()
+    f32 = np.float32
+    # los campos del cuadro, super-muestreados: la tectonica manda, el ruido
+    # solo rellena las escalas que la malla original no resuelve. bicubico:
+    # bilineal convierte cada pixel aislado (p.ej. un pozo de fondo viejo)
+    # en un rombo evidente a estos aumentos
+    eu = _upsample_bicubico(crust.elevation(p["detalle"]), factor)
+    Fu = _upsample_bicubico(crust.F, factor)
+    Du = _upsample_bicubico(np.abs(crust.D), factor)
+    vh = _upsample_bicubico(crust.volcano_hot, factor)
+    va = _upsample_bicubico(crust.volcano_arc, factor)
+    # generador PROPIO del detalle (semilla, paso): otra semilla = otra
+    # geografia menor sobre la misma tectonica; el rng de la simulacion ni se lee
+    rng_d = np.random.default_rng([int(semilla) & 0x7FFFFFFF, int(paso)])
+    r1 = _fbm(rng_d, ny, nx, esc0=max(NY // 2, 8))       # sub-rejilla fina
+    wy = _fbm(rng_d, ny, nx, esc0=max(NY // 8, 4))       # deformacion de dominio:
+    wx = _fbm(rng_d, ny, nx, esc0=max(NY // 8, 4))       # el detalle serpentea en
+    r1 = advect(r1, wx * (2.5 * factor), wy * (2.5 * factor), 1.0).astype(f32)
+    del wy, wx                                           # vez de verse algodonoso
+    rr = f32(1.0) - f32(2.0) * np.abs(_fbm(rng_d, ny, nx, esc0=max(NY, 8)))
+    baja = _fbm(rng_d, ny, nx, esc0=max(NY // 8, 4))     # muy baja frecuencia
+    costa = np.exp(-(eu / f32(0.06)) ** 2)               # banda costera+plataforma
+    elev2 = (eu + f32(relieve) * (
+        f32(0.055) * costa * r1                          # costas rotas, islitas,
+                                                         # bahias y lagunas
+        + f32(0.15) * np.clip(eu, 0, None) * (f32(0.35) + f32(0.65) * Du) * rr
+                                                         # crestas de montana
+        + f32(0.02) * np.clip(-eu / f32(0.25), 0, 1) * r1))  # colinas abisales
+    del costa, rr
+    # mares interiores: depresiones de muy baja frecuencia en el interior
+    # continental bajo; donde caen bajo el nivel del mar, se inundan
+    interior = (np.clip((Fu - f32(0.6)) / f32(0.3), 0, 1)
+                * np.clip(f32(1.0) - eu / f32(0.12), 0, 1) * (eu > 0))
+    elev2 -= f32(0.05 * relieve) * np.clip(baja - f32(0.25), 0, None) * interior
+    del interior, Fu, Du
+    # islas menores: cadenas sobre puntos calientes (Hawai/Polinesia) y arcos
+    # insulares (Caribe/Marianas); el ruido decide CUALES montes emergen
+    def _norm(q):
+        return np.clip(q / (np.percentile(q, 99.5) + 1e-12), 0, 1).astype(f32)
+    semillero = np.clip(r1 - f32(0.30), 0, None) / f32(0.70)
+    elev2 += ((f32(0.10) * _norm(vh) + f32(0.06) * _norm(va))
+              * semillero * (eu < f32(0.01)))
+    del semillero, vh, va, r1, eu
+    elev2 = np.clip(elev2, -1, 1)
+    # casquetes polares: la fila hace de latitud; el borde lo rompe el ruido
+    hielo_t = hielo_m = None
+    if casquetes > 0:
+        lat = np.abs(np.linspace(-1.0, 1.0, ny, dtype=f32))[:, None]
+        frio = lat - f32(1.0 - min(float(casquetes), 0.6)) + f32(0.06) * baja
+        hielo_t = np.clip(frio / f32(0.04), 0, 1) * (elev2 > 0)     # casquete
+        hielo_m = np.clip((frio - f32(0.03)) / f32(0.05), 0, 1) * (elev2 <= 0)
+        del lat, frio                                               # banquisa
+    del baja
+    # relieve: el fondo abisal no se muestra; bajo el mar solo queda la
+    # plataforma continental y, pasado el talud, un azul oceanico uniforme
+    prof = np.clip((f32(-0.06) - elev2) / f32(0.06), 0, 1)
+    elev_vis = (elev2 * (f32(1.0) - prof) + f32(-0.55) * prof).astype(f32)
+    del prof
+    img = render(elev_vis, np.zeros_like(elev_vis))
+    if hielo_t is not None:
+        arr = np.asarray(img, dtype=np.float32)
+        h = hielo_t[..., None]
+        arr = arr * (1 - h) + np.array([242, 246, 250], np.float32) * h
+        h = f32(0.85) * hielo_m[..., None]
+        arr = arr * (1 - h) + np.array([214, 228, 240], np.float32) * h
+        img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+    png = f"{salida}.png"
+    img.save(png)
+    del img, elev_vis        # liberar el relieve antes del render climatico gigante
+    # clima del cuadro detallado: segunda imagen, funcion PURA de la geografia
+    # detallada (mismos diales de clima que la corrida; no toca el rng de la
+    # simulacion). La FISICA se calcula sobre una malla capada (<=512): no solo
+    # por costo, sino porque el clima es fenomeno de GRAN escala — sobre el fBm
+    # fino el drenaje por percentil degenera en miles de rios/lagos de 1px
+    # (tierra moteada de azul). El RENDER si va a plena resolucion: los biomas
+    # se reclasifican pixel a pixel con la geografia fina y los rios/lagos/
+    # corrientes se trazan como vectores escalados desde la malla gruesa
+    kc = max(1, -(-ny // 512))
+    if kc == 1:
+        elev_c = elev2
+    elif ny % kc == 0 and nx % kc == 0:
+        elev_c = elev2.reshape(ny // kc, kc, nx // kc, kc).mean(axis=(1, 3))
+    else:
+        elev_c = elev2[::kc, ::kc]
+    print(f"clima del detalle (fisica a {elev_c.shape[1]}x{elev_c.shape[0]}, "
+          f"render a {nx}x{ny})...")
+    campos = clima.simular_clima(elev_c, temperatura=TEMPERATURA, humedad=HUMEDAD)
+    png_c = f"{salida}_clima.png"
+    clima.render_clima_detalle(campos, elev2, elev_c,
+                               temperatura=TEMPERATURA).save(png_c)
+
+    # ---- clima HD: hidrologia fina + overlays + capas vectoriales ----
+    # la fisica se queda en la malla capada (gran escala); la HIDROLOGIA se
+    # recalcula sobre la geografia FINA en una malla res_hidro=min(render,4096)
+    # (downsample por media de bloques si render>4096, como el kc de arriba)
+    th0 = time.time()
+    nh = min(ny, 4096)
+    if nh == ny:
+        elev_h = elev2
+    else:
+        elev_h = clima._malla_bloques(elev2, nh, nh)
+    precip_h = np.clip(clima._upsample_bicubico_a(campos["precip"], nh, nh), 0.0, 1.0)
+    hielo_h = np.clip(clima._upsample_bicubico_a(campos["hielo"], nh, nh), 0.0, 1.0)
+    hidro = clima.hidrologia_fina(elev_h, precip_h, hielo_h)
+    del precip_h, hielo_h
+    if elev_h is not elev2:
+        del elev_h
+    print(f"hidrologia fina a {nh}x{nh} ({hidro['iters']} iteraciones de "
+          f"acumulacion, {int(hidro['rios'].sum())} celdas de rio) en "
+          f"{time.time()-th0:.1f}s")
+    tr0 = time.time()
+    png_hd = f"{salida}_climahd.png"
+    clima.render_clima_hd(campos, elev2, elev_c, hidro,
+                          temperatura=TEMPERATURA).save(png_hd)
+    print(f"render climahd a {nx}x{ny} en {time.time()-tr0:.1f}s")
+    te0 = time.time()
+    res_datos = (min(nx, 1024), min(ny, 1024))
+    res_koppen = (min(nx, 2048), min(ny, 2048))
+    rd, rk = clima.exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
+                                  (res_datos[1], res_datos[0]),
+                                  (res_koppen[1], res_koppen[0]),
+                                  temperatura=TEMPERATURA)
+    print(f"capas (koppen/cuencas/datos/datos2/capas.json a "
+          f"{res_datos[0]}x{res_datos[1]}) en {time.time()-te0:.1f}s")
+    del hidro, campos, elev2
+    meta = {"mundo": str(mundo), "paso": int(paso), "checkpoint": int(cp),
+            "ma": round(paso * ANOS_POR_PASO, 3), "factor": int(factor),
+            "semilla_detalle": int(semilla), "casquetes": float(casquetes),
+            "relieve": float(relieve), "resolucion": [int(nx), int(ny)],
+            # el PNG climatico va ahora a plena resolucion (== resolucion); la
+            # fisica se calculo sobre la malla capada (resolucion_fisica_clima)
+            "resolucion_clima": [int(nx), int(ny)],
+            "resolucion_fisica_clima": [int(elev_c.shape[1]), int(elev_c.shape[0])],
+            "mar": round(float(crust.sea), 4),
+            # capa climatica HD (aditivo): hidrologia fina + overlays + capas
+            "climahd": True,
+            "res_hidro": [int(nh), int(nh)],
+            "res_datos": [int(rd[0]), int(rd[1])],
+            "creado": datetime.now().isoformat(timespec="seconds")}
+    Path(f"{salida}.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"-> {png} ({nx}x{ny}), {png_c}, {png_hd}, "
+          f"{salida}_koppen/cuencas/datos/datos2.png, {salida}_capas.json y "
+          f"{salida}.json en {time.time()-t0:.1f}s; el mundo de origen queda intacto")
+    return png
 
 # ---------------- CLI ----------------
 def main():
@@ -1620,11 +2047,30 @@ def main():
                         "cada continente su margen oceanico y el manto "
                         "(1=solo la media del manto; con el valor por defecto "
                         "el continente viaja a la velocidad de su placa)")
+    g.add_argument("--anos-paso", "--anos_paso", type=float,
+                   default=ANOS_POR_PASO, metavar="MA", dest="anos_paso",
+                   help="millones de anos (Ma) que representa cada paso: fija la "
+                        "escala de tiempo que se rotula en los frames")
+    g.add_argument("--temperatura", type=float, default=TEMPERATURA, metavar="T",
+                   help="clima: temperatura global del planeta, -1 (bola de "
+                        "nieve) .. 0 (templado, Tierra) .. +1 (invernadero); "
+                        "solo afecta al mapa de clima, no a la tectonica")
+    g.add_argument("--humedad", type=float, default=HUMEDAD, metavar="H",
+                   help="clima: humedad global, 0.2 (arido) .. 1 (normal) .. 2 "
+                        "(muy humedo); escala la lluvia, los rios y la selva")
     m = p.add_argument_group("mundos", "almacenamiento por frame para "
                              "reconstruir o retomar simulaciones")
     m.add_argument("--datos", action="store_true",
                    help="guardar el estado completo de cada frame en "
                         "mundos/<nombre>/ (config + frames reanudables)")
+    m.add_argument("--reproductor", action="store_true",
+                   help="guardar cuadros PNG por frame + repro.json (timeline) + "
+                        "un mundo de checkpoints junto a la salida: habilita el "
+                        "reproductor web (adelante/reversa/pausa) y extrapolar")
+    m.add_argument("--cada-estado", type=int, default=10, metavar="F",
+                   dest="cada_estado",
+                   help="frames entre checkpoints de estado completo (1 = estado "
+                        "de CADA cuadro; mas alto = menos disco)")
     m.add_argument("--reconstruir", metavar="CARPETA",
                    help="re-renderizar mapa.gif y placas.gif desde los datos "
                         "de un mundo guardado (ignora el resto de opciones)")
@@ -1634,12 +2080,46 @@ def main():
     m.add_argument("--desde", type=int, metavar="PASO",
                    help="con --continuar: retomar desde ese frame guardado "
                         "(los frames posteriores se descartan)")
+    m.add_argument("--extrapolar", metavar="MUNDO",
+                   help="rama NO destructiva desde un cuadro de un mundo de "
+                        "checkpoints; usa --desde-paso, -t (pasos) y -o (rama)")
+    m.add_argument("--desde-paso", type=int, default=0, metavar="PASO",
+                   dest="desde_paso",
+                   help="con --extrapolar: paso (cuadro) del que partir")
+    d = p.add_argument_group("detalle", "extrapolacion gigantesca de UN solo "
+                             "cuadro: geografia menor por ruido (islas, mares "
+                             "interiores, casquetes) sin tocar el mundo")
+    d.add_argument("--detallar", metavar="MUNDO",
+                   help="detalla el cuadro --desde-paso del mundo dado a "
+                        "--factor veces la resolucion; rinde <SALIDA>.png y "
+                        ".json (el mundo y su evolucion quedan intactos)")
+    d.add_argument("--factor", type=int, default=8, metavar="N",
+                   help="con --detallar: aumento (mapa de N*resolucion px)")
+    d.add_argument("--semilla-detalle", "--semilla_detalle", type=int,
+                   default=0, dest="semilla_detalle", metavar="S",
+                   help="con --detallar: semilla del ruido; cambiarla da otra "
+                        "geografia menor sobre la MISMA tectonica")
+    d.add_argument("--casquetes", type=float, default=0.18, metavar="X",
+                   help="con --detallar: extension de los casquetes polares "
+                        "(0 = sin hielo, ~0.45 = edad de hielo)")
+    d.add_argument("--relieve", type=float, default=1.0, metavar="R",
+                   help="con --detallar: amplitud del ruido de detalle")
     args = p.parse_args()
 
     if args.reconstruir:
         return reconstruir(args.reconstruir)
     if args.continuar:
         return continuar(args.continuar, args.tiempo, args.desde)
+    if args.extrapolar:
+        Path(args.salida).resolve().parent.mkdir(parents=True, exist_ok=True)
+        return extrapolar(args.extrapolar, args.desde_paso, args.tiempo,
+                          args.salida, ms=args.ms, detalle=args.detalle,
+                          cada=args.cada, cada_estado=args.cada_estado)
+    if args.detallar:
+        Path(args.salida).resolve().parent.mkdir(parents=True, exist_ok=True)
+        return detallar(args.detallar, args.desde_paso, args.factor,
+                        args.salida, semilla=args.semilla_detalle,
+                        casquetes=args.casquetes, relieve=args.relieve)
     if args.tiempo < 1 or args.cada < 1 or args.resolucion < 32:
         p.error("tiempo y cada deben ser >= 1, resolucion >= 32")
     rng = np.random.default_rng(args.semilla)
@@ -1648,21 +2128,35 @@ def main():
     Path(args.salida).resolve().parent.mkdir(parents=True, exist_ok=True)
 
     mantle, crust = Mantle(), Crust()
-    carpeta = _crear_mundo(args) if args.datos else None
-    if carpeta:
+    # mundo de estado: --reproductor guarda checkpoints junto a la salida (para
+    # el reproductor web y extrapolar); --datos guarda el mundo completo (cada
+    # frame) en mundos/. El reproductor tiene prioridad si se piden ambos
+    paso_estado = None
+    mundo_repro = None
+    if args.reproductor:
+        mundo_repro = Path(f"{args.salida}_mundo")
+        if mundo_repro.exists():
+            shutil.rmtree(mundo_repro)
+        carpeta = _crear_mundo_en(mundo_repro, _parametros_de(args),
+                                  Path(args.salida).name, crust)
+        paso_estado = args.cada * max(args.cada_estado, 1)
+    elif args.datos:
+        carpeta = _crear_mundo(args)
         np.savez_compressed(carpeta / "base.npz", D0=crust.D0,
                             F_total=crust.F_total)
+    else:
+        carpeta = None
     t0 = time.time()
-    frames_m, frames_p, frames_ma, boundary = _simular(
+    frames_m, frames_p, frames_ma, frames_c, boundary, meta_frames = _simular(
         mantle, crust, args.tiempo, args.cada, carpeta,
-        None if args.sin_gif else args.detalle)
+        None if args.sin_gif else args.detalle, paso_estado=paso_estado)
     dt = time.time() - t0
     print(f"{args.tiempo} pasos en {dt:.1f}s ({args.tiempo/dt:.0f} pasos/s)")
 
     png = f"{args.salida}_final.png"
     vol = ((crust.volcano_arc, 0.003, 3), (crust.volcano_hot, 0.012, 2))
     render(crust.elevation(args.detalle), boundary, vol).save(png)
-    print(f"-> {png}")
+    print(f"-> {png} ({(args.tiempo - 1) * ANOS_POR_PASO:,.0f} Ma)")
     if not args.sin_gif:
         gif = f"{args.salida}.gif"
         frames_m[0].save(gif, save_all=True, append_images=frames_m[1:],
@@ -1677,12 +2171,30 @@ def main():
         frames_ma[0].save(gifma, save_all=True, append_images=frames_ma[1:],
                           duration=args.ms, loop=0)
         print(f"-> {gifma} (manto: plumas y anomalia termica)")
-    if carpeta:
+        gifc = f"{args.salida}_clima.gif"
+        frames_c[0].save(gifc, save_all=True, append_images=frames_c[1:],
+                         duration=args.ms, loop=0)
+        print(f"-> {gifc} (clima: biomas, lluvia, rios y corrientes)")
+    # reproductor web: cuadros PNG + repro.json (timeline) + mundo de checkpoints
+    if args.reproductor and frames_m:
+        n = _guardar_reproductor(args.salida, frames_m, frames_p, frames_ma,
+                                 frames_c, meta_frames, args.cada, args.ms,
+                                 mundo_nombre=mundo_repro.name)
+        cps = sum(1 for f in meta_frames if f.get("checkpoint"))
+        tam = sum(f.stat().st_size for f in mundo_repro.rglob("*")
+                  if f.is_file()) / 1e6
+        print(f"-> {args.salida}_cuadros/ ({n} cuadros) y {args.salida}_repro.json")
+        print(f"-> {mundo_repro}/ ({cps} checkpoints, {tam:.0f} MB; extrapolable)")
+    elif args.reproductor:
+        print("aviso: --reproductor sin frames (¿--sin-gif?); no se guardaron cuadros")
+    # mundo --datos: copia las salidas finales dentro del mundo completo
+    if args.datos and carpeta and not args.reproductor:
         shutil.copy(png, carpeta / "mapa_final.png")
         if not args.sin_gif:
             shutil.copy(gif, carpeta / "mapa.gif")
             shutil.copy(gifp, carpeta / "placas.gif")
             shutil.copy(gifma, carpeta / "manto.gif")
+            shutil.copy(gifc, carpeta / "clima.gif")
         tam = sum(f.stat().st_size for f in carpeta.rglob("*") if f.is_file()) / 1e6
         print(f"-> {carpeta}/ (estado por frame, {tam:.0f} MB; "
               f"--reconstruir/--continuar para retomarlo)")
