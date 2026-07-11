@@ -1486,7 +1486,14 @@ def _parametros_de(args):
               "velocidad", "mar", "continentes", "plumas", "erosion",
               "empuje", "momento", "rigidez", "deriva", "anos_paso",
               "temperatura", "humedad")
-    return {k: getattr(args, k) for k in claves}
+    p = {k: getattr(args, k) for k in claves}
+    # los flags de clima son None por defecto (para distinguir "no dado" en
+    # --detallar); en el config del mundo guardamos los defaults de modulo
+    if p["temperatura"] is None:
+        p["temperatura"] = TEMPERATURA
+    if p["humedad"] is None:
+        p["humedad"] = HUMEDAD
+    return p
 
 def _aplicar_parametros(p):
     global NX, NY, VEL_SCALE, SEA_LEVEL, CONT_UMBRAL, PLUME_EVERY
@@ -1804,7 +1811,8 @@ def extrapolar(mundo, desde_paso, pasos, salida, ms=None, detalle=None,
     print(f"-> {salida}.gif, _placas, _manto, _clima, _cuadros/, _repro.json, _mundo/")
     return len(meta_frames)
 
-def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0):
+def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0,
+             temperatura=None, humedad=None):
     """Detallado NO destructivo de UN solo cuadro. Igual que extrapolar, carga
     el checkpoint mas cercano <= `paso` y avanza en silencio hasta el estado
     EXACTO de ese cuadro; pero en vez de seguir la simulacion, super-muestrea
@@ -1828,6 +1836,13 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
     cfg = json.loads((mundo / "config.json").read_text())
     p = dict(cfg["parametros"])
     _aplicar_parametros(p)
+    # el clima del detalle es un dial propio del cuadro: si se da, sobreescribe
+    # el del mundo que acaba de fijar _aplicar_parametros; si no, se conserva
+    global TEMPERATURA, HUMEDAD
+    if temperatura is not None:
+        TEMPERATURA = float(temperatura)
+    if humedad is not None:
+        HUMEDAD = float(humedad)
     factor = min(max(int(factor), 2), 32)
     cps = sorted(int(f.stem) for f in (mundo / "frames").glob("*.npz"))
     if not cps:
@@ -1977,6 +1992,8 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
             "ma": round(paso * ANOS_POR_PASO, 3), "factor": int(factor),
             "semilla_detalle": int(semilla), "casquetes": float(casquetes),
             "relieve": float(relieve), "resolucion": [int(nx), int(ny)],
+            # diales de clima efectivos de este cuadro (los que se usaron)
+            "temperatura": float(TEMPERATURA), "humedad": float(HUMEDAD),
             # el PNG climatico va ahora a plena resolucion (== resolucion); la
             # fisica se calculo sobre la malla capada (resolucion_fisica_clima)
             "resolucion_clima": [int(nx), int(ny)],
@@ -2051,13 +2068,18 @@ def main():
                    default=ANOS_POR_PASO, metavar="MA", dest="anos_paso",
                    help="millones de anos (Ma) que representa cada paso: fija la "
                         "escala de tiempo que se rotula en los frames")
-    g.add_argument("--temperatura", type=float, default=TEMPERATURA, metavar="T",
+    # default None para distinguir "no dado" de "explicito": en generacion None
+    # cae al default de modulo; en --detallar None conserva el clima del mundo,
+    # un valor explicito lo sobreescribe
+    g.add_argument("--temperatura", type=float, default=None, metavar="T",
                    help="clima: temperatura global del planeta, -1 (bola de "
                         "nieve) .. 0 (templado, Tierra) .. +1 (invernadero); "
-                        "solo afecta al mapa de clima, no a la tectonica")
-    g.add_argument("--humedad", type=float, default=HUMEDAD, metavar="H",
+                        "solo afecta al mapa de clima, no a la tectonica; en "
+                        "--detallar sobreescribe la del mundo")
+    g.add_argument("--humedad", type=float, default=None, metavar="H",
                    help="clima: humedad global, 0.2 (arido) .. 1 (normal) .. 2 "
-                        "(muy humedo); escala la lluvia, los rios y la selva")
+                        "(muy humedo); escala la lluvia, los rios y la selva; "
+                        "en --detallar sobreescribe la del mundo")
     m = p.add_argument_group("mundos", "almacenamiento por frame para "
                              "reconstruir o retomar simulaciones")
     m.add_argument("--datos", action="store_true",
@@ -2119,7 +2141,8 @@ def main():
         Path(args.salida).resolve().parent.mkdir(parents=True, exist_ok=True)
         return detallar(args.detallar, args.desde_paso, args.factor,
                         args.salida, semilla=args.semilla_detalle,
-                        casquetes=args.casquetes, relieve=args.relieve)
+                        casquetes=args.casquetes, relieve=args.relieve,
+                        temperatura=args.temperatura, humedad=args.humedad)
     if args.tiempo < 1 or args.cada < 1 or args.resolucion < 32:
         p.error("tiempo y cada deben ser >= 1, resolucion >= 32")
     rng = np.random.default_rng(args.semilla)

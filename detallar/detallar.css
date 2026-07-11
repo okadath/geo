@@ -1,0 +1,73 @@
+/* Estilos del detallado de UN cuadro: la sección lateral «Detallar cuadro»,
+   la galería «Cuadros detallados» (PNG gigantes de un solo frame) y el visor
+   de clima HD interactivo. Se carga como <link> en la misma página, así que
+   reutiliza las variables CSS de :root (--fondo, --panel, --borde, --texto,
+   --tenue, --acento, --rojo). */
+
+/* sección lateral «Detallar cuadro»: el <select> se ve como los inputs */
+#sec-detallar select {
+  background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: 8px; padding: 7px 10px; font: inherit; width: 100%;
+  margin: 4px 0 0;
+}
+
+/* cuadros detallados: PNG gigantes de un solo frame */
+#detalles { margin-top: 18px; }
+#detalles-lista .detalle { margin: 12px 0; }
+#detalles-lista img { width: 100%; display: block; border-radius: 10px;
+  border: 1px solid var(--borde); cursor: zoom-in; }
+
+/* visor de clima HD: base climahd + capas combinables con zoom/paneo */
+.detalle-hd { margin: 16px 0; }
+.visor-ctrl { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+              margin: 8px 0; font-size: 13px; }
+.visor-ctrl label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.visor-ctrl input[type=checkbox] { accent-color: var(--acento); }
+.visor-ctrl .reset { padding: 3px 8px; font-size: 12.5px; }
+.visor-ctrl .abrir { color: var(--acento); margin-left: auto; }
+.visor-fila { display: flex; gap: 12px; align-items: flex-start; }
+@media (max-width: 700px) { .visor-fila { flex-direction: column; } }
+.visor {
+  position: relative; flex: 1 1 auto; min-width: 0; width: 100%; max-width: 100%;
+  overflow: hidden; border-radius: 10px; border: 1px solid var(--borde);
+  background: #0b0e14; cursor: grab; touch-action: none;
+}
+.visor.agarrando { cursor: grabbing; }
+.visor-lienzo { position: absolute; inset: 0; transform-origin: 0 0; }
+.capa { position: absolute; top: 0; left: 0; display: block; }
+img.capa { width: 100%; height: 100%; pointer-events: none;
+           -webkit-user-drag: none; user-select: none; }
+/* neutraliza las reglas genéricas `#resultado img` y `#detalles-lista img`
+   (max-width 640, margen, borde), que ganan por especificidad y encogían la
+   imagen base respecto a las capas canvas del visor */
+#resultado .visor img.capa {
+  width: 100%; height: 100%; max-width: none; margin: 0;
+  border: none; border-radius: 0; cursor: inherit;
+}
+canvas.capa { pointer-events: none; }
+img.capa-koppen { opacity: .55; image-rendering: auto; }
+img.capa-cuencas { image-rendering: auto; }
+.visor-lado { flex: 0 0 214px; display: flex; flex-direction: column; gap: 10px; }
+@media (max-width: 700px) { .visor-lado { flex-basis: auto; width: 100%; } }
+.inspector, .leyenda-koppen {
+  background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px;
+  padding: 10px 12px; font-size: 12.5px;
+}
+.inspector h3, .leyenda-koppen .ley-tit {
+  margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--tenue); font-weight: 600;
+}
+.inspector .fila-dato { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.inspector .fila-dato span { color: var(--tenue); }
+.inspector .fila-dato b { font-weight: 600; color: var(--texto);
+                          font-variant-numeric: tabular-nums; text-align: right; }
+.leyenda-koppen { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.leyenda-koppen .ley-tit { flex-basis: 100%; }
+.leyenda-koppen span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda-koppen i.cuad { display: inline-block; width: 13px; height: 13px;
+  border-radius: 3px; border: 1px solid var(--borde); }
+.tip-rio {
+  position: absolute; z-index: 5; pointer-events: none; transform: translate(10px, 10px);
+  background: rgba(10,14,20,.92); border: 1px solid var(--borde); border-radius: 6px;
+  padding: 3px 7px; font-size: 12px; color: var(--texto); white-space: nowrap;
+}

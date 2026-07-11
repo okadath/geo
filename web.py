@@ -54,21 +54,21 @@ PARAMS = {
     "rigidez":     (0.0, 1.0, float, 0.85),
     "deriva":      (1.0, 10.0, float, 8.0),
     "anos_paso":   (0.1, 10.0, float, 1.0),
-    # diales de la capa climatica (snapshots derivados de la geografia)
-    "temperatura": (-1.0, 1.0, float, 0.0),
-    "humedad":     (0.2, 2.0, float, 1.0),
 }
 ALGORITMO = ("velocidad", "mar", "continentes", "plumas",
-             "erosion", "empuje", "momento", "rigidez", "deriva", "anos_paso",
-             "temperatura", "humedad")
+             "erosion", "empuje", "momento", "rigidez", "deriva", "anos_paso")
 
 # diales del detallado de UN cuadro (tecto.py --detallar): mismos rangos que
-# el CLI; el factor ademas se acota para que resolucion*factor <= 4096 px
+# el CLI; el factor ademas se acota para que resolucion*factor <= 4096 px. Los
+# diales de clima (temperatura/humedad) viven aqui: se eligen al detallar un
+# cuadro y sobreescriben los del mundo, sin tocar la generacion
 DETALLE = {
-    "factor":    (2, 16, int, 8),
-    "semilla":   (0, 2**31 - 1, int, 0),
-    "casquetes": (0.0, 0.45, float, 0.18),
-    "relieve":   (0.2, 3.0, float, 1.0),
+    "factor":      (2, 16, int, 8),
+    "semilla":     (0, 2**31 - 1, int, 0),
+    "casquetes":   (0.0, 0.45, float, 0.18),
+    "relieve":     (0.2, 3.0, float, 1.0),
+    "temperatura": (-1.0, 1.0, float, 0.0),
+    "humedad":     (0.2, 2.0, float, 1.0),
 }
 
 jobs = {}
@@ -246,6 +246,8 @@ def correr_detalle(job_id, origen, paso, pd):
            "--desde-paso", str(int(paso)), "--factor", str(pd["factor"]),
            "--semilla-detalle", str(pd["semilla"]),
            "--casquetes", str(pd["casquetes"]), "--relieve", str(pd["relieve"]),
+           "--temperatura", str(pd["temperatura"]),
+           "--humedad", str(pd["humedad"]),
            "-o", str(carpeta / nombre)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -324,6 +326,14 @@ class Manejador(BaseHTTPRequestHandler):
         if url.path == "/":
             return self._archivo(BASE / "web.html", "text/html; charset=utf-8",
                                  cache=False)
+        # modulo del detallado: allowlist estricta (sin traversal), solo estos
+        # dos archivos; sin cache, igual que la pagina, para ver los cambios al
+        # recargar
+        if url.path in ("/detallar/detallar.js", "/detallar/detallar.css"):
+            nombre = url.path.rsplit("/", 1)[1]
+            ctype = ("application/javascript; charset=utf-8"
+                     if nombre.endswith(".js") else "text/css; charset=utf-8")
+            return self._archivo(BASE / "detallar" / nombre, ctype, cache=False)
         if url.path == "/api/corridas":
             return self._json(cargar_corridas())
         if url.path == "/api/estado":
