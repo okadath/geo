@@ -61,20 +61,23 @@ TAU = 6.2832
 #  catalogo de temas y subtipos (portado de batalla.html)
 # ==========================================================================
 TEMAS = [
-    {"clave": "bosque",   "nombre": "Bosque templado",       "subs": ["tipico", "denso", "claro", "ruinas", "circulo", "cementerio", "campamento"]},
-    {"clave": "taiga",    "nombre": "Taiga (coníferas)", "subs": ["tipico", "denso", "claro", "ruinas", "campamento"]},
-    {"clave": "selva",    "nombre": "Selva densa",           "subs": ["tipico", "denso", "ruinas", "circulo"]},
-    {"clave": "desierto", "nombre": "Desierto / roquedal",   "subs": ["tipico", "oasis", "canon", "ruinas", "campamento"]},
-    {"clave": "nieve",    "nombre": "Nieve / tundra",        "subs": ["tipico", "lago", "ruinas", "campamento", "cementerio"]},
-    {"clave": "cienaga",  "nombre": "Ciénaga / pantano", "subs": ["tipico", "ruinas", "cementerio", "circulo"]},
-    {"clave": "paso",     "nombre": "Paso rocoso / montaña", "subs": ["tipico", "canon", "mina", "ruinas", "campamento"]},
-    {"clave": "pradera",  "nombre": "Pradera",               "subs": ["campamento", "tipico", "circulo", "granja", "cementerio", "ruinas"]},
+    {"clave": "bosque",   "nombre": "Bosque templado",       "subs": ["tipico", "denso", "claro", "ruinas", "circulo", "cementerio", "campamento", "torre", "altar", "madriguera"]},
+    {"clave": "taiga",    "nombre": "Taiga (coníferas)", "subs": ["tipico", "denso", "claro", "ruinas", "campamento", "madriguera"]},
+    {"clave": "selva",    "nombre": "Selva densa",           "subs": ["tipico", "denso", "ruinas", "circulo", "altar"]},
+    {"clave": "desierto", "nombre": "Desierto / roquedal",   "subs": ["tipico", "oasis", "canon", "ruinas", "campamento", "cruce"]},
+    {"clave": "nieve",    "nombre": "Nieve / tundra",        "subs": ["tipico", "lago", "ruinas", "campamento", "cementerio", "torre"]},
+    {"clave": "cienaga",  "nombre": "Ciénaga / pantano", "subs": ["tipico", "ruinas", "cementerio", "circulo", "altar"]},
+    {"clave": "paso",     "nombre": "Paso rocoso / montaña", "subs": ["tipico", "canon", "mina", "ruinas", "campamento", "torre", "geiseres"]},
+    {"clave": "pradera",  "nombre": "Pradera",               "subs": ["campamento", "tipico", "circulo", "granja", "cementerio", "ruinas", "torre", "cruce", "madriguera"]},
+    {"clave": "volcanico", "nombre": "Tierras volcánicas / roca ardiente", "subs": ["tipico", "canon", "ruinas", "geiseres"]},
     {"clave": "vado",     "nombre": "Vado de río",      "subs": ["tipico", "puente", "piedras"]},
-    {"clave": "playa",    "nombre": "Playa / costa",         "subs": ["tipico", "naufragio", "acantilado"]},
+    {"clave": "playa",    "nombre": "Playa / costa",         "subs": ["tipico", "naufragio", "acantilado", "embarcadero"]},
     {"clave": "aldea",    "nombre": "Aldea",                 "subs": ["tipico", "mercado", "granja"]},
+    {"clave": "puerto",   "nombre": "Puerto / muelle",       "subs": ["tipico", "embarcadero", "mercado"]},
     {"clave": "taberna",  "nombre": "Taberna (interior)",    "subs": []},
     {"clave": "cripta",   "nombre": "Cripta (interior)",     "subs": []},
     {"clave": "mazmorra", "nombre": "Mazmorra (interior)",   "subs": []},
+    {"clave": "gruta",    "nombre": "Gruta / caverna (interior)", "subs": []},
 ]
 SUBS = {
     "auto": "✨ automático", "tipico": "clásico",
@@ -85,6 +88,9 @@ SUBS = {
     "mina": "mina abandonada", "granja": "granja",
     "puente": "puente", "piedras": "piedras de paso", "mercado": "mercado",
     "naufragio": "naufragio", "acantilado": "acantilado",
+    "torre": "torre en ruinas", "altar": "altar profanado",
+    "cruce": "cruce de caminos", "madriguera": "madriguera",
+    "geiseres": "géiseres", "embarcadero": "embarcadero",
 }
 TEMAS_POR_CLAVE = {t["clave"]: t for t in TEMAS}
 
@@ -116,6 +122,8 @@ PAL = {
     "vado":     [(112, 140, 76), (146, 172, 96), (86, 110, 56)],
     "playa":    [(224, 206, 158), (238, 224, 184), (196, 176, 128)],
     "aldea":    [(120, 122, 82), (146, 146, 104), (92, 96, 62)],
+    "volcanico": [(58, 50, 50), (96, 70, 60), (30, 25, 27)],
+    "puerto":   [(150, 156, 132), (176, 180, 158), (116, 122, 98)],
 }
 
 
@@ -359,15 +367,19 @@ def analizar(d, rx, ry):
 
 def detectar_tema(info, nx):
     esc = nx / 1024.0            # umbrales pensados en base 1024
+    tair = info["tair"]
     if info["asent"]["it"] and info["asent"]["d"] < 15 * esc:
-        return "aldea"
+        # asentamiento en el litoral -> puerto; tierra adentro -> aldea
+        return "puerto" if info["costa"]["hayMar"] else "aldea"
     if info["rio"]["it"] and info["rio"]["d"] < 42 * esc:
         return "vado"
     if info["costa"]["hayMar"]:
         return "playa"
+    # roca ardiente: gran altitud + calor tórrido -> tierras volcánicas
+    if info["alt"] > 0.72 and info["temp"] > tair[0] + 0.82 * (tair[1] - tair[0]):
+        return "volcanico"
     if info["alt"] > 0.75:
         return "paso"
-    tair = info["tair"]
     if (info["precip"] > 0.86 and info["alt"] < 0.16
             and info["temp"] > tair[0] + 0.55 * (tair[1] - tair[0])):
         return "cienaga"
@@ -433,7 +445,13 @@ def titulo_escena(d, tema, sub, info, nx):
         "granja": ("Granja de " + asent_n) if tema == "aldea" else ("Granja en " + lugar),
         "naufragio": "Naufragio en la costa de " + lugar,
         "acantilado": "Acantilados de " + lugar,
-        "mercado": "Mercado de " + asent_n,
+        "mercado": ("Mercado de " + asent_n) if tema in ("aldea", "puerto") else ("Mercado de " + lugar),
+        "torre": "Torre en ruinas de " + lugar,
+        "altar": "Altar profanado de " + lugar,
+        "cruce": "Cruce de caminos de " + lugar,
+        "madriguera": "Madriguera en " + lugar,
+        "geiseres": "Géiseres de " + lugar,
+        "embarcadero": ("Embarcadero de " + asent_n) if tema in ("puerto", "aldea") else ("Embarcadero de " + lugar),
     }
     if sub in por_sub:
         return por_sub[sub]
@@ -448,6 +466,9 @@ def titulo_escena(d, tema, sub, info, nx):
         "cripta": "Cripta de " + asent_n,
         "mazmorra": "Mazmorra bajo " + (asent_n if info["asent"]["it"] else lugar),
         "playa": "Costa de " + lugar,
+        "puerto": ("Puerto de " + asent_n) if info["asent"]["it"] else ("Puerto de " + lugar),
+        "gruta": "Gruta bajo " + (asent_n if info["asent"]["it"] else lugar),
+        "volcanico": "Tierras ardientes de " + lugar,
         "bosque": "Bosque de " + lugar,
         "taiga": "Taiga de " + lugar,
         "selva": "Selva de " + lugar,
@@ -774,6 +795,8 @@ def props_naturales(l, cols, rows, seed, tema, corr, sub):
         dens, verdes = 0.3, [(130, 150, 80), (80, 100, 52), (46, 62, 34)]
     elif tema == "paso":
         dens, verdes = 0.5, [(120, 130, 90), (90, 100, 66), (60, 66, 46)]
+    elif tema == "volcanico":
+        dens, verdes = 0.12, [(96, 92, 70), (72, 66, 50), (48, 42, 34)]
     else:   # pradera
         dens, verdes = 0.16, [(150, 176, 100), (92, 130, 62), (60, 92, 46)]
 
@@ -782,7 +805,8 @@ def props_naturales(l, cols, rows, seed, tema, corr, sub):
     if sub == "claro":
         dens *= 0.45
     con_claro = sub in ("claro", "circulo", "campamento", "cementerio",
-                        "oasis", "lago", "granja")
+                        "oasis", "lago", "granja", "torre", "altar",
+                        "madriguera", "geiseres")
     midx, midy = cols / 2, rows / 2
     r_claro = min(cols, rows) * (0.42 if sub in ("cementerio", "granja") else 0.3)
 
@@ -815,6 +839,11 @@ def props_naturales(l, cols, rows, seed, tema, corr, sub):
                     rot2 = rng()
                     l.elipse(cx, cy, 0.5, 0.38, outline=(180, 200, 180, 64), w=0.03)
                     continue
+            if tema == "volcanico":
+                if rng() < 0.28 and not sendero:
+                    grieta_lava(l, cx, cy, rng)
+                if rng() < 0.05 and not sendero:
+                    fumarola(l, cx, cy)
 
             if sendero and roll < 0.85:
                 continue
@@ -850,6 +879,11 @@ def props_naturales(l, cols, rows, seed, tema, corr, sub):
                         arbol(l, cx, cy, r * 1.1, rng, True, verdes)
                         l.elipse(cx, cy - r * 0.6, r * 0.4, r * 0.4,
                                  fill=(255, 255, 255, 179))
+                elif tema == "volcanico":
+                    if rng() < 0.82:
+                        roca_basalto(l, cx, cy, r * (0.7 + rng() * 0.6), rng)
+                    else:
+                        arbusto(l, cx, cy, r * 0.6, rng, verdes)
                 else:
                     t = rng()
                     if t < 0.62:
@@ -883,6 +917,16 @@ def props_naturales(l, cols, rows, seed, tema, corr, sub):
         mina(l, cols, rows, seed)
     elif sub == "granja":
         granja(l, cols, rows, seed)
+    elif sub == "torre":
+        torre_ruinas(l, cols, rows, seed)
+    elif sub == "altar":
+        altar_profanado(l, cols, rows, seed)
+    elif sub == "cruce":
+        cruce_caminos(l, cols, rows, seed, corr)
+    elif sub == "madriguera":
+        madriguera(l, cols, rows, seed)
+    elif sub == "geiseres":
+        geiseres(l, cols, rows, seed)
 
 
 def campamento(l, cols, rows, seed):
@@ -1216,6 +1260,319 @@ def puesto(l, cx, cy, rng):
     l.elipse(cx + 0.45, cy + 0.15, 0.13, 0.13, fill=_hx("#7a8c3a"))
 
 
+# ---- tierras volcanicas ----
+def roca_basalto(l, cx, cy, r, rng):
+    """Bloque de basalto oscuro con aristas y, a veces, veta incandescente."""
+    sombra(l, cx + r * 0.15, cy + r * 0.4, r * 1.0, r * 0.45)
+    pts = poly_facet(cx, cy, r, 6 + int(rng() * 2), rng)
+    l.poli(pts, fill=_hx("#3a3236"))
+    l.linea([(cx - r * 0.3, cy - r * 0.2), (cx + r * 0.1, cy + r * 0.15),
+             (cx + r * 0.45, cy - r * 0.25)], (14, 14, 18, 140), r * 0.06)
+    if rng() < 0.35:
+        l.linea([(cx - r * 0.25, cy + r * 0.1), (cx + r * 0.05, cy - r * 0.05),
+                 (cx + r * 0.3, cy + r * 0.2)], (255, 120, 40, 150), r * 0.05)
+    l.elipse(cx - r * 0.25, cy - r * 0.3, r * 0.3, r * 0.16, fill=(255, 150, 90, 30))
+
+
+def grieta_lava(l, cx, cy, rng):
+    """Fisura brillante de roca fundida en el suelo."""
+    ang = rng() * TAU
+    ca, sa = math.cos(ang), math.sin(ang)
+    ln = 0.4 + rng() * 0.5
+    a = (cx - ca * ln, cy - sa * ln)
+    b = (cx + ca * ln, cy + sa * ln)
+    m = (cx + (rng() - 0.5) * 0.3, cy + (rng() - 0.5) * 0.3)
+    l.radial(cx, cy, ln * 1.4,
+             [(0.0, (255, 180, 90, 150)), (1.0, (255, 120, 40, 0))])
+    l.linea(_qpts(a, m, b), (30, 16, 14, 200), 0.14)
+    l.linea(_qpts(a, m, b), (255, 170, 70, 220), 0.06)
+    l.linea(_qpts(a, m, b), (255, 240, 190, 200), 0.02)
+
+
+def fumarola(l, cx, cy):
+    """Chimenea humeante con boca ardiente."""
+    sombra(l, cx, cy + 0.25, 0.5, 0.2)
+    l.elipse(cx, cy, 0.4, 0.32, fill=_hx("#2e2a2c"))
+    l.elipse(cx, cy, 0.18, 0.14, fill=(255, 150, 60, 220))
+    l.radial(cx, cy - 0.5, 0.6,
+             [(0.0, (180, 180, 185, 120)), (1.0, (180, 180, 185, 0))])
+
+
+def geiseres(l, cols, rows, seed):
+    """Campo de géiseres: pozas humeantes y un chorro central."""
+    rng = Mulberry32(seed + 313)
+    midx, midy = cols / 2, rows / 2
+    n = 3 + int(rng() * 3)
+    for _ in range(n):
+        a = rng() * TAU
+        rr = min(cols, rows) * (0.1 + rng() * 0.32)
+        px = midx + math.cos(a) * rr
+        py = midy + math.sin(a) * rr * 0.85
+        R = 0.6 + rng() * 0.7
+        l.radial(px, py, R * 1.6,
+                 [(0.0, (210, 235, 240, 150)), (1.0, (210, 235, 240, 0))])
+        l.elipse(px, py, R, R * 0.7, fill=_hx("#7fb4bd"),
+                 outline=(230, 245, 248, 160), w=0.06)
+        l.elipse(px, py, R * 0.55, R * 0.4, fill=_hx("#c7a24a"))
+        for _ in range(int(4 + rng() * 3)):
+            roca(l, px + (rng() - 0.5) * R * 2.4, py + (rng() - 0.5) * R * 2.0,
+                 0.14 + rng() * 0.16, rng)
+    # chorro central
+    l.radial(midx, midy - 0.4, 1.4,
+             [(0.0, (235, 248, 250, 180)), (1.0, (235, 248, 250, 0))])
+    l.linea([(midx, midy + 0.4), (midx - 0.1, midy - 1.6)], (240, 250, 252, 150), 0.24)
+    l.linea([(midx, midy + 0.4), (midx + 0.12, midy - 1.9)], (255, 255, 255, 120), 0.12)
+
+
+# ---- torre, altar, cruce, madriguera (subtipos comunes) ----
+def torre_ruinas(l, cols, rows, seed):
+    """Torre circular derruida con escombros y un tramo de muro."""
+    rng = Mulberry32(seed + 414)
+    cx = cols * (0.4 + rng() * 0.2)
+    cy = rows * (0.4 + rng() * 0.2)
+    R = min(cols, rows) * (0.13 + rng() * 0.05)
+    sombra(l, cx + R * 0.2, cy + R * 0.5, R * 1.15, R * 0.5)
+    # anillo de base (muro grueso con almenas rotas)
+    n = 16
+    ext, inte = [], []
+    for k in range(n + 1):
+        a = k / n * TAU
+        rot = R * (1.0 + (fbm(math.cos(a) + 2, math.sin(a) + 2, seed + 41, 2) - 0.5) * 0.5)
+        # almenas rotas: algunos tramos ausentes
+        ext.append((cx + math.cos(a) * rot, cy + math.sin(a) * rot))
+        inte.append((cx + math.cos(a) * rot * 0.62, cy + math.sin(a) * rot * 0.62))
+    l.poli(ext, fill=_hx("#6f727a"))
+    l.poli(inte, fill=_hx("#2a2c31"))
+    for k in range(0, n, 2):
+        a = k / n * TAU
+        rot = R * 1.02
+        bx = cx + math.cos(a) * rot
+        by = cy + math.sin(a) * rot
+        if rng() < 0.6:
+            l.rect(bx - 0.22, by - 0.22, 0.44, 0.44, fill=_hx("#7a7d85"),
+                   outline=(30, 32, 36, 140), ow=0.05)
+    l.poli(ext, outline=(24, 26, 30, 150), w=0.08)
+    l.poli(inte, outline=(20, 20, 24, 160), w=0.05)
+    # tramo de muro colapsado saliendo de la torre
+    ang = rng() * TAU
+    ca, sa = math.cos(ang), math.sin(ang)
+    x0 = cx + ca * R
+    y0 = cy + sa * R
+    muro_ruina(l, round(x0), round(y0), 3 + int(rng() * 3),
+               abs(ca) >= abs(sa), rng)
+    for _ in range(6 + int(rng() * 4)):
+        a = rng() * TAU
+        rr = R * (1.1 + rng() * 1.0)
+        roca(l, cx + math.cos(a) * rr, cy + math.sin(a) * rr,
+             0.18 + rng() * 0.24, rng)
+
+
+def altar_profanado(l, cols, rows, seed):
+    """Losa central con velas apagadas, runas y sangre reseca."""
+    rng = Mulberry32(seed + 515)
+    midx, midy = cols / 2, rows / 2
+    # halo profano
+    l.radial(midx, midy, min(cols, rows) * 0.3,
+             [(0.0, (90, 30, 40, 90)), (1.0, (90, 30, 40, 0))])
+    # anillo de piedras derribadas
+    R = min(cols, rows) * 0.24
+    n = 5 + int(rng() * 3)
+    for k in range(n):
+        a = k / n * TAU + rng() * 0.2
+        px = midx + math.cos(a) * R
+        py = midy + math.sin(a) * R * 0.85
+        sombra(l, px, py + 0.3, 0.4, 0.18)
+        if rng() < 0.5:
+            l.rect(px - 0.28, py - 0.16, 0.56, 0.32, fill=_hx("#5c5056"),
+                   outline=(24, 20, 24, 140), ow=0.05)
+        else:
+            l.rect(px - 0.16, py - 0.5, 0.32, 1.0, fill=_hx("#65686f"),
+                   outline=(24, 24, 28, 140), ow=0.05)
+    # losa
+    w, h = 2.2, 1.4
+    sombra(l, midx, midy + 0.4, w * 0.7, 0.5)
+    l.rect(midx - w / 2, midy - h / 2, w, h, fill=_hx("#5a5258"),
+           outline=(20, 18, 22, 170), ow=0.08)
+    l.rect(midx - w / 2 + 0.15, midy - h / 2 + 0.12, w - 0.3, h - 0.24,
+           outline=(20, 18, 22, 120), ow=0.04)
+    # manchas y goteo
+    for _ in range(5):
+        l.elipse(midx + (rng() - 0.5) * (w - 0.5), midy + (rng() - 0.5) * (h - 0.4),
+                 0.1 + rng() * 0.12, 0.08 + rng() * 0.08, fill=(96, 14, 18, 190))
+    l.linea([(midx + 0.2, midy + h / 2), (midx + 0.3, midy + h / 2 + 0.7)],
+            (96, 14, 18, 190), 0.06)
+    # velas negras en las esquinas
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            vx = midx + sx * (w / 2 + 0.3)
+            vy = midy + sy * (h / 2 + 0.2)
+            l.rect(vx - 0.06, vy - 0.1, 0.12, 0.4, fill=_hx("#1c1a1e"))
+            l.radial(vx, vy - 0.2, 0.4,
+                     [(0.0, (150, 60, 200, 160)), (1.0, (150, 60, 200, 0))])
+            l.elipse(vx, vy - 0.24, 0.06, 0.08, fill=_hx("#b47adf"))
+
+
+def cruce_caminos(l, cols, rows, seed, corr):
+    """Cruz de dos sendas de tierra con mojón/poste indicador."""
+    rng = Mulberry32(seed + 616)
+    midx, midy = cols / 2, rows / 2
+    tierra = (120, 96, 60, 150)
+    l.rect(0, midy - 1.1, cols, 2.2, fill=tierra)
+    l.rect(midx - 1.1, 0, 2.2, rows, fill=tierra)
+    # roderas
+    for off in (-0.5, 0.5):
+        l.linea([(0, midy + off), (cols, midy + off)], (90, 68, 40, 120), 0.05)
+        l.linea([(midx + off, 0), (midx + off, rows)], (90, 68, 40, 120), 0.05)
+    # poste indicador
+    px, py = midx + 1.4, midy - 1.2
+    sombra(l, px, py + 0.2, 0.4, 0.18)
+    l.rect(px - 0.08, py - 1.4, 0.16, 1.6, fill=_hx("#6b4a28"))
+    for k in range(2 + int(rng() * 2)):
+        yy = py - 1.2 + k * 0.4
+        dirx = 1 if rng() < 0.5 else -1
+        l.poli([(px, yy), (px + dirx * 0.9, yy - 0.16),
+                (px + dirx * 0.9, yy + 0.16)], fill=_hx("#8a6238"),
+               outline=_hx("#4a3220"), w=0.04)
+    # piedras al borde del cruce
+    for _ in range(6):
+        a = rng() * TAU
+        rr = 1.6 + rng() * 1.4
+        roca(l, midx + math.cos(a) * rr, midy + math.sin(a) * rr,
+             0.16 + rng() * 0.18, rng)
+
+
+def madriguera(l, cols, rows, seed):
+    """Montículo con bocas de túnel, tierra removida y huesecillos."""
+    rng = Mulberry32(seed + 717)
+    midx, midy = cols / 2, rows / 2
+    R = min(cols, rows) * 0.22
+    # montículo de tierra
+    l.radial(midx, midy, R * 1.3,
+             [(0.0, (86, 64, 40, 220)), (0.7, (74, 54, 34, 200)),
+              (1.0, (74, 54, 34, 0))])
+    n = 3 + int(rng() * 3)
+    for _ in range(n):
+        a = rng() * TAU
+        rr = R * (0.2 + rng() * 0.7)
+        bx = midx + math.cos(a) * rr
+        by = midy + math.sin(a) * rr * 0.8
+        rad = 0.35 + rng() * 0.3
+        sombra(l, bx, by + rad * 0.4, rad * 1.1, rad * 0.5)
+        l.elipse(bx, by, rad, rad * 0.8, fill=_hx("#5a4530"))
+        l.elipse(bx, by + rad * 0.1, rad * 0.6, rad * 0.5, fill=_hx("#120d0a"))
+        # tierra removida
+        for _ in range(3):
+            l.elipse(bx + (rng() - 0.5) * rad * 2.4, by + rad * 0.6 + rng() * 0.4,
+                     0.1, 0.07, fill=(70, 52, 32, 180))
+    # huesecillos
+    for _ in range(4 + int(rng() * 3)):
+        hx = midx + (rng() - 0.5) * R * 2.4
+        hy = midy + (rng() - 0.5) * R * 2.0
+        l.linea([(hx, hy), (hx + 0.25, hy + 0.1)], (220, 214, 198, 200), 0.04)
+
+
+# ---- puerto / muelle ----
+def props_puerto(l, cols, rows, seed, corr, sub):
+    rng = Mulberry32(seed + 818)
+    mar_abajo = rng() < 0.5
+    linea = rows * (0.42 + rng() * 0.16)
+    pts = [(i, linea + (fbm(i * 0.35, 9, seed + 46, 3) - 0.5) * 1.8)
+           for i in range(cols + 1)]
+    if mar_abajo:
+        poly = [(0, rows), (0, pts[0][1])] + pts + [(cols, rows)]
+    else:
+        poly = [(0, 0), (0, rows - pts[0][1])] + [(p[0], rows - p[1]) for p in pts] \
+               + [(cols, 0)]
+    l.poli(poly, fill=_hx("#26697f"))
+    # brillos y espuma
+    for k in range(cols):
+        yy = (linea if mar_abajo else rows - linea) + (rng() - 0.5) * 2
+        l.linea([(k, yy), (k + 0.8, yy + (rng() - 0.5) * 0.3)],
+                (255, 255, 255, 56), 0.06)
+    espuma = [(i, (p if mar_abajo else rows - p))
+              for i, p in ((q[0], q[1]) for q in pts)]
+    l.linea(espuma, (255, 255, 255, 140), 0.16)
+
+    def y_costa(x):
+        j = min(int(round(x)), cols)
+        base = pts[j][1]
+        return base if mar_abajo else rows - base
+
+    # muelle de madera hacia el mar
+    mx = cols * (0.35 + rng() * 0.3)
+    yc = y_costa(mx)
+    largo_m = 2.5 + rng() * 3
+    dir_m = 1 if mar_abajo else -1
+    l.rect(mx - 0.8, min(yc, yc + dir_m * largo_m), 1.6, abs(largo_m),
+           fill=_hx("#9c7642"), outline=_hx("#4a3220"), ow=0.08)
+    i = 0.0
+    while i <= largo_m:
+        yy = yc + dir_m * i
+        l.linea([(mx - 0.8, yy), (mx + 0.8, yy)], _hx("#5a3d22"), 0.05)
+        i += 0.7
+    for pil in (mx - 0.7, mx + 0.7):
+        l.elipse(pil, yc + dir_m * largo_m, 0.12, 0.12, fill=_hx("#3a2718"))
+    # barca amarrada
+    bx = mx + 1.4
+    by = yc + dir_m * (largo_m * 0.6)
+    sombra(l, bx, by + 0.2, 0.9, 0.3)
+    barca = (_qpts((bx - 0.9, by), (bx, by + 0.5), (bx + 0.9, by))
+             + _qpts((bx + 0.9, by), (bx, by - 0.15), (bx - 0.9, by)))
+    l.poli(barca, fill=_hx("#6b4a28"), outline=_hx("#3a2718"), w=0.06)
+    l.linea([(bx, by), (bx + 0.05, by - 1.1)], _hx("#5a3d22"), 0.05)
+
+    if sub == "embarcadero":
+        # segundo muelle y más barcas
+        m2 = cols * (0.15 + rng() * 0.15)
+        yc2 = y_costa(m2)
+        lg2 = 2 + rng() * 2.5
+        l.rect(m2 - 0.6, min(yc2, yc2 + dir_m * lg2), 1.2, abs(lg2),
+               fill=_hx("#9c7642"), outline=_hx("#4a3220"), ow=0.08)
+        for _ in range(2):
+            barril(l, m2 + (rng() - 0.5) * 1.2, yc2 - dir_m * (0.4 + rng()), rng)
+
+    # tierra: casas del puerto, cajas y barriles
+    ocupadas = []
+
+    def libre(x, y, w, h):
+        for o in ocupadas:
+            if (x < o[0] + o[2] + 1 and x + w + 1 > o[0]
+                    and y < o[1] + o[3] + 1 and y + h + 1 > o[1]):
+                return False
+        return True
+
+    n_casas = 2 + int(rng() * 3)
+    k = 0
+    while k < n_casas * 4 and len(ocupadas) < n_casas:
+        k += 1
+        w = 3 + int(rng() * 2)
+        h = 3 + int(rng() * 2)
+        x = 1 + int(rng() * (cols - w - 2))
+        y = 1 + int(rng() * (rows - h - 2))
+        # en tierra firme (lejos del agua)
+        eje = y_costa(x + w / 2)
+        en_agua = (y + h > eje - 0.5) if mar_abajo else (y < eje + 0.5)
+        if en_agua or not libre(x, y, w, h):
+            continue
+        ocupadas.append((x, y, w, h))
+        casa(l, x, y, w, h, rng)
+    if sub == "mercado":
+        for kk in range(3 + int(rng() * 2)):
+            cxp = 2 + rng() * (cols - 4)
+            cyp = (1 + rng() * (linea - 2)) if not mar_abajo \
+                else (rows - linea + 1 + rng() * (linea - 2))
+            puesto(l, cxp, cyp, rng)
+    for _ in range(3 + int(rng() * 3)):
+        cxb = 1 + rng() * (cols - 2)
+        cyb = (1 + rng() * (linea - 1)) if not mar_abajo \
+            else (rows - linea + 1 + rng() * (linea - 1))
+        if rng() < 0.5:
+            barril(l, cxb, cyb, rng)
+        else:
+            l.rect(cxb - 0.35, cyb - 0.35, 0.7, 0.7, fill=_hx("#7a5730"),
+                   outline=_hx("#3a2718"), ow=0.05)
+
+
 # ---- vado de rio ----
 def props_vado(l, cols, rows, seed, corr, sub, puente_auto):
     rng = Mulberry32(seed + 33)
@@ -1347,6 +1704,30 @@ def suelo_playa(l, cols, rows, seed, sub):
         for _ in range(4):
             barril(l, cx - 2 + rngc() * 5,
                    cy + (-1 if mar_abajo else 1) * (0.6 + rngc() * 2), rngc)
+    elif sub == "embarcadero":
+        mx = cols * (0.35 + rng() * 0.3)
+        yc = linea if mar_abajo else rows - linea
+        largo_m = 2.5 + rng() * 3
+        dir_m = 1 if mar_abajo else -1
+        l.rect(mx - 0.8, min(yc, yc + dir_m * largo_m), 1.6, abs(largo_m),
+               fill=_hx("#9c7642"), outline=_hx("#4a3220"), ow=0.08)
+        i = 0.0
+        while i <= largo_m:
+            yy = yc + dir_m * i
+            l.linea([(mx - 0.8, yy), (mx + 0.8, yy)], _hx("#5a3d22"), 0.05)
+            i += 0.7
+        for pil in (mx - 0.7, mx + 0.7):
+            l.elipse(pil, yc + dir_m * largo_m, 0.12, 0.12, fill=_hx("#3a2718"))
+        bx = mx + 1.5
+        by = yc + dir_m * (largo_m * 0.55)
+        sombra(l, bx, by + 0.2, 0.9, 0.3)
+        barca = (_qpts((bx - 0.9, by), (bx, by + 0.5), (bx + 0.9, by))
+                 + _qpts((bx + 0.9, by), (bx, by - 0.15), (bx - 0.9, by)))
+        l.poli(barca, fill=_hx("#6b4a28"), outline=_hx("#3a2718"), w=0.06)
+        l.linea([(bx, by), (bx + 0.05, by - 1.1)], _hx("#5a3d22"), 0.05)
+        rngb = Mulberry32(seed + 71)
+        for _ in range(3):
+            barril(l, mx - 1.4 + rngb() * 0.8, yc - dir_m * (0.5 + rngb()), rngb)
     elif sub == "acantilado":
         prof = 2.8
         arriba = mar_abajo
@@ -1681,6 +2062,85 @@ def dibujar_mazmorra(l, cols, rows, seed):
             antorcha(l, s["x"] + 0.4, s["y"] + 0.4)
 
 
+# ---- gruta / caverna (interior) ----
+def estalagmita(l, cx, cy, r, hacia_abajo):
+    """Aguja de piedra; si hacia_abajo cuelga del techo (estalactita)."""
+    sombra(l, cx, cy + r * 0.4, r * 0.7, r * 0.28)
+    d = 1 if not hacia_abajo else -1
+    base = cy + d * r * 0.6
+    punta = cy - d * r * 0.9
+    l.poli([(cx - r * 0.42, base), (cx + r * 0.42, base), (cx, punta)],
+           fill=_hx("#5b5560"), outline=(24, 22, 26, 150), w=0.05)
+    l.linea([(cx - r * 0.1, base), (cx - r * 0.02, punta)], (230, 225, 235, 60), 0.04)
+
+
+def dibujar_gruta(l, cols, rows, seed):
+    rng = Mulberry32(seed + 404)
+    l.rect(0, 0, cols, rows, fill=_hx("#181519"))
+    midx, midy = cols / 2, rows / 2
+    # cavidad transitable: polígono orgánico
+    n = 26
+    pts = []
+    for k in range(n + 1):
+        a = k / n * TAU
+        rr = (0.5 + fbm(math.cos(a) + 4, math.sin(a) + 4, seed + 42, 3) * 0.55)
+        pts.append((midx + math.cos(a) * rr * cols * 0.5,
+                    midy + math.sin(a) * rr * rows * 0.5))
+    # suelo de roca con variacion por celda (dentro del poligono via mascara)
+    S = l.S
+    mask = Image.new("L", (l.im.width, l.im.height), 0)
+    ImageDraw.Draw(mask).polygon([(x * S, y * S) for x, y in pts], fill=255)
+    suelo = Image.new("RGB", (l.im.width, l.im.height), (0, 0, 0))
+    ds = ImageDraw.Draw(suelo)
+    for y in range(rows):
+        for x in range(cols):
+            r = cel_rng(seed + 5, x, y)()
+            v = int(46 + r * 26)
+            ds.rectangle([(x * S, y * S), ((x + 1) * S, (y + 1) * S)],
+                         fill=(v, v - 2, v + 4))
+    l.im.paste(suelo, (0, 0), mask)
+    l.poli(pts, outline=(12, 10, 14, 210), w=0.22)
+    l.poli(pts, outline=(70, 66, 74, 120), w=0.06)
+    # poza subterranea
+    if rng() < 0.85:
+        px = midx + (rng() - 0.5) * cols * 0.3
+        py = midy + (rng() - 0.5) * rows * 0.3
+        R = min(cols, rows) * (0.12 + rng() * 0.08)
+        poza = []
+        for k in range(21):
+            a = k / 20 * TAU
+            rr = R * (0.85 + fbm(math.cos(a) + 6, math.sin(a) + 6, seed + 43, 2) * 0.35)
+            poza.append((px + math.cos(a) * rr, py + math.sin(a) * rr * 0.85))
+        l.poli_radial(poza, px, py, R,
+                      [(0.0, _hx("#2b5560")), (0.7, _hx("#1c3d47")), (1.0, _hx("#122a31"))])
+        l.poli(poza, outline=(120, 170, 180, 90), w=0.06)
+        l.elipse(px - R * 0.3, py - R * 0.2, R * 0.4, R * 0.22, fill=(180, 220, 225, 40))
+    # estalagmitas en el suelo y estalactitas colgando
+    for _ in range(6 + int(rng() * 5)):
+        sx = 1.5 + rng() * (cols - 3)
+        sy = 1.5 + rng() * (rows - 3)
+        estalagmita(l, sx, sy, 0.5 + rng() * 0.5, False)
+    for _ in range(5 + int(rng() * 4)):
+        sx = 1.5 + rng() * (cols - 3)
+        sy = 1.5 + rng() * (rows - 3)
+        estalagmita(l, sx, sy, 0.4 + rng() * 0.4, True)
+    # rocas sueltas y cristales luminiscentes
+    for _ in range(int(cols * 0.7)):
+        roca(l, rng() * cols, rng() * rows, 0.18 + rng() * 0.22, rng)
+    for _ in range(4 + int(rng() * 4)):
+        cx = 1 + rng() * (cols - 2)
+        cy = 1 + rng() * (rows - 2)
+        l.radial(cx, cy, 0.5,
+                 [(0.0, (110, 200, 220, 150)), (1.0, (110, 200, 220, 0))])
+        l.elipse(cx, cy, 0.1, 0.16, fill=_hx("#8fe0ee"))
+    # entrada iluminada
+    ang = rng() * TAU
+    ex = midx + math.cos(ang) * cols * 0.42
+    ey = midy + math.sin(ang) * rows * 0.42
+    l.radial(ex, ey, 1.8,
+             [(0.0, (210, 220, 200, 120)), (1.0, (210, 220, 200, 0))])
+
+
 # ==========================================================================
 #  vineta, rejilla y numeracion
 # ==========================================================================
@@ -1743,10 +2203,69 @@ def dibujar_rejilla(img, S, cols, rows, nums):
 # ==========================================================================
 #  render principal
 # ==========================================================================
-INTERIORES = ("taberna", "cripta", "mazmorra")
+INTERIORES = ("taberna", "cripta", "mazmorra", "gruta")
+
+MOMENTOS = ("dia", "atardecer", "noche")
+ESTACIONES = ("primavera", "verano", "otono", "invierno")
+# temas templados que en invierno reciben escarcha / nieve parcial
+_TEMPLADOS = frozenset({"bosque", "taiga", "pradera", "vado", "cienaga",
+                        "paso", "aldea", "puerto"})
 
 
-def render_mapa(cols, rows, S, seed, tema, sub, grid, nums, puente_auto):
+def _mascara_noise(cols, rows, S, seed):
+    """Campo de ruido (rows*S, cols*S) en 0..1, coherente con el suelo."""
+    xs = np.arange(cols) * 0.7
+    ys = np.arange(rows) * 0.7
+    X, Y = np.meshgrid(xs, ys)
+    n = _fbm_vec(X, Y, seed + 61, 3)
+    n = np.clip((n - 0.25) / 0.5, 0.0, 1.0)
+    return np.repeat(np.repeat(n, S, axis=0), S, axis=1)
+
+
+def _colorgrade(img, cols, rows, S, seed, tema, momento, estacion):
+    """Post-procesa la paleta segun momento del dia y estacion (barato:
+    opera sobre el render base, sin re-dibujar props)."""
+    if momento == "dia" and estacion == "verano":
+        return img
+    arr = np.asarray(img, np.float32)
+    R = arr[..., 0]
+    G = arr[..., 1]
+    B = arr[..., 2]
+
+    # --- estacion: vegetacion / nieve ---
+    if estacion == "otono":
+        verde = np.clip((G - np.maximum(R, B)) / 40.0, 0, 1)   # 0..1 verdor
+        R = R + verde * 78
+        G = G - verde * 8
+        B = B - verde * 46
+    elif estacion == "primavera":
+        verde = np.clip((G - np.maximum(R, B)) / 50.0, 0, 1)
+        G = G + verde * 16
+        R = R + verde * 4
+    elif estacion == "invierno" and tema in _TEMPLADOS:
+        snow = np.clip(0.28 + _mascara_noise(cols, rows, S, seed) * 0.5, 0, 0.82)
+        R = R + (238 - R) * snow
+        G = G + (244 - G) * snow
+        B = B + (250 - B) * snow
+
+    # --- momento del dia ---
+    if momento == "noche":
+        # mascara de fuego (rojos brillantes: antorchas, lava, fogatas)
+        warm = (np.clip((R - B - 30) / 90.0, 0, 1)
+                * np.clip((R - 120) / 90.0, 0, 1))[..., None]
+        base = np.stack([R * 0.40 - 4, G * 0.44 + 6, B * 0.52 + 18], axis=-1)
+        glow = np.stack([R * 1.06, G * 1.0, B * 0.9], axis=-1)
+        arr = base * (1 - warm) + glow * warm
+    elif momento == "atardecer":
+        arr = np.stack([R * 1.14 + 12, G * 1.0 + 3, B * 0.78], axis=-1) * 0.95
+    else:
+        arr = np.stack([R, G, B], axis=-1)
+
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+
+
+def render_mapa(cols, rows, S, seed, tema, sub, grid, nums, puente_auto,
+                momento="dia", estacion="verano"):
     """Devuelve (PNG bytes, subtipo efectivo)."""
     seed_e = semilla_efectiva(seed, tema)
     sub_e = sub_efectivo(tema, sub, seed)
@@ -1764,6 +2283,8 @@ def render_mapa(cols, rows, S, seed, tema, sub, grid, nums, puente_auto):
         dibujar_cripta(l, cols, rows, seed_e)
     elif tema == "mazmorra":
         dibujar_mazmorra(l, cols, rows, seed_e)
+    elif tema == "gruta":
+        dibujar_gruta(l, cols, rows, seed_e)
     else:
         _sendero(l, corr, seed_e)
         if tema == "vado":
@@ -1772,15 +2293,19 @@ def render_mapa(cols, rows, S, seed, tema, sub, grid, nums, puente_auto):
             suelo_playa(l, cols, rows, seed_e, sub_e)
         elif tema == "aldea":
             props_aldea(l, cols, rows, seed_e, corr, sub_e)
+        elif tema == "puerto":
+            props_puerto(l, cols, rows, seed_e, corr, sub_e)
         else:
             props_naturales(l, cols, rows, seed_e, tema, corr, sub_e)
 
-    if tema == "cripta":
+    if tema in ("cripta", "gruta"):
         img = _vineta(img, cols, rows, S, 0.2, 0.7, 0.45)
     elif tema == "mazmorra":
         img = _vineta(img, cols, rows, S, 0.15, 0.75, 0.55)
     else:
         img = _vineta(img, cols, rows, S, 0.35, 0.75, 0.22)
+
+    img = _colorgrade(img, cols, rows, S, seed_e, tema, momento, estacion)
 
     if grid:
         dibujar_rejilla(img, S, cols, rows, nums)
@@ -1809,6 +2334,31 @@ def _qint(q, k, defecto):
         return int(float(_q1(q, k, str(defecto))))
     except (TypeError, ValueError):
         return defecto
+
+
+def _q_momento(q):
+    m = _q1(q, "momento", "dia")
+    return m if m in MOMENTOS else "dia"
+
+
+def _q_estacion(q):
+    e = _q1(q, "estacion", "verano")
+    return e if e in ESTACIONES else "verano"
+
+
+def _sufijo_ambiente(momento, estacion):
+    """Coletilla narrativa para el titulo (solo cuando aporta)."""
+    mm = {"atardecer": ", al atardecer", "noche": ", al anochecer"}
+    ee = {"primavera": " en primavera", "otono": " en otoño",
+          "invierno": " en invierno"}
+    return mm.get(momento, "") + ee.get(estacion, "")
+
+
+def _slug(s):
+    s = (s or "battlemap").lower()
+    s = re.sub(r"[^0-9a-záéíóúñ\s-]", "", s)
+    s = re.sub(r"\s+", "_", s.strip())
+    return s or "battlemap"
 
 
 def _validar(q):
@@ -1918,21 +2468,24 @@ def manejar_get(handler, url):
 
     if url.path == "/api/batalla/escena":
         cols, rows, seed, tema, sub, px, grid, nums, rx, ry = _params_mapa(q, nx, ny)
+        momento, estacion = _q_momento(q), _q_estacion(q)
         sub_e = sub_efectivo(tema, sub, seed)
         out = {"tema": tema, "tema_nombre": TEMAS_POR_CLAVE[tema]["nombre"],
                "sub": sub_e, "sub_nombre": SUBS.get(sub_e, sub_e),
-               "auto": sub == "auto",
+               "auto": sub == "auto", "momento": momento, "estacion": estacion,
                "tiene_subs": bool(TEMAS_POR_CLAVE[tema]["subs"])}
         if rx is not None:
             info = analizar(d, rx, ry)
-            out["titulo"] = titulo_escena(d, tema, sub_e, info, nx)
+            base = titulo_escena(d, tema, sub_e, info, nx)
         else:
-            out["titulo"] = TEMAS_POR_CLAVE[tema]["nombre"]
+            base = TEMAS_POR_CLAVE[tema]["nombre"]
+        out["titulo"] = base + _sufijo_ambiente(momento, estacion)
         handler._json(out)
         return True
 
     if url.path == "/api/batalla/mapa":
         cols, rows, seed, tema, sub, px, grid, nums, rx, ry = _params_mapa(q, nx, ny)
+        momento, estacion = _q_momento(q), _q_estacion(q)
         # el punto solo influye en el vado automatico (puente si hay camino)
         puente_auto = False
         if tema == "vado" and rx is not None:
@@ -1941,18 +2494,53 @@ def manejar_get(handler, url):
                                and info["camino"]["d"] < 45 * (nx / 1024.0))
         clave = "|".join([stem, str(cols), str(rows), str(seed), tema, sub,
                           str(px), "1" if grid else "0", "1" if nums else "0",
-                          "P" if puente_auto else "p"])
+                          "P" if puente_auto else "p", momento, estacion])
         cache = _cache_path(sello, stem, clave)
         if cache.exists():
             handler._archivo(cache, "image/png", cache=True)
             return True
         png, _sub_e = render_mapa(cols, rows, px, seed, tema, sub, grid, nums,
-                                  puente_auto)
+                                  puente_auto, momento, estacion)
         try:
             cache.write_bytes(png)
         except OSError:
             pass
         handler._bytes(png, "image/png", cache=True)
+        return True
+
+    if url.path == "/api/batalla/vtt":
+        # manifiesto de escena para VTT (Foundry) o datos de rejilla (Roll20).
+        # La logica del manifiesto vive aqui; el front solo dispara descargas.
+        cols, rows, seed, tema, sub, px, grid, nums, rx, ry = _params_mapa(q, nx, ny)
+        momento, estacion = _q_momento(q), _q_estacion(q)
+        formato = _q1(q, "formato", "foundry")
+        sub_e = sub_efectivo(tema, sub, seed)
+        if rx is not None:
+            info = analizar(d, rx, ry)
+            base = titulo_escena(d, tema, sub_e, info, nx)
+        else:
+            base = TEMAS_POR_CLAVE[tema]["nombre"]
+        titulo = base + _sufijo_ambiente(momento, estacion)
+        cel = 70 if formato == "roll20" else 100
+        fname = f"{_slug(base)}_{cols}x{rows}_s{seed}_{cel}px.png"
+        if formato == "roll20":
+            handler._json({
+                "formato": "roll20", "archivo_png": fname,
+                "cols": cols, "rows": rows, "px": cel,
+                "nota": f"{cols}×{rows} casillas · {cel} px/casilla",
+            })
+            return True
+        # Foundry VTT: escena minima (v10+: grid anidado, type 1 = cuadrada)
+        handler._json({
+            "name": titulo,
+            "navigation": True,
+            "width": cols * cel, "height": rows * cel,
+            "padding": 0,
+            "grid": {"size": cel, "type": 1},
+            "background": {"src": fname},
+            "img": fname,
+            "_archivo_png": fname,
+        })
         return True
 
     handler._json({"error": "no existe"}, 404)

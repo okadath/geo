@@ -131,6 +131,19 @@
         <input type="number" id="in-seed" min="0" step="1" value="1">
         <button type="button" id="b-dado" title="semilla aleatoria">🎲</button>
       </span>
+      <label>momento</label>
+      <select id="sel-momento">
+        <option value="dia">☀️ día</option>
+        <option value="atardecer">🌅 atardecer</option>
+        <option value="noche">🌙 noche</option>
+      </select>
+      <label>estación</label>
+      <select id="sel-estacion">
+        <option value="primavera">🌸 primavera</option>
+        <option value="verano" selected>☀️ verano</option>
+        <option value="otono">🍂 otoño</option>
+        <option value="invierno">❄️ invierno</option>
+      </select>
     </div>
     <div class="ctrl-fila">
       <label><input type="checkbox" id="cb-grid" checked> rejilla</label>
@@ -138,10 +151,12 @@
       <button type="button" id="b-regen">↻ regenerar</button>
     </div>
     <div class="ctrl-fila">
-      <button type="button" id="b-exp70">💾 PNG (70 px/casilla)</button>
-      <button type="button" id="b-exp140">💾 PNG HD (140 px/casilla)</button>
-      <span class="vacio" id="exp-nota">el export respeta la rejilla</span>
+      <button type="button" id="b-exp70">💾 PNG</button>
+      <button type="button" id="b-exp140">💾 PNG HD</button>
+      <button type="button" id="b-foundry">🎲 Foundry VTT</button>
+      <button type="button" id="b-roll20">🎲 Roll20</button>
     </div>
+    <p class="vacio" id="exp-nota">PNG a 70 px/casilla · HD a 140 · el export respeta la rejilla</p>
 
     <div style="margin-top:12px">
       <img id="img-batalla" alt="battlemap">
@@ -269,13 +284,24 @@
     $("in-cols").value = cols; $("in-rows").value = rows;
     let seed = parseInt($("in-seed").value); if (!Number.isFinite(seed) || seed < 0) seed = 1;
     return { cols, rows, seed, tema: $("sel-tema").value, sub: $("sel-sub").value || "auto",
-             grid: $("cb-grid").checked, nums: $("cb-nums").checked };
+             grid: $("cb-grid").checked, nums: $("cb-nums").checked,
+             momento: $("sel-momento").value, estacion: $("sel-estacion").value };
   }
 
-  function urlMapa(p, px) {
+  // ?nums override: para export VTT se fuerza sin numeración de coordenadas
+  function urlMapa(p, px, numsOverride) {
+    const nums = (numsOverride === undefined) ? p.nums : numsOverride;
     let u = `${API}/mapa?${BASEQ}&tema=${p.tema}&sub=${p.sub}` +
       `&cols=${p.cols}&rows=${p.rows}&semilla=${p.seed}&px=${px}` +
-      `&rejilla=${p.grid ? 1 : 0}&nums=${p.nums ? 1 : 0}`;
+      `&rejilla=${p.grid ? 1 : 0}&nums=${nums ? 1 : 0}` +
+      `&momento=${p.momento}&estacion=${p.estacion}`;
+    if (st.punto) u += `&rx=${st.punto.rx.toFixed(2)}&ry=${st.punto.ry.toFixed(2)}`;
+    return u;
+  }
+  function urlVtt(p, formato) {
+    let u = `${API}/vtt?${BASEQ}&tema=${p.tema}&sub=${p.sub}` +
+      `&cols=${p.cols}&rows=${p.rows}&semilla=${p.seed}&formato=${formato}` +
+      `&momento=${p.momento}&estacion=${p.estacion}`;
     if (st.punto) u += `&rx=${st.punto.rx.toFixed(2)}&ry=${st.punto.ry.toFixed(2)}`;
     return u;
   }
@@ -291,7 +317,8 @@
     $("sub-esc").dataset.base = `${p.cols}×${p.rows} casillas · generando…`;
     $("sub-esc").textContent = $("sub-esc").dataset.base;
     imgB.src = urlMapa(p, S);
-    let u = `${API}/escena?${BASEQ}&tema=${p.tema}&sub=${p.sub}&semilla=${p.seed}`;
+    let u = `${API}/escena?${BASEQ}&tema=${p.tema}&sub=${p.sub}&semilla=${p.seed}` +
+      `&momento=${p.momento}&estacion=${p.estacion}`;
     if (st.punto) u += `&rx=${st.punto.rx.toFixed(2)}&ry=${st.punto.ry.toFixed(2)}`;
     fetch(u).then(r => r.json()).then(e => {
       $("titulo-esc").textContent = e.titulo || nombreTema(p.tema);
@@ -355,6 +382,59 @@
     }).catch(() => {});
   }
 
+  // descarga un blob con un nombre dado
+  function bajar(blob, nombre) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = nombre;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // ---------- export Foundry VTT ----------
+  // PNG a 100 px/casilla sin numeración de coordenadas + .json de escena.
+  // El manifiesto (nombre de archivo incluido) lo arma el servidor.
+  function exportFoundry() {
+    const p = leerParams();
+    $("exp-nota").textContent = "generando escena de Foundry…";
+    fetch(urlVtt(p, "foundry")).then(r => {
+      if (!r.ok) throw new Error("vtt"); return r.json();
+    }).then(man => {
+      const png = man.img || `battlemap_${p.cols}x${p.rows}.png`;
+      // PNG a 100 px/casilla, sin numeración (Foundry pone su propia rejilla)
+      fetch(urlMapa(p, 100, false)).then(r => {
+        if (!r.ok) throw new Error("png"); return r.blob();
+      }).then(b => {
+        bajar(b, png);
+        // manifiesto sin la clave interna auxiliar
+        const limpio = Object.assign({}, man); delete limpio._archivo_png;
+        const jb = new Blob([JSON.stringify(limpio, null, 2)], { type: "application/json" });
+        setTimeout(() => bajar(jb, png.replace(/\.png$/i, ".json")), 350);
+        $("exp-nota").textContent =
+          `Foundry: ${man.width}×${man.height} px · rejilla ${man.grid.size} px. ` +
+          `Sube el PNG y el .json a tu mundo.`;
+      });
+    }).catch(() => { $("exp-nota").textContent = "no se pudo exportar a Foundry"; });
+  }
+
+  // ---------- export Roll20 ----------
+  // PNG a 70 px/casilla sin numeración + dato de configuración de rejilla.
+  function exportRoll20() {
+    const p = leerParams();
+    $("exp-nota").textContent = "generando PNG para Roll20…";
+    fetch(urlVtt(p, "roll20")).then(r => {
+      if (!r.ok) throw new Error("vtt"); return r.json();
+    }).then(inf => {
+      fetch(urlMapa(p, 70, false)).then(r => {
+        if (!r.ok) throw new Error("png"); return r.blob();
+      }).then(b => {
+        bajar(b, inf.archivo_png || `battlemap_${p.cols}x${p.rows}_70px.png`);
+        $("exp-nota").textContent =
+          `Roll20: ${inf.nota}. En la página, ajusta el tamaño a ${inf.cols}×${inf.rows} unidades.`;
+      });
+    }).catch(() => { $("exp-nota").textContent = "no se pudo exportar a Roll20"; });
+  }
+
   // ---------- visor: zoom / paneo / clic ----------
   function aplicar() { lienzo.style.transform = `translate(${st.tx}px,${st.ty}px) scale(${st.scale})`; }
   function acotar() {
@@ -408,8 +488,12 @@
   $("in-seed").onchange = regenerar;
   $("cb-grid").onchange = regenerar;
   $("cb-nums").onchange = regenerar;
+  $("sel-momento").onchange = regenerar;
+  $("sel-estacion").onchange = regenerar;
   $("b-exp70").onclick = () => exportar(70);
   $("b-exp140").onclick = () => exportar(140);
+  $("b-foundry").onclick = exportFoundry;
+  $("b-roll20").onclick = exportRoll20;
 })();
 </script>
 </body>

@@ -13,11 +13,13 @@ Endpoints (todos GET, cacheados en disco en
 `salidas/<sello>/detalles/fantasia_cache/`):
 
 - `/api/fantasia/render?sello&d&calidad=1..4&semilla&paleta&capas&deco&px` →
-  PNG del mapa completo (el export usa `deco=1&px≤8192`).
+  PNG del mapa completo (el export usa `deco=0|1` y `px∈{2048,4096,8192}`).
 - `/api/fantasia/sector?…&cx&cy&w&h` → PNG re-horneado de una ventana (pan/zoom
   nítido; el front pide con margen y re-render diferido).
 - `/api/fantasia/deco?…` → PNG RGBA transparente con marco/rosa/cartela/escala,
   superpuesto fijo al visor.
+- `GET /api/fantasia/rotulos?sello&d` → JSON con la lista de rótulos editables
+  (ver «Rótulos editables»). `POST /api/fantasia/rotulos` → guarda overrides.
 
 Mismo render determinista que siempre: misma semilla → PNG byte-idéntico.
 
@@ -95,13 +97,50 @@ waterlines) cada vez que el zoom/paneo se asienta. Claves:
 
 - **Rueda** = zoom (re-render nítido del sector) · **arrastrar** = paneo ·
   **⟲ zoom** restablece la vista.
-- **Paleta**: pergamino claro, sepia envejecido, noche azulada.
+- **Paleta** (7): pergamino claro, sepia envejecido, noche azulada,
+  **tinta imprenta** (blanco y negro puro para imprimir), **esmeralda** (verdes
+  de atlas antiguo), **carmesí y oro** (tonos de imperio), **atlas oceánico**
+  (azules de carta náutica). Todas cuidan el contraste de los rótulos.
 - **Semilla** (texto libre): re-siembra glifos y jitter sin tocar los datos
   del detalle; misma semilla → mismo trazo.
-- **💾 exportar PNG**: el mapa completo. **✂ exportar sector**: solo la vista
-  actual, a la resolución de trabajo.
+- **✏ rótulos**: abre el panel de rótulos editables (ver sección propia).
+- **Export**: **resolución** (2048/4096/8192 px), casilla **incluir marco/deco**
+  (cablea el parámetro `deco`), **💾 exportar PNG** (mapa completo) y
+  **✂ exportar sector** (solo la vista actual). Se descarga vía `fetch`→blob con
+  **spinner** mientras el servidor hornea (los renders grandes tardan); el
+  nombre del archivo es descriptivo: `fantasia_<stem>_<paleta>_<semilla>_<px>px`.
 - Query opcional para **enlazar un sector**: `?c=<calidad 1..4>&z=<zoom>&cx=&cy=`
   (cx, cy en píxeles del render del detalle).
+
+## Rótulos editables
+
+El usuario puede **renombrar u ocultar** cualquier rótulo (asentamientos,
+países, mares, ríos) desde el panel plegable **✏ rótulos**. Todo se hornea en
+el servidor; el front solo lista y edita.
+
+- **Id estable por tipo**: `asent:<índice>` (posición en `asentamientos`),
+  `pais:<id>`, `mar:<id>`, `rio:<id>`. El índice del asentamiento se conserva al
+  ordenar por `y` para dibujar, así el id no depende del orden de pintado.
+- **`GET /api/fantasia/rotulos?sello&d`** → `{"sello","d","rotulos":[{tipo,id,
+  nombre,override?}]}`, donde `nombre` es el original y `override` (si existe)
+  es `{"nombre"?,"oculto"?}`.
+- **`POST /api/fantasia/rotulos`** con cuerpo JSON `{"sello","d","overrides":
+  {id:{"nombre"?,"oculto"?}}}` **reemplaza** el mapa de overrides. Un mapa vacío
+  **borra** el archivo (equivale a restaurar todo).
+- **Persistencia**: `salidas/<sello>/detalles/<stem>_fantasia_rotulos.json`
+  (sobrevive entre sesiones). `sello`/`stem` se validan con las mismas regex
+  allowlist del módulo; los nombres se sanean (sin caracteres de control, máx.
+  60 caracteres).
+- **Aplicación al dibujar**: `render` y `sector` aplican los overrides a cada
+  rótulo (`oculto` → no se dibuja el texto, el icono del asentamiento
+  permanece). La **clave de caché** de los PNG incorpora la firma del archivo de
+  overrides (`mtime` + hash MD5 del contenido), de modo que editar los rótulos
+  invalida solo los PNG afectados. La `deco` no lleva rótulos y no depende de la
+  firma.
+- **Front**: el panel agrupa los rótulos por tipo con edición inline y una
+  casilla «ocultar» por fila; **guardar y re-render** hace el POST y refresca el
+  sector (con un contador `rv` que evita la caché HTTP del navegador);
+  **restaurar todo** limpia los overrides.
 
 ## Determinismo
 

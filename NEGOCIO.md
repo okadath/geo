@@ -433,6 +433,9 @@ Meta del primer año (§9.4): 5,000 usuarios free → ~150 suscriptores →
 
 ### 10.4 Orden de ejecución (empieza hoy)
 
+> El plan operativo completo (diseño, desarrollo semana a semana, marketing,
+> métricas y riesgos) vive en [`PLATAFORMA.md`](PLATAFORMA.md).
+
 1. Semanas 1–4: plomería de §9.1 (cuentas, proxy+HTTPS, colas, Paddle) sobre
    la herramienta unificada `/fantasia`+`/batalla`.
 2. Semana 5: landing con demo gratis + los dos planes. Lanzar en beta a

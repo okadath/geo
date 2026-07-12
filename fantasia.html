@@ -64,6 +64,31 @@
   }
   #estado { color: var(--tenue); font-size: 13px; margin: 10px 2px 0; }
   #estado.error { color: var(--rojo); }
+
+  .spin { width: 15px; height: 15px; border-radius: 50%; display: inline-block;
+          border: 2px solid var(--borde); border-top-color: var(--acento);
+          animation: giro .7s linear infinite; vertical-align: middle; }
+  @keyframes giro { to { transform: rotate(360deg); } }
+
+  .panel-rotulos { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--borde);
+                   border-radius: 10px; background: var(--fondo); font-size: 13px; }
+  .pr-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            margin-bottom: 8px; }
+  .pr-ayuda { color: var(--tenue); font-size: 12px; }
+  .pr-lista { max-height: 320px; overflow: auto; }
+  .pr-grupo { margin: 4px 0 10px; }
+  .pr-grupo h4 { margin: 6px 0 4px; color: var(--acento); font-size: 12px;
+                 text-transform: uppercase; letter-spacing: .05em; font-weight: 650; }
+  .pr-fila { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .pr-fila input[type=text] {
+    flex: 1; min-width: 120px; background: var(--panel); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 6px; padding: 3px 6px; font: inherit;
+    font-size: 13px;
+  }
+  .pr-fila.oculto input[type=text] { opacity: .45; text-decoration: line-through; }
+  .pr-fila label { display: inline-flex; gap: 4px; align-items: center; color: var(--tenue);
+                   font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .pr-fila input[type=checkbox] { accent-color: var(--acento); }
 </style>
 </head>
 <body>
@@ -89,6 +114,10 @@
           <option value="claro">pergamino claro</option>
           <option value="sepia">sepia envejecido</option>
           <option value="noche">noche azulada</option>
+          <option value="imprenta">tinta imprenta</option>
+          <option value="esmeralda">esmeralda</option>
+          <option value="carmesi">carmesí y oro</option>
+          <option value="oceanico">atlas oceánico</option>
         </select>
       </label>
       <label>calidad
@@ -103,8 +132,31 @@
       <button type="button" id="b-regen">↻ regenerar</button>
       <span class="sep"></span>
       <button type="button" id="b-reset">⟲ zoom</button>
+      <span class="sep"></span>
+      <button type="button" id="b-rotulos" title="renombrar u ocultar rótulos">✏ rótulos</button>
+      <span class="sep"></span>
+      <label>resolución
+        <select id="sel-res" title="tamaño del PNG exportado (los grandes tardan más en hornear)">
+          <option value="2048">2048 px</option>
+          <option value="4096" selected>4096 px</option>
+          <option value="8192">8192 px</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="cb-deco" checked>incluir marco/deco</label>
       <button type="button" id="b-export">💾 exportar PNG</button>
       <button type="button" id="b-export-sector">✂ exportar sector</button>
+      <span id="spin" class="spin" hidden></span>
+    </div>
+    <div id="panel-rotulos" class="panel-rotulos" hidden>
+      <div class="pr-cab">
+        <strong>Rótulos editables</strong>
+        <span class="pr-ayuda">renombra u oculta; al guardar se re-renderiza</span>
+        <span style="flex:1"></span>
+        <button type="button" id="b-rotulos-guardar">guardar y re-render</button>
+        <button type="button" id="b-rotulos-restaurar" title="borra todos los overrides">restaurar todo</button>
+        <button type="button" id="b-rotulos-cerrar">cerrar</button>
+      </div>
+      <div id="pr-lista" class="pr-lista">cargando rótulos…</div>
     </div>
     <div id="visor">
       <div id="lienzo">
@@ -144,7 +196,11 @@
   $("a-juego").href = `/juego?sello=${sello}&d=${stem}`;
 
   // color de fondo del visor por paleta (solo UI)
-  const FONDO_UI = { claro: "#e9dcbf", sepia: "#dcc79a", noche: "#22303f" };
+  const FONDO_UI = {
+    claro: "#e9dcbf", sepia: "#dcc79a", noche: "#22303f",
+    imprenta: "#fafafa", esmeralda: "#dee3c7", carmesi: "#ebdfc5",
+    oceanico: "#e2ecf2",
+  };
 
   // ==========================================================================
   //  estado (solo presentación)
@@ -157,6 +213,7 @@
     calidad: 2,
     win: null,                 // ventana de mundo del PNG mostrado
     listo: false,
+    rotver: 0,                 // versión de overrides de rótulos (bust de caché)
   };
   const mapa = $("mapa"), deco = $("deco"), lienzo = $("lienzo"), visor = $("visor");
 
@@ -189,6 +246,7 @@
     p.set("cy", (win.y0 + win.h / 2).toFixed(3));
     p.set("w", win.w.toFixed(3));
     p.set("h", win.h.toFixed(3));
+    if (st.rotver) p.set("rv", String(st.rotver));
     for (const k in (extras || {})) p.set(k, extras[k]);
     return "/api/fantasia/sector?" + p;
   }
@@ -366,27 +424,155 @@
   $("b-export").addEventListener("click", () => exportar(null));
   $("b-export-sector").addEventListener("click", () => exportar(winVisible(0)));
 
+  // nombre de archivo descriptivo: stem, paleta, semilla y resolución
+  function nombreArchivo(sector, win, px) {
+    const sem = (st.semilla || stem).replace(/[^0-9a-zA-Z_-]+/g, "_").slice(0, 24);
+    const suf = sector ? `_sector_${Math.round(win.x0)}x${Math.round(win.y0)}` : "";
+    return `fantasia_${stem}_${st.paleta}_${sem}_${px}px${suf}.png`;
+  }
+
   // exporta el mapa completo (win = null) o el sector visible: el servidor
-  // lo renderiza desde cero a alta resolución con la decoración horneada
-  function exportar(win) {
-    if (!st.listo) return;
+  // lo hornea desde cero a la resolución elegida, con o sin decoración.
+  // Se descarga vía fetch->blob para poder mostrar spinner mientras hornea.
+  let exportando = false;
+  async function exportar(win) {
+    if (!st.listo || exportando) return;
     const sector = !!win;
+    const deco = $("cb-deco").checked ? "1" : "0";
+    const px = String(Math.min(8192, Math.max(512,
+      parseInt($("sel-res").value, 10) || 4096)));
     let url;
     if (sector) {
-      url = urlSector(win, { deco: "1", px: "3072" });
+      url = urlSector(win, { deco, px });
     } else {
       const p = paramsBase();
-      p.set("deco", "1");
-      p.set("px", String(Math.min(st.nx * 2 * st.calidad, 8192)));
+      p.set("deco", deco);
+      p.set("px", px);
+      if (st.rotver) p.set("rv", String(st.rotver));
       url = "/api/fantasia/render?" + p;
     }
-    const a = document.createElement("a");
-    a.href = url;
-    const sufijo = sector
-      ? `_sector_${Math.round(win.x0)}x${Math.round(win.y0)}` : "";
-    a.download = `fantasia_${stem}_${st.paleta}_c${st.calidad}${sufijo}.png`;
-    a.click();
+    exportando = true;
+    $("spin").hidden = false;
+    $("estado").className = "";
+    $("estado").textContent = `horneando PNG en el servidor (${px} px)… los grandes tardan`;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = nombreArchivo(sector, win, px);
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      $("estado").textContent = `PNG exportado (${px} px).`;
+    } catch (e) {
+      $("estado").textContent = "no se pudo exportar: " + e.message;
+      $("estado").className = "error";
+    } finally {
+      exportando = false;
+      $("spin").hidden = true;
+    }
   }
+
+  // ==========================================================================
+  //  panel de rótulos editables (renombrar / ocultar; persistente en servidor)
+  //    GET  /api/fantasia/rotulos  -> lista de rótulos con override vigente
+  //    POST /api/fantasia/rotulos  -> guarda el mapa completo de overrides
+  // ==========================================================================
+  const TIPO_NOMBRE = { asent: "Asentamientos", pais: "Países", mar: "Mares", rio: "Ríos" };
+  let rotOrig = [];
+
+  $("b-rotulos").addEventListener("click", () => {
+    const p = $("panel-rotulos");
+    p.hidden = !p.hidden;
+    if (!p.hidden) cargarRotulos();
+  });
+  $("b-rotulos-cerrar").addEventListener("click", () => { $("panel-rotulos").hidden = true; });
+
+  function cargarRotulos() {
+    $("pr-lista").textContent = "cargando rótulos…";
+    const p = new URLSearchParams({ sello, d: stem });
+    fetch("/api/fantasia/rotulos?" + p).then(r => r.json()).then(j => {
+      if (j.error) { $("pr-lista").textContent = "error: " + j.error; return; }
+      rotOrig = j.rotulos || [];
+      pintarRotulos();
+    }).catch(e => { $("pr-lista").textContent = "no se pudo cargar: " + e.message; });
+  }
+
+  function pintarRotulos() {
+    const cont = $("pr-lista");
+    cont.textContent = "";
+    if (!rotOrig.length) { cont.textContent = "este detalle no tiene rótulos."; return; }
+    for (const tipo of ["asent", "pais", "mar", "rio"]) {
+      const items = rotOrig.filter(r => r.tipo === tipo);
+      if (!items.length) continue;
+      const g = document.createElement("div");
+      g.className = "pr-grupo";
+      const h = document.createElement("h4");
+      h.textContent = `${TIPO_NOMBRE[tipo]} (${items.length})`;
+      g.appendChild(h);
+      for (const it of items) {
+        const ov = it.override || {};
+        const fila = document.createElement("div");
+        fila.className = "pr-fila" + (ov.oculto ? " oculto" : "");
+        fila.dataset.id = it.id;
+        const inp = document.createElement("input");
+        inp.type = "text"; inp.maxLength = 60;
+        inp.value = ov.nombre || it.nombre;
+        inp.placeholder = it.nombre; inp.dataset.orig = it.nombre;
+        inp.className = "pr-nombre";
+        const lab = document.createElement("label");
+        const chk = document.createElement("input");
+        chk.type = "checkbox"; chk.className = "pr-ocultar"; chk.checked = !!ov.oculto;
+        chk.addEventListener("change", () => fila.classList.toggle("oculto", chk.checked));
+        lab.appendChild(chk); lab.appendChild(document.createTextNode("ocultar"));
+        fila.appendChild(inp); fila.appendChild(lab);
+        g.appendChild(fila);
+      }
+      cont.appendChild(g);
+    }
+  }
+
+  function recogerOverrides() {
+    const ov = {};
+    for (const fila of $("pr-lista").querySelectorAll(".pr-fila")) {
+      const inp = fila.querySelector(".pr-nombre");
+      const chk = fila.querySelector(".pr-ocultar");
+      const e = {};
+      const nombre = inp.value.trim().slice(0, 60);
+      if (chk.checked) e.oculto = true;
+      if (nombre && nombre !== inp.dataset.orig) e.nombre = nombre;
+      if (e.oculto || e.nombre) ov[fila.dataset.id] = e;
+    }
+    return ov;
+  }
+
+  function guardarRotulos(overrides) {
+    return fetch("/api/fantasia/rotulos", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sello, d: stem, overrides }),
+    }).then(r => r.json());
+  }
+
+  $("b-rotulos-guardar").addEventListener("click", () => {
+    $("estado").className = ""; $("estado").textContent = "guardando rótulos…";
+    guardarRotulos(recogerOverrides()).then(j => {
+      if (j.error) { $("estado").textContent = "error: " + j.error; $("estado").className = "error"; return; }
+      st.rotver++;              // fuerza refetch del sector con los nuevos rótulos
+      cargarRotulos();
+      renderVisible();
+      $("estado").textContent = `rótulos guardados (${j.n} overrides).`;
+    }).catch(e => { $("estado").textContent = "no se pudo guardar: " + e.message; $("estado").className = "error"; });
+  });
+
+  $("b-rotulos-restaurar").addEventListener("click", () => {
+    guardarRotulos({}).then(() => {
+      st.rotver++;
+      cargarRotulos();
+      renderVisible();
+      $("estado").className = ""; $("estado").textContent = "rótulos restaurados.";
+    }).catch(e => { $("estado").textContent = "no se pudo restaurar: " + e.message; $("estado").className = "error"; });
+  });
 })();
 </script>
 </body>

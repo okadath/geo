@@ -12,10 +12,12 @@ Expone, para el enchufe de `web.py`:
     manejar_post(handler, ruta, datos) -> bool
 
 Endpoints:
-    GET /api/fantasia/render?sello&d&calidad&semilla&paleta&capas&deco
+    GET /api/fantasia/render?sello&d&calidad&semilla&paleta&capas&deco&px
         -> PNG del mapa completo a la resolucion de trabajo.
     GET /api/fantasia/sector?sello&d&...&cx&cy&w&h  (o &z)
         -> PNG re-horneado de una ventana de mundo (nitido a cualquier zoom).
+    GET  /api/fantasia/rotulos?sello&d   -> lista de rotulos editables (JSON).
+    POST /api/fantasia/rotulos           -> guarda overrides de rotulos.
 
 Los renders se cachean en disco por hash de parametros en
     salidas/<sello>/detalles/fantasia_cache/
@@ -43,7 +45,12 @@ RE_SELLO = re.compile(r"^[0-9]{8}-[0-9]{6}(?:-[0-9]+)?$")
 RE_STEM = re.compile(r"^d[0-9]{6}_f[0-9]+_[0-9a-f]{6}$")
 
 CAPAS_VALIDAS = ("relieve", "veg", "rios", "caminos", "asent", "rotulos", "tinte")
-PALETAS_VALIDAS = ("claro", "sepia", "noche")
+PALETAS_VALIDAS = ("claro", "sepia", "noche", "imprenta", "esmeralda",
+                   "carmesi", "oceanico")
+
+# tipos de rotulo editables y longitud maxima de un nombre saneado
+TIPOS_ROTULO = ("asent", "pais", "mar", "rio")
+NOMBRE_MAX = 60
 
 _LOCK = threading.Lock()
 _CACHE_DATOS = {}     # (sello,stem) -> (mtime, dict con arrays y capas)
@@ -92,6 +99,54 @@ PALETAS = {
         "rio": (111, 159, 208), "texto": (219, 230, 241),
         "textoHalo": (16, 26, 38, 209), "mareText": (147, 182, 204),
         "hielo": (188, 204, 220), "vineta": (6, 12, 20, 140), "fondoUI": (34, 48, 63),
+    },
+    # tinta imprenta: blanco y negro puro, maximo contraste para impresion.
+    "imprenta": {
+        "papelA": (255, 255, 255), "papelB": (244, 244, 244), "marco": (18, 18, 18),
+        "mar": (250, 250, 250), "marHondo": (230, 230, 230), "agua": (96, 96, 96),
+        "tinta": (17, 17, 17), "costa": (17, 17, 17),
+        "montF": (255, 255, 255), "montI": (17, 17, 17), "montS": (208, 208, 208),
+        "colina": (34, 34, 34), "veg": (51, 51, 51), "conif": (34, 34, 34),
+        "desierto": (120, 120, 120),
+        "rio": (58, 58, 58), "texto": (8, 8, 8),
+        "textoHalo": (255, 255, 255, 235), "mareText": (54, 54, 54),
+        "hielo": (140, 140, 140), "vineta": (0, 0, 0, 38), "fondoUI": (250, 250, 250),
+    },
+    # esmeralda: verdes de atlas antiguo, tinta verde profunda.
+    "esmeralda": {
+        "papelA": (222, 227, 199), "papelB": (200, 209, 172), "marco": (44, 74, 54),
+        "mar": (176, 198, 181), "marHondo": (128, 160, 140), "agua": (118, 150, 132),
+        "tinta": (28, 54, 38), "costa": (32, 58, 40),
+        "montF": (210, 218, 189), "montI": (28, 54, 38), "montS": (166, 182, 148),
+        "colina": (50, 82, 58), "veg": (56, 96, 54), "conif": (42, 82, 52),
+        "desierto": (150, 150, 96),
+        "rio": (46, 92, 102), "texto": (24, 50, 34),
+        "textoHalo": (224, 230, 202, 222), "mareText": (46, 96, 84),
+        "hielo": (176, 196, 186), "vineta": (16, 40, 26, 104), "fondoUI": (222, 227, 199),
+    },
+    # carmesi y oro: tonos de imperio, tinta granate y marco dorado.
+    "carmesi": {
+        "papelA": (235, 223, 197), "papelB": (215, 197, 161), "marco": (150, 110, 42),
+        "mar": (206, 196, 168), "marHondo": (176, 162, 128), "agua": (170, 150, 110),
+        "tinta": (92, 32, 32), "costa": (100, 40, 34),
+        "montF": (224, 208, 178), "montI": (92, 32, 32), "montS": (182, 160, 120),
+        "colina": (120, 58, 44), "veg": (110, 96, 50), "conif": (96, 84, 46),
+        "desierto": (170, 140, 80),
+        "rio": (120, 74, 58), "texto": (86, 26, 26),
+        "textoHalo": (236, 224, 198, 224), "mareText": (120, 74, 58),
+        "hielo": (200, 190, 166), "vineta": (58, 20, 16, 112), "fondoUI": (235, 223, 197),
+    },
+    # atlas oceanico: azules claros de carta nautica, tinta marina.
+    "oceanico": {
+        "papelA": (226, 236, 242), "papelB": (206, 222, 232), "marco": (40, 78, 110),
+        "mar": (188, 214, 230), "marHondo": (148, 186, 212), "agua": (118, 164, 196),
+        "tinta": (24, 58, 88), "costa": (30, 64, 92),
+        "montF": (216, 230, 240), "montI": (24, 58, 88), "montS": (176, 198, 214),
+        "colina": (46, 84, 112), "veg": (70, 120, 96), "conif": (54, 104, 92),
+        "desierto": (176, 168, 120),
+        "rio": (34, 96, 150), "texto": (18, 50, 80),
+        "textoHalo": (230, 240, 246, 224), "mareText": (38, 96, 140),
+        "hielo": (206, 224, 236), "vineta": (12, 36, 60, 96), "fondoUI": (226, 236, 242),
     },
 }
 
@@ -218,6 +273,100 @@ def _dpx(d, x, y):
     elif py >= d["ndy"]:
         py = d["ndy"] - 1
     return px, py
+
+
+# ==========================================================================
+#  rotulos editables (renombrar/ocultar; overrides persistentes por detalle)
+#  Los overrides viven en salidas/<sello>/detalles/<stem>_fantasia_rotulos.json
+#  con forma {id: {"nombre"?: str, "oculto"?: true}}. El id es estable por tipo:
+#     asent:<indice>  pais:<id>  mar:<id>  rio:<id>
+# ==========================================================================
+def _ruta_overrides(sello, stem):
+    return SALIDAS / sello / "detalles" / f"{stem}_fantasia_rotulos.json"
+
+
+def _sanear_nombre(s):
+    """Quita caracteres de control y recorta a NOMBRE_MAX (sin espacios extremos)."""
+    if not isinstance(s, str):
+        return ""
+    s = "".join(ch for ch in s if ch >= " " and ch != "\x7f")
+    return s.strip()[:NOMBRE_MAX]
+
+
+def _sanear_overrides(data):
+    """Normaliza un dict crudo de overrides: descarta entradas invalidas,
+    saneo de nombres, solo tipos/ids con la forma esperada."""
+    ov = {}
+    if not isinstance(data, dict):
+        return ov
+    for k, v in data.items():
+        if not isinstance(k, str) or ":" not in k:
+            continue
+        tipo = k.split(":", 1)[0]
+        if tipo not in TIPOS_ROTULO or not isinstance(v, dict):
+            continue
+        e = {}
+        if v.get("oculto"):
+            e["oculto"] = True
+        nombre = _sanear_nombre(v.get("nombre", ""))
+        if nombre:
+            e["nombre"] = nombre
+        if e:
+            ov[k] = e
+    return ov
+
+
+def _cargar_overrides(sello, stem):
+    """Devuelve (overrides_saneados, firma). La firma (mtime+hash) entra en la
+    clave de cache de los PNG para invalidar al editar los rotulos."""
+    import json
+    ruta = _ruta_overrides(sello, stem)
+    try:
+        raw = ruta.read_bytes()
+        mt = ruta.stat().st_mtime
+    except OSError:
+        return {}, ""
+    firma = "%d-%s" % (int(mt), hashlib.md5(raw).hexdigest()[:12])
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except ValueError:
+        return {}, ""
+    return _sanear_overrides(data), firma
+
+
+def _rotulos_base(d):
+    """Lista canonica de rotulos disponibles del detalle, como tuplas
+    (tipo, id_estable, nombre_original). Mismo orden que los dibuja el render."""
+    capas = d["capas"]
+    out = []
+    for i, a in enumerate(capas.get("asentamientos", [])):
+        n = a.get("nombre")
+        if n:
+            out.append(("asent", "asent:%d" % i, n))
+    for p in capas.get("paises", {}).get("lista", []):
+        n = p.get("nombre")
+        if n:
+            out.append(("pais", "pais:%s" % p["id"], n))
+    for m in capas.get("subregiones", {}).get("mar", []):
+        n = m.get("nombre")
+        if n:
+            out.append(("mar", "mar:%s" % m["id"], n))
+    for r in capas.get("rios", []):
+        n = r.get("nombre")
+        if n:
+            out.append(("rio", "rio:%s" % r["id"], n))
+    return out
+
+
+def _rotulo_final(overrides, rid, nombre):
+    """Aplica el override a un rotulo: devuelve el nombre a dibujar, o None si
+    esta oculto. Sin override devuelve el nombre original."""
+    ov = overrides.get(rid)
+    if not ov:
+        return nombre
+    if ov.get("oculto"):
+        return None
+    return ov.get("nombre") or nombre
 
 
 # ==========================================================================
@@ -667,7 +816,7 @@ def _map_pts(pts, x0, y0, sc):
     return [((p[0] - x0) * sc, (p[1] - y0) * sc) for p in pts]
 
 
-def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni):
+def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides):
     x0, y0 = win[0], win[1]
     K = calidad
     kw = math.sqrt(K)
@@ -684,6 +833,9 @@ def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni):
         pts = r.get("puntos", [])
         if (r.get("caudal", 0) < 0.4 / K) or len(pts) < 6 or not r.get("nombre"):
             continue
+        nombre = _rotulo_final(overrides, "rio:%s" % r.get("id"), r["nombre"])
+        if not nombre:
+            continue
         i = len(pts) // 2
         a = pts[i - 1]
         b = pts[i + 1] if i + 1 < len(pts) else pts[i]
@@ -693,7 +845,7 @@ def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni):
         fs = max(9 / K, uni / 150) * sc
         cx = (pts[i][0] - x0) * sc
         cy = (pts[i][1] - y0) * sc
-        _texto_rotado(img, r["nombre"], cx, cy - fs * 0.2, fs, ang, "italic",
+        _texto_rotado(img, nombre, cx, cy - fs * 0.2, fs, ang, "italic",
                       rio, pal["textoHalo"])
 
 
@@ -787,13 +939,15 @@ def _castillo(dr, x, y, s, pal):
           fill=(176, 52, 44))
 
 
-def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni):
+def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides):
     x0, y0 = win[0], win[1]
     x1, y1 = x0 + win[2], y0 + win[3]
     K = calidad
     base = max(3.2 / K, uni / 340) * sc
-    cfg = sorted(d["capas"].get("asentamientos", []), key=lambda a: a.get("y", 0))
-    for a in cfg:
+    # se conserva el indice original (id estable "asent:<indice>") al ordenar
+    cfg = sorted(enumerate(d["capas"].get("asentamientos", [])),
+                 key=lambda t: t[1].get("y", 0))
+    for idx, a in cfg:
         ax, ay = a.get("x", 0), a.get("y", 0)
         if ax < x0 - 20 or ax > x1 + 20 or ay < y0 - 20 or ay > y1 + 20:
             continue
@@ -812,9 +966,12 @@ def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni):
                 r2 = base * 0.22
                 dr.ellipse([x - r2, y - r2, x + r2, y + r2], fill=pal["tinta"])
     # nombres
-    for a in cfg:
+    for idx, a in cfg:
         rg = int(a.get("rango", 0))
         if (rg < 1 and K < 3) or not a.get("nombre"):
+            continue
+        nombre = _rotulo_final(overrides, "asent:%d" % idx, a["nombre"])
+        if not nombre:
             continue
         ax, ay = a.get("x", 0), a.get("y", 0)
         if ax < x0 - 40 or ax > x1 + 200 or ay < y0 - 40 or ay > y1 + 40:
@@ -824,7 +981,7 @@ def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni):
         off = (base * 1.8 if rg >= 3 else base * 1.3 if rg == 2 else base) + 2
         x = (ax - x0) * sc + off
         y = (ay - y0) * sc
-        _texto(dr, a["nombre"], x, y, fs, clase, pal["texto"], pal["textoHalo"],
+        _texto(dr, nombre, x, y, fs, clase, pal["texto"], pal["textoHalo"],
                anchor="lm")
 
 
@@ -862,7 +1019,7 @@ def _centroide_pais(d, pid, tierra_por_pais, cent_cache):
     return res
 
 
-def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx):
+def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides):
     if d["ids"] is None:
         return
     x0, y0 = win[0], win[1]
@@ -880,6 +1037,9 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx):
     for p in paises:
         if p.get("area", 0) < area_max * 0.03 / (K * K):
             continue
+        nombre = _rotulo_final(overrides, "pais:%s" % p.get("id"), p["nombre"])
+        if not nombre:
+            continue
         c = _centroide_pais(d, p["id"], tierra_por_pais, cent_cache)
         if not c:
             continue
@@ -888,7 +1048,7 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx):
         fs = max(15, min(36, nx / 46 * math.sqrt(p["area"] / area_max) + 12)) / K * sc
         x = (c[0] - x0) * sc
         y = (c[1] - y0) * sc
-        _texto_espaciado(dr, p["nombre"].upper(), x, y, fs, "fantasy",
+        _texto_espaciado(dr, nombre.upper(), x, y, fs, "fantasy",
                          pal["texto"] + (235,), pal["textoHalo"], round(fs * 0.14))
 
     mares = sorted(capas.get("subregiones", {}).get("mar", []),
@@ -906,10 +1066,13 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx):
         dibujados += 1
         if c[0] < x0 or c[0] > x1 or c[1] < y0 or c[1] > y1:
             continue
+        nombre = _rotulo_final(overrides, "mar:%s" % m.get("id"), m["nombre"])
+        if not nombre:
+            continue
         fs = max(11, min(24, nx / 70 * math.sqrt(m["area"] / mar_max) + 8)) / K * sc
         x = (c[0] - x0) * sc
         y = (c[1] - y0) * sc
-        _texto(dr, m["nombre"], x, y, fs, "italic", pal["mareText"] + (230,),
+        _texto(dr, nombre, x, y, fs, "italic", pal["mareText"] + (230,),
                pal["textoHalo"], anchor="mm")
 
 
@@ -1125,7 +1288,8 @@ def _workres(calidad):
     return 4096 if calidad >= 3 else 3072 if calidad == 2 else 2048
 
 
-def _render(d, sello, stem, calidad, semilla, paleta, capas, win, deco, workres):
+def _render(d, sello, stem, calidad, semilla, paleta, capas, win, deco, workres,
+            overrides):
     pal = PALETAS[paleta]
     nx, ny = d["nx"], d["ny"]
     uni = nx / calidad
@@ -1158,13 +1322,13 @@ def _render(d, sello, stem, calidad, semilla, paleta, capas, win, deco, workres)
                     capas.get("veg", True), win, sc)
 
     if capas.get("rios", True):
-        _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni)
+        _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides)
     if capas.get("caminos", True):
         _dibujar_caminos(dr, d, pal, win, sc, calidad, uni)
     if capas.get("asent", True):
-        _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni)
+        _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides)
     if capas.get("rotulos", True):
-        _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx)
+        _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides)
 
     img = _vineta(img, pal, win, nx, ny)
 
@@ -1277,12 +1441,19 @@ def _atender(handler, url, es_sector, es_deco=False):
     else:
         win = (0.0, 0.0, float(nx), float(ny))
 
+    # overrides de rotulos: solo afectan al render/sector (la deco no lleva
+    # rotulos), pero su firma entra en la clave de cache para invalidar los PNG
+    if es_deco:
+        overrides, firma_ov = {}, ""
+    else:
+        overrides, firma_ov = _cargar_overrides(sello, stem)
+
     capas_str = ",".join(c for c in CAPAS_VALIDAS if capas[c])
     clave = "|".join([
         "deco" if es_deco else ("sector" if es_sector else "full"),
         stem, str(calidad), semilla, paleta,
         capas_str, "1" if deco else "0",
-        "%.2f_%.2f_%.2f_%.2f" % win, str(workres),
+        "%.2f_%.2f_%.2f_%.2f" % win, str(workres), firma_ov,
     ])
     cache = _cache_path(sello, stem, clave)
     if cache.exists():
@@ -1293,12 +1464,65 @@ def _atender(handler, url, es_sector, es_deco=False):
         png = _render_deco(d, paleta, calidad, win, min(workres, 2048))
     else:
         png = _render(d, sello, stem, calidad, semilla, paleta, capas, win,
-                      deco, workres)
+                      deco, workres, overrides)
     try:
         cache.write_bytes(png)
     except OSError:
         pass
     handler._bytes(png, "image/png", cache=True)
+    return True
+
+
+def _atender_rotulos_get(handler, url):
+    """GET /api/fantasia/rotulos?sello&d -> lista de rotulos editables del
+    detalle, con su nombre original y el override vigente si lo hay."""
+    q = parse_qs(url.query)
+    sello = q.get("sello", [""])[0]
+    stem = q.get("d", [""])[0]
+    if not RE_SELLO.match(sello) or not RE_STEM.match(stem):
+        handler._json({"error": "sello/d invalidos"}, 400)
+        return True
+    d = _cargar_datos(sello, stem)
+    if d is None:
+        handler._json({"error": "detalle sin capas.json/datos2.png"}, 404)
+        return True
+    overrides, _ = _cargar_overrides(sello, stem)
+    lista = []
+    for tipo, rid, nombre in _rotulos_base(d):
+        item = {"tipo": tipo, "id": rid, "nombre": nombre}
+        ov = overrides.get(rid)
+        if ov:
+            item["override"] = ov
+        lista.append(item)
+    handler._json({"sello": sello, "d": stem, "rotulos": lista})
+    return True
+
+
+def _atender_rotulos_post(handler, datos):
+    """POST /api/fantasia/rotulos {sello, d, overrides:{id:{nombre?,oculto?}}}
+    Reemplaza el archivo de overrides del detalle (persistente entre sesiones).
+    Un mapa vacio borra el archivo (restaurar todo)."""
+    import json
+    sello = str(datos.get("sello", ""))
+    stem = str(datos.get("d", ""))
+    if not RE_SELLO.match(sello) or not RE_STEM.match(stem):
+        handler._json({"error": "sello/d invalidos"}, 400)
+        return True
+    carpeta = SALIDAS / sello / "detalles"
+    if not carpeta.is_dir():
+        handler._json({"error": "detalle inexistente"}, 404)
+        return True
+    ov = _sanear_overrides(datos.get("overrides", {}))
+    ruta = _ruta_overrides(sello, stem)
+    try:
+        if ov:
+            ruta.write_text(json.dumps(ov, ensure_ascii=False), encoding="utf-8")
+        else:
+            ruta.unlink(missing_ok=True)
+    except OSError as e:
+        handler._json({"error": "no se pudo guardar: %s" % e}, 500)
+        return True
+    handler._json({"ok": True, "n": len(ov), "overrides": ov})
     return True
 
 
@@ -1309,8 +1533,12 @@ def manejar_get(handler, url):
         return _atender(handler, url, es_sector=True)
     if url.path == "/api/fantasia/deco":
         return _atender(handler, url, es_sector=True, es_deco=True)
+    if url.path == "/api/fantasia/rotulos":
+        return _atender_rotulos_get(handler, url)
     return False
 
 
 def manejar_post(handler, ruta, datos):
+    if ruta == "/api/fantasia/rotulos":
+        return _atender_rotulos_post(handler, datos)
     return False

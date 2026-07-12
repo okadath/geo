@@ -16,10 +16,16 @@ Endpoints (todos GET; el PNG se cachea en
 - `/api/batalla/info?sello&d` → resolución + catálogo de temas y subtipos.
 - `/api/batalla/lugar?sello&d&rx&ry` → ficha del punto (bioma, altitud, clima,
   río/camino/asentamiento cercanos, tema sugerido).
-- `/api/batalla/escena?…&tema&sub&semilla` → título narrativo y subtipo
+- `/api/batalla/escena?…&tema&sub&semilla&momento&estacion` → título narrativo
+  (con coletilla «…, al anochecer en invierno» cuando aporta) y subtipo
   efectivo.
-- `/api/batalla/mapa?…&cols&rows&px&rejilla&nums` → PNG del battlemap
-  (10–40 casillas, px 8–160; el export HD usa px=140).
+- `/api/batalla/mapa?…&cols&rows&px&rejilla&nums&momento&estacion` → PNG del
+  battlemap (10–40 casillas, px 8–160; el export HD usa px=140).
+- `/api/batalla/vtt?…&formato=foundry|roll20` → manifiesto de exportación a VTT
+  (arma el servidor). `foundry`: escena mínima de Foundry (`name`, `width`/
+  `height` en px, `grid:{size:100,type:1}`, imagen con nombre descriptivo).
+  `roll20`: nombre de archivo + `nota` con la rejilla («NxM casillas · 70
+  px/casilla»).
 
 ## Cómo abrirla
 
@@ -44,30 +50,52 @@ Endpoints (todos GET; el PNG se cachea en
 
 ## Temas y subtipos
 
-14 temas: bosque templado, taiga, selva densa, desierto/roquedal,
-nieve/tundra, ciénaga/pantano, paso rocoso/montaña, pradera, vado de río,
-playa/costa, aldea, y tres interiores (taberna, cripta, mazmorra).
+17 temas: bosque templado, taiga, selva densa, desierto/roquedal,
+nieve/tundra, ciénaga/pantano, paso rocoso/montaña, pradera, **tierras
+volcánicas / roca ardiente**, vado de río, playa/costa, aldea, **puerto/
+muelle**, y cuatro interiores (taberna, cripta, mazmorra, **gruta/caverna**).
+
+Los tres temas nuevos se integran en `detectarTema`: junto a un asentamiento
+**en el litoral** → *puerto* (tierra adentro sigue siendo *aldea*); gran
+altitud + calor tórrido → *volcánico*. La *gruta* es un interior manual (como
+taberna/cripta/mazmorra, no se autodetecta).
 
 Cada tema exterior admite **subtipos** que cambian la escena (además de
 «✨ automático», que elige uno según la semilla): clásico, espesura densa,
 claro abierto, ruinas antiguas, círculo de piedras, cementerio, campamento,
 oasis, cañón angosto, lago helado, mina abandonada, granja, puente, piedras de
-paso, naufragio, acantilado, mercado — según el tema (p. ej. *playa* ofrece
-naufragio y acantilado; *vado*, puente y piedras de paso). Los interiores no
-tienen subtipo.
+paso, naufragio, acantilado, mercado, y los nuevos **torre en ruinas, altar
+profanado, cruce de caminos, madriguera, géiseres y embarcadero** — según el
+tema (p. ej. *bosque* ofrece torre/altar/madriguera; *paso* y *volcánico*,
+géiseres; *puerto* y *playa*, embarcadero; *desierto* y *pradera*, cruce de
+caminos). Los interiores no tienen subtipo.
 
 El encuentro recibe un **título narrativo** armado con el lugar real («Ruinas
-antiguas de …», «Naufragio en la costa de …», «Mazmorra bajo …» con el nombre
-del asentamiento si el punto cae en uno).
+antiguas de …», «Naufragio en la costa de …», «Mazmorra bajo …», «Torre en
+ruinas de …», «Puerto de …» con el nombre del asentamiento si el punto cae en
+uno), más la coletilla de ambiente cuando aporta («…, al anochecer»,
+«… en invierno»).
 
 ## Controles y export
 
 - **tamaño**: columnas × filas (10–40 cada eje).
-- **semilla** numérica + 🎲; misma semilla + mismo punto/tema/subtipo/tamaño →
-  mismo mapa (determinista).
+- **semilla** numérica + 🎲; misma semilla + mismo punto/tema/subtipo/tamaño +
+  mismo momento/estación → mismo mapa (determinista).
+- **momento** (día · atardecer · noche) y **estación** (primavera · verano ·
+  otoño · invierno): post-procesado barato de paleta/iluminación sobre el
+  render base (tinte frío + oscurecido con toques de luz cálida de noche, tinte
+  dorado al atardecer; en invierno los temas templados ganan escarcha/nieve
+  parcial, en otoño el follaje vira a ocre). Entran en la clave de caché del
+  PNG y en el título narrativo.
 - **rejilla** y **numeración A1…** activables (el export las respeta).
-- **💾 PNG** a 70 px/casilla o **PNG HD** a 140 px/casilla, listo para VTT o
-  impresión.
+- **💾 PNG** a 70 px/casilla o **PNG HD** a 140 px/casilla.
+- **🎲 Foundry VTT**: descarga el PNG a **100 px/casilla sin numeración** de
+  coordenadas más un `.json` de escena mínimo de Foundry (`grid:{size:100,
+  type:1}`) con el mismo nombre de archivo; el manifiesto lo arma el servidor
+  (`/api/batalla/vtt?formato=foundry`).
+- **🎲 Roll20**: descarga el PNG a **70 px/casilla sin numeración** y muestra el
+  dato para configurar la rejilla en Roll20 («NxM casillas · 70 px/casilla»).
+- Los nombres de archivo son descriptivos (tema, tamaño, semilla).
 
 ## Archivos
 
