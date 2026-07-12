@@ -372,6 +372,76 @@ los mismos escenarios de §8.4, pero ahora **recurrentes** en lugar de ventas
 
 ---
 
+## 10. LA DECISIÓN — qué cobrar, qué desarrollar, qué promocionar
+
+Sin ambigüedad. Los tres productos funcionan; **no se lanzan los tres**: se
+lanza **uno** con los otros dos en papeles de apoyo.
+
+### 10.1 Modelo de cobro: SUSCRIPCIÓN freemium, vía Paddle
+
+**Suscripción. No pago único, no Patreon, no itch.io como canal principal.**
+
+- **Por qué suscripción:** el cliente objetivo (un DM) necesita mapas nuevos
+  *cada semana* — es la definición de valor recurrente. El costo de servirlo
+  es recurrente (servidor) y el margen es ~98% (§9.3). El pago único regala
+  ese valor: Dungeondraft cobra $19.99 *una vez* por lo que Czepeku factura
+  $76k *por pack*.
+- **Cómo:** Paddle (merchant of record, §9.2). Precios de §9.4: Free de demo /
+  **Pro $4.99/mes o $29/año** / **Comercial $9.99/mes o $59/año**. En la
+  página, el botón grande es el **anual** — el mensual existe para bajar la
+  barrera de entrada, no como opción por defecto.
+- Pago único solo como excepción futura (app de escritorio en itch.io, si la
+  piden), nunca como plan A.
+
+### 10.2 Producto: los battlemaps mandan, la fantasía viste, el juego espera
+
+**Un solo producto vendible: la herramienta creativa web = `/batalla` +
+`/fantasia` juntas** ("del planeta al encuentro": generas el mundo, ves el
+mapa de fantasía, haces clic en cualquier punto y sale el battlemap coherente
+con ese lugar). Esa integración es lo que NADIE más tiene y es el pitch entero.
+
+| Producto | Papel | % del esfuerzo |
+|---|---|---|
+| **`/batalla` (battlemaps)** | **El que se vende.** Es el nicho donde está el dinero (Czepeku $76k/pack; un DM consume mapas semanalmente) | **~50%** — más temas/subtipos, variantes (día/noche, estaciones), export directo a VTT (Foundry/Roll20: PNG + tamaño de rejilla) |
+| **`/fantasia` (mapa de mundo)** | **El gancho y el diferenciador.** Es lo que se comparte en redes y lo que Dungeondraft no puede ofrecer: contexto planetario real | ~30% — pulido de export, más paletas, rótulos editables |
+| **`/juego` (conquista)** | **Congelado como producto.** Se queda como *feature* gratis de la demo (retención y viralidad), y como carta futura para Steam cuando la herramienta ya genere ingresos | ~0% desarrollo nuevo; solo no romperlo |
+| Generador científico (`tecto.py`) | El motor y la fábrica de marketing (GIFs de tectónica) — no se vende ni se expone | ~20% restante: plomería de §9.1 |
+
+**Por qué no el juego primero:** necesita 6–12 meses de pulido (tutorial,
+balance, IA) contra un mercado de mediana $5–15k *por venta única*; la
+herramienta necesita 3–6 semanas de plomería contra un mercado de suscripción
+demostrado ($80k/mes el líder). Mismo motor, 10× menos tiempo a caja.
+
+### 10.3 Marketing: vender el battlemap, presumir el planeta
+
+Un embudo, tres piezas:
+
+1. **El contenido viral es la fantasía + tectónica** (TikTok/Reels/Shorts:
+   time-lapse de un planeta formándose → zoom al mapa pergamino → clic → el
+   battlemap del punto). El GIF de tectónica para el «wow», el battlemap para
+   el «lo necesito».
+2. **La comunidad objetivo es la de battlemaps**: r/battlemaps y r/FoundryVTT
+   (publicar 2 packs gratis/semana con enlace "generado con..."),
+   r/worldbuilding y r/mapmaking para la fantasía. La demo web gratis ES el
+   funnel — sin descarga, clic y estás dentro.
+3. **A los 2–3 meses con tracción: Patreon de mundos curados** (§8.3-2,
+   $5/nivel) como segundo ingreso y fábrica de contenido para el punto 2.
+
+Meta del primer año (§9.4): 5,000 usuarios free → ~150 suscriptores →
+~$550/mes netos y creciendo. Si a los 6 meses la conversión es <1% o hay
+<500 free, revisar precio/product-market-fit antes de meter más features.
+
+### 10.4 Orden de ejecución (empieza hoy)
+
+1. Semanas 1–4: plomería de §9.1 (cuentas, proxy+HTTPS, colas, Paddle) sobre
+   la herramienta unificada `/fantasia`+`/batalla`.
+2. Semana 5: landing con demo gratis + los dos planes. Lanzar en beta a
+   r/battlemaps pidiendo feedback (soft launch honesto).
+3. Semanas 6+: ciclo semanal — 1 mejora de battlemaps + 2 posts de contenido.
+   El juego y Steam ni se tocan hasta tener 100 suscriptores.
+
+---
+
 ## Fuentes
 
 - [games-stats: Age of History II](https://games-stats.com/steam/game/age-of-civilizations-ii/)
