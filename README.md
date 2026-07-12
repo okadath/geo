@@ -312,8 +312,11 @@ visor enlaza como «mapa político».
 ## Páginas interactivas sobre un detalle
 
 Cada cuadro detallado **con civilización** habilita cuatro páginas más del
-servidor local, todas autocontenidas (HTML + JS en un archivo, sin
-dependencias) y con la misma query `?sello=…&d=<stem>`:
+servidor local, con la misma query `?sello=…&d=<stem>`. La lógica propietaria
+(motor del juego, renders de fantasía y battlemaps) corre **en el servidor**,
+en módulos enchufables que `web.py` carga al arrancar (`juego_srv.py`,
+`fantasia_srv.py`, `batalla_srv.py`, endpoints `/api/...`); los HTML son solo
+presentación:
 
 - **`/regiones`** — visor de **subregiones**: provincias de cada país y
   regiones marinas, con selección múltiple, fichas, tooltips y árbol por país.

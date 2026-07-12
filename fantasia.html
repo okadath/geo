@@ -57,7 +57,7 @@
     position: absolute; inset: 0; width: 100%; height: 100%;
     pointer-events: none; display: block;
   }
-  #lienzo > canvas {
+  #lienzo > img {
     position: absolute; left: 0; top: 0; width: 100%; height: 100%;
     transform-origin: 0 0; display: block;
     user-select: none; -webkit-user-drag: none;
@@ -108,9 +108,9 @@
     </div>
     <div id="visor">
       <div id="lienzo">
-        <canvas id="cv"></canvas>
+        <img id="mapa" alt="">
       </div>
-      <canvas id="deco"></canvas>
+      <img id="deco" alt="">
     </div>
     <p id="estado">cargando…</p>
   </section>
@@ -118,6 +118,14 @@
 <script>
 (function () {
   "use strict";
+  // ------------------------------------------------------------------------
+  //  Visor delgado: TODO el dibujo del mapa (pergamino, glifos, ríos,
+  //  rótulos, decoración) se renderiza en el servidor (fantasia_srv.py).
+  //  Aquí solo hay presentación: controles, pan/zoom y carga de PNGs.
+  //    GET /api/fantasia/render  -> mapa completo (para exportar)
+  //    GET /api/fantasia/sector  -> ventana de mundo re-horneada (nítida)
+  //    GET /api/fantasia/deco    -> overlay transparente (marco, rosa, …)
+  // ------------------------------------------------------------------------
   const $ = id => document.getElementById(id);
   const q = new URLSearchParams(location.search);
   const sello = q.get("sello") || "", stem = q.get("d") || "";
@@ -131,162 +139,87 @@
     $("estado").textContent = "";
     return;
   }
-  const RUTA = `/salidas/${sello}/detalles/${stem}`;
   $("sub-titulo").textContent = `${sello} · ${stem}`;
   $("a-regiones").href = `/regiones?sello=${sello}&d=${stem}`;
   $("a-juego").href = `/juego?sello=${sello}&d=${stem}`;
 
-  // ==========================================================================
-  //  utilidades: PRNG determinista y ruido de valor
-  // ==========================================================================
-  function hashStr(s) {
-    let h = 2166136261 >>> 0;
-    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-  }
-  function mulberry32(a) {
-    return function () {
-      a |= 0; a = a + 0x6D2B79F5 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  // ruido de valor estable por celda (para manchas de pergamino)
-  function h2(x, y, s) {
-    let n = (x * 374761393 + y * 668265263 + s * 362437) | 0;
-    n = Math.imul(n ^ n >>> 13, 1274126177);
-    return ((n ^ n >>> 16) >>> 0) / 4294967296;
-  }
+  // color de fondo del visor por paleta (solo UI)
+  const FONDO_UI = { claro: "#e9dcbf", sepia: "#dcc79a", noche: "#22303f" };
 
   // ==========================================================================
-  //  paletas de estilo (pergamino claro / sepia / noche)
-  // ==========================================================================
-  const PALETAS = {
-    claro: {
-      papelA: [233, 220, 189], papelB: [214, 197, 158], marco: [120, 96, 58],
-      mar: [188, 206, 205], marHondo: [150, 176, 178], agua: [150, 174, 176],
-      tinta: "#4a3b28", costa: [92, 74, 48],
-      montF: [224, 210, 176], montI: "#5c4a30", montS: [176, 158, 120],
-      colina: "#6a5636", veg: "#4c672f", conif: "#3d5a34", desierto: "#a58a52",
-      rio: "#3f5d78", texto: "#40311c", textoHalo: "rgba(236,226,198,.85)",
-      mareText: "#4d7180", hielo: "#8fa6b0", vineta: "rgba(70,52,28,.34)",
-      fondoUI: "#e9dcbf"
-    },
-    sepia: {
-      papelA: [220, 199, 154], papelB: [196, 172, 124], marco: [96, 72, 40],
-      mar: [199, 181, 142], marHondo: [176, 156, 116], agua: [168, 148, 108],
-      tinta: "#43331f", costa: [78, 58, 32],
-      montF: [210, 190, 148], montI: "#4a3720", montS: [168, 146, 104],
-      colina: "#5a441f", veg: "#5f5626", conif: "#4c4620", desierto: "#9a824a",
-      rio: "#5a4a2a", texto: "#3a2b16", textoHalo: "rgba(226,208,166,.85)",
-      mareText: "#6a5a2e", hielo: "#b0a072", vineta: "rgba(52,36,16,.42)",
-      fondoUI: "#dcc79a"
-    },
-    noche: {
-      papelA: [43, 58, 77], papelB: [32, 45, 61], marco: [150, 172, 196],
-      mar: [22, 34, 47], marHondo: [14, 24, 35], agua: [58, 82, 106],
-      tinta: "#c6d4e2", costa: [150, 172, 196],
-      montF: [53, 72, 93], montI: "#cdd8e4", montS: [36, 50, 66],
-      colina: "#9fb3c8", veg: "#7ea07a", conif: "#6f9a72", desierto: "#a2986a",
-      rio: "#6f9fd0", texto: "#dbe6f1", textoHalo: "rgba(16,26,38,.82)",
-      mareText: "#93b6cc", hielo: "#bcccdc", vineta: "rgba(6,12,20,.55)",
-      fondoUI: "#22303f"
-    }
-  };
-
-  // ==========================================================================
-  //  estado global
+  //  estado (solo presentación)
   // ==========================================================================
   const st = {
     scale: 1, tx: 0, ty: 0,
-    capas: null,
-    nx: 1536, ny: 1536,       // resolucion (coords vectoriales)
-    ndx: 1024, ndy: 1024,     // res_datos (rasters de datos)
-    rw: 1536, rh: 1536,       // res subregiones (raster de ids)
-    datos: null, datos2: null, ids: null,
-    // precalculado
-    baseCv: null,
-    tinteCv: null,
-    glifos: null, glifosSem: null,
-    centroids: null,          // id -> {sx,sy,n}
-    idPais: null,             // id provincia -> pais
-    paisRGB: null,            // pais -> [r,g,b]
+    nx: 1536, ny: 1536,        // resolución (coords de mundo del detalle)
     semilla: stem,
     paleta: "claro",
-    // nivel de calidad: el mundo se dibuja como si fuera `calidad` veces más
-    // grande (glifos más densos y chicos, texto más fino, más rótulos)
     calidad: 2,
-    baseKey: "",               // paleta+calidad+ventana de la base horneada
-    baseWin: null,             // ventana de mundo que cubre la base
-    glifosCal: 0,              // calidad con la que se construyeron los glifos
-    win: null,                 // ventana de mundo {x0,y0,w,h} horneada en el canvas
+    win: null,                 // ventana de mundo del PNG mostrado
+    listo: false,
   };
+  const mapa = $("mapa"), deco = $("deco"), lienzo = $("lienzo"), visor = $("visor");
 
-  const cv = $("cv"), lienzo = $("lienzo"), visor = $("visor");
-  // resolución de trabajo del canvas visible según la calidad
-  function workRes() { return st.calidad >= 3 ? 4096 : st.calidad === 2 ? 3072 : 2048; }
-  // unidad de tamaño: los textos, líneas y símbolos se dimensionan contra un
-  // mundo `calidad` veces más grande, para que el mapa "se sienta" enorme
-  function uni() { return st.nx / st.calidad; }
-
-  function cargarImgData(url, w, h) {
-    return new Promise((ok, mal) => {
-      const im = new Image();
-      im.onload = () => {
-        const c = document.createElement("canvas");
-        c.width = im.naturalWidth; c.height = im.naturalHeight;
-        const cx = c.getContext("2d", { willReadFrequently: true });
-        cx.drawImage(im, 0, 0);
-        ok({ data: cx.getImageData(0, 0, c.width, c.height).data,
-             w: c.width, h: c.height });
-      };
-      im.onerror = () => mal(new Error(url));
-      im.src = url;
-    });
+  // ==========================================================================
+  //  URLs de la API de render
+  // ==========================================================================
+  function capasActivas() {
+    const c = [];
+    if ($("cb-relieve").checked) c.push("relieve");
+    if ($("cb-veg").checked) c.push("veg");
+    if ($("cb-rios").checked) c.push("rios");
+    if ($("cb-caminos").checked) c.push("caminos");
+    if ($("cb-asent").checked) c.push("asent");
+    if ($("cb-rotulos").checked) c.push("rotulos");
+    if ($("cb-tinte").checked) c.push("tinte");
+    return c.join(",");
+  }
+  function paramsBase() {
+    const p = new URLSearchParams();
+    p.set("sello", sello); p.set("d", stem);
+    p.set("calidad", String(st.calidad));
+    p.set("semilla", st.semilla);
+    p.set("paleta", st.paleta);
+    p.set("capas", capasActivas());
+    return p;
+  }
+  function urlSector(win, extras) {
+    const p = paramsBase();
+    p.set("cx", (win.x0 + win.w / 2).toFixed(3));
+    p.set("cy", (win.y0 + win.h / 2).toFixed(3));
+    p.set("w", win.w.toFixed(3));
+    p.set("h", win.h.toFixed(3));
+    for (const k in (extras || {})) p.set(k, extras[k]);
+    return "/api/fantasia/sector?" + p;
+  }
+  function urlDeco(win) {
+    const p = new URLSearchParams();
+    p.set("sello", sello); p.set("d", stem);
+    p.set("calidad", String(st.calidad));
+    p.set("paleta", st.paleta);
+    p.set("cx", (win.x0 + win.w / 2).toFixed(3));
+    p.set("cy", (win.y0 + win.h / 2).toFixed(3));
+    p.set("w", win.w.toFixed(3));
+    p.set("h", win.h.toFixed(3));
+    p.set("px", "1200");
+    return "/api/fantasia/deco?" + p;
   }
 
   // ==========================================================================
-  //  carga
+  //  carga inicial: solo la resolución del detalle (datos, no lógica)
   // ==========================================================================
-  fetch(`${RUTA}_capas.json`).then(r => {
+  fetch(`/salidas/${sello}/detalles/${stem}_capas.json`).then(r => {
     if (!r.ok) throw new Error("no se pudo leer _capas.json");
     return r.json();
   }).then(c => {
-    st.capas = c;
     [st.nx, st.ny] = c.resolucion || [1536, 1536];
-    [st.ndx, st.ndy] = c.res_datos || [1024, 1024];
-    const sr = c.subregiones || {};
-    [st.rw, st.rh] = sr.res || [st.nx, st.ny];
-    // lookup provincia -> país  y  país -> rgb
-    st.idPais = new Map();
-    for (const t of (sr.tierra || [])) st.idPais.set(t.id, t.pais);
-    st.paisRGB = new Map();
-    for (const p of ((c.paises && c.paises.lista) || [])) st.paisRGB.set(p.id, p.rgb);
-    return Promise.all([
-      cargarImgData(`${RUTA}_datos.png`, st.ndx, st.ndy),
-      cargarImgData(`${RUTA}_datos2.png`, st.ndx, st.ndy),
-      cargarImgData(`${RUTA}_regiones.png`, st.rw, st.rh),
-    ]);
-  }).then(([d, d2, reg]) => {
-    st.datos = d.data; st.ndx = d.w; st.ndy = d.h;
-    st.datos2 = d2.data;
-    st.rw = reg.w; st.rh = reg.h;
-    const ids = new Uint16Array(st.rw * st.rh);
-    const rd = reg.data;
-    for (let i = 0, o = 0; i < ids.length; i++, o += 4) ids[i] = rd[o] | (rd[o + 1] << 8);
-    st.ids = ids;
-
+    st.listo = true;
     $("in-semilla").value = st.semilla;
     // vista inicial opcional por query: ?c=<calidad 1..4>&z=<zoom>&cx=&cy=
-    // (cx,cy en coords de 'resolucion') — permite enlazar un sector concreto
     const qc = parseInt(q.get("c") || "", 10);
     if (qc >= 1 && qc <= 4) st.calidad = qc;
     $("sel-calidad").value = String(st.calidad);
-    precalcular();
     ajustarLienzo();
-    // la vista inicial se fija dos frames después: el layout (scrollbars,
-    // aspecto del visor) ya está estable y las medidas del visor son reales
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const qz = parseFloat(q.get("z") || "");
       if (qz > 1) {
@@ -305,771 +238,6 @@
     $("estado").className = "error";
   });
 
-  // ==========================================================================
-  //  muestreo de rasters (coords en píxeles de 'resolucion')
-  // ==========================================================================
-  function dIdx(x, y) {
-    let px = (x * st.ndx / st.nx) | 0, py = (y * st.ndy / st.ny) | 0;
-    if (px < 0) px = 0; else if (px >= st.ndx) px = st.ndx - 1;
-    if (py < 0) py = 0; else if (py >= st.ndy) py = st.ndy - 1;
-    return (py * st.ndx + px) * 4;
-  }
-  function alturaEn(x, y) { return st.datos[dIdx(x, y) + 2] / 255; }        // canal B
-  function biomaEn(x, y) { return st.datos2[dIdx(x, y)]; }                 // canal R (255 = mar)
-  function hieloEn(x, y) { return st.datos2[dIdx(x, y) + 2] / 255; }       // canal B
-  function esMar(x, y) { return st.datos2[dIdx(x, y)] === 255; }
-  // fracción de mar con muestreo bilineal: costa suave (sin escalera de
-  // píxeles del raster de datos) al hornear la base de un sector con zoom
-  function marFrac(x, y) {
-    const gx = x * st.ndx / st.nx - 0.5, gy = y * st.ndy / st.ny - 0.5;
-    const x0 = Math.floor(gx), y0 = Math.floor(gy);
-    const fx = gx - x0, fy = gy - y0;
-    const s = (xx, yy) => {
-      xx = xx < 0 ? 0 : xx >= st.ndx ? st.ndx - 1 : xx;
-      yy = yy < 0 ? 0 : yy >= st.ndy ? st.ndy - 1 : yy;
-      return st.datos2[(yy * st.ndx + xx) * 4] === 255 ? 1 : 0;
-    };
-    return s(x0, y0) * (1 - fx) * (1 - fy) + s(x0 + 1, y0) * fx * (1 - fy) +
-           s(x0, y0 + 1) * (1 - fx) * fy + s(x0 + 1, y0 + 1) * fx * fy;
-  }
-  // ruido de valor interpolado (manchas de pergamino sin bloques duros)
-  function vnoise(x, y, s) {
-    const x0 = Math.floor(x), y0 = Math.floor(y);
-    let fx = x - x0, fy = y - y0;
-    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-    return h2(x0, y0, s) * (1 - fx) * (1 - fy) + h2(x0 + 1, y0, s) * fx * (1 - fy) +
-           h2(x0, y0 + 1, s) * (1 - fx) * fy + h2(x0 + 1, y0 + 1, s) * fx * fy;
-  }
-
-  // ==========================================================================
-  //  precálculo pesado (una sola vez tras la carga)
-  // ==========================================================================
-  function precalcular() {
-    calcCentroides();
-    construirTinte();
-  }
-
-  // centroides de cada id de región (para rótulos de país y mar)
-  function calcCentroides() {
-    const ids = st.ids, W = st.rw, H = st.rh;
-    const acc = new Map();
-    for (let y = 0; y < H; y++) {
-      const row = y * W;
-      for (let x = 0; x < W; x++) {
-        const id = ids[row + x];
-        if (!id) continue;
-        let a = acc.get(id);
-        if (!a) { a = [0, 0, 0]; acc.set(id, a); }
-        a[0] += x; a[1] += y; a[2]++;
-      }
-    }
-    st.centroids = acc;
-  }
-  // centroide en coords de 'resolucion'
-  function centroideId(id) {
-    const a = st.centroids.get(id);
-    if (!a || !a[2]) return null;
-    return [a[0] / a[2] * st.nx / st.rw, a[1] / a[2] * st.ny / st.rh, a[2]];
-  }
-  function centroidePais(pid) {
-    let sx = 0, sy = 0, n = 0;
-    for (const t of (st.capas.subregiones.tierra || [])) {
-      if (t.pais !== pid) continue;
-      const a = st.centroids.get(t.id);
-      if (a) { sx += a[0]; sy += a[1]; n += a[2]; }
-    }
-    if (!n) return null;
-    return [sx / n * st.nx / st.rw, sy / n * st.ny / st.rh, n];
-  }
-
-  // capa de tinte político (canvas pequeño, país -> color; mar y sin dueño transparentes)
-  function construirTinte() {
-    const TW = 384, TH = 384;
-    const c = document.createElement("canvas");
-    c.width = TW; c.height = TH;
-    const cx = c.getContext("2d");
-    const img = cx.createImageData(TW, TH);
-    const px = img.data, ids = st.ids, W = st.rw, H = st.rh;
-    for (let y = 0; y < TH; y++) {
-      const sy = (y * H / TH) | 0;
-      for (let x = 0; x < TW; x++) {
-        const sx = (x * W / TW) | 0;
-        const id = ids[sy * W + sx];
-        const o = (y * TW + x) * 4;
-        if (!id) continue;
-        if (!st.idPais.has(id)) continue;       // solo provincias de tierra
-        const rgb = st.paisRGB.get(st.idPais.get(id));
-        if (!rgb) continue;
-        px[o] = rgb[0]; px[o + 1] = rgb[1]; px[o + 2] = rgb[2]; px[o + 3] = 255;
-      }
-    }
-    cx.putImageData(img, 0, 0);
-    st.tinteCv = c;
-  }
-
-  // ==========================================================================
-  //  base de pergamino + mar + waterlines (canvas pequeño, se escala suave)
-  //  Distancia al mar por chamfer para líneas de costa concéntricas.
-  // ==========================================================================
-  function construirBase(pal, win) {
-    // la base se construye SOLO para la ventana `win` (más un margen), a la
-    // resolución de trabajo: las costas y waterlines quedan nítidas a
-    // cualquier zoom. Los umbrales van en unidades de mundo (calibrados a la
-    // base clásica de 512 px), así el dibujo es idéntico en cualquier sector.
-    const u0 = st.nx / 512;
-    // el trazo engorda sublinealmente con el zoom del sector: de cerca la
-    // tinta de costa no se vuelve una franja enorme
-    const zf = Math.sqrt(Math.max(1, st.nx / win.w));
-    const costaW = 1.6 * u0 / zf, profW = 26 * u0;
-    const bandasW = [3.2 * u0, 7.4 * u0, 12.0 * u0];
-    // margen: las costas justo fuera de la ventana también generan waterlines
-    const marg = profW + 2 * u0;
-    const x0 = win.x0 - marg, y0 = win.y0 - marg;
-    const w = win.w + 2 * marg, h = win.h + 2 * marg;
-    const BW = Math.min(2048, Math.max(512, workRes() >> 1));
-    const BH = Math.round(BW * h / w);
-    const cel = w / BW;                       // unidades de mundo por celda
-    const anchoW = Math.max(0.55 * u0 / zf, cel * 0.9);   // grosor mín. ~1 celda
-    const land = new Uint8Array(BW * BH);
-    for (let y = 0; y < BH; y++) {
-      const wy = y0 + (y + 0.5) * cel;
-      for (let x = 0; x < BW; x++) {
-        const wx = x0 + (x + 0.5) * cel;
-        land[y * BW + x] = marFrac(wx, wy) < 0.5 ? 1 : 0;
-      }
-    }
-    // distancia (en celdas) del mar a la costa, chamfer 2 pasadas
-    const INF = 1e9, dist = new Float32Array(BW * BH);
-    for (let i = 0; i < dist.length; i++) dist[i] = land[i] ? 0 : INF;
-    const relax = (i, j, w) => { if (dist[j] + w < dist[i]) dist[i] = dist[j] + w; };
-    for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
-      const i = y * BW + x; if (dist[i] === 0) continue;
-      if (x > 0) relax(i, i - 1, 1);
-      if (y > 0) relax(i, i - BW, 1);
-      if (x > 0 && y > 0) relax(i, i - BW - 1, 1.41);
-      if (x < BW - 1 && y > 0) relax(i, i - BW + 1, 1.41);
-    }
-    for (let y = BH - 1; y >= 0; y--) for (let x = BW - 1; x >= 0; x--) {
-      const i = y * BW + x; if (dist[i] === 0) continue;
-      if (x < BW - 1) relax(i, i + 1, 1);
-      if (y < BH - 1) relax(i, i + BW, 1);
-      if (x < BW - 1 && y < BH - 1) relax(i, i + BW + 1, 1.41);
-      if (x > 0 && y < BH - 1) relax(i, i + BW - 1, 1.41);
-    }
-
-    const c = document.createElement("canvas");
-    c.width = BW; c.height = BH;
-    const cx = c.getContext("2d");
-    const img = cx.createImageData(BW, BH);
-    const px = img.data;
-    const pA = pal.papelA, pB = pal.papelB, mr = pal.mar, mh = pal.marHondo, ag = pal.agua, co = pal.costa;
-    // tamaño de las manchas de pergamino, en unidades de mundo (ancladas al
-    // mundo: al panear o acercarse la textura no "nada")
-    const bl1 = st.nx / 64, bl2 = st.nx / 16;
-    for (let y = 0; y < BH; y++) {
-      const wy = y0 + (y + 0.5) * cel;
-      for (let x = 0; x < BW; x++) {
-        const i = y * BW + x, o = i * 4;
-        const wx = x0 + (x + 0.5) * cel;
-        // manchas de pergamino: mezcla de dos ruidos suaves
-        const n = vnoise(wx / bl1, wy / bl1, 11) * 0.6 +
-                  vnoise(wx / bl2, wy / bl2, 7) * 0.4;
-        if (land[i]) {
-          px[o]     = pA[0] + (pB[0] - pA[0]) * n;
-          px[o + 1] = pA[1] + (pB[1] - pA[1]) * n;
-          px[o + 2] = pA[2] + (pB[2] - pA[2]) * n;
-          px[o + 3] = 255;
-        } else {
-          const d = dist[i] * cel;            // distancia a la costa, en mundo
-          // color de mar: más hondo lejos de la costa
-          const t = Math.min(1, d / profW);
-          let r = mr[0] + (mh[0] - mr[0]) * t;
-          let g = mr[1] + (mh[1] - mr[1]) * t;
-          let b = mr[2] + (mh[2] - mr[2]) * t;
-          // costa entintada (primer par de celdas)
-          if (d <= costaW) { r = co[0]; g = co[1]; b = co[2]; }
-          else {
-            // waterlines concéntricas
-            for (let k = 0; k < bandasW.length; k++) {
-              if (Math.abs(d - bandasW[k]) < anchoW) {
-                r = ag[0] * 0.82; g = ag[1] * 0.82; b = ag[2] * 0.82; break;
-              }
-            }
-          }
-          const nn = (n - 0.5) * 8;
-          px[o] = r + nn; px[o + 1] = g + nn; px[o + 2] = b + nn; px[o + 3] = 255;
-        }
-      }
-    }
-    cx.putImageData(img, 0, 0);
-    st.baseCv = c; st.baseWin = { x0, y0, w, h };
-  }
-
-  // ==========================================================================
-  //  glifos de relieve y vegetación (dependientes de la semilla)
-  // ==========================================================================
-  function construirGlifos(semilla) {
-    const rnd = mulberry32(hashStr(semilla + "|" + stem));
-    const g = [];
-    const nx = st.nx, ny = st.ny, K = st.calidad;
-
-    // --- relieve: rejilla, glifo si la altitud lo pide (más densa y fina
-    //     a más calidad; el piso acota el nº de glifos) ---
-    const pasoR = Math.max(6, Math.max(20, nx / 64) / K);
-    for (let gy = pasoR * 0.5; gy < ny; gy += pasoR) {
-      for (let gx = pasoR * 0.5; gx < nx; gx += pasoR) {
-        const jx = gx + (rnd() - 0.5) * pasoR * 0.85;
-        const jy = gy + (rnd() - 0.5) * pasoR * 0.85;
-        if (jx < 4 || jy < 4 || jx > nx - 4 || jy > ny - 4) continue;
-        if (esMar(jx, jy)) continue;
-        const a = alturaEn(jx, jy);
-        const r0 = rnd();
-        if (a > 0.62) {
-          if (r0 < 0.15) continue;                        // huecos para no saturar
-          g.push({ x: jx, y: jy, cat: "rel", kind: "mont",
-                   s: pasoR * (0.42 + a * 0.55) * (0.8 + rnd() * 0.4), r: rnd() });
-        } else if (a > 0.40) {
-          if (r0 < 0.45) continue;
-          g.push({ x: jx, y: jy, cat: "rel", kind: "col",
-                   s: pasoR * (0.30 + a * 0.30), r: rnd() });
-        }
-      }
-    }
-
-    // --- vegetación / cobertura: rejilla más fina ---
-    const pasoV = Math.max(4, Math.max(14, nx / 96) / K);
-    for (let gy = pasoV * 0.5; gy < ny; gy += pasoV) {
-      for (let gx = pasoV * 0.5; gx < nx; gx += pasoV) {
-        const jx = gx + (rnd() - 0.5) * pasoV * 0.8;
-        const jy = gy + (rnd() - 0.5) * pasoV * 0.8;
-        if (jx < 4 || jy < 4 || jx > nx - 4 || jy > ny - 4) continue;
-        if (esMar(jx, jy)) continue;
-        const b = biomaEn(jx, jy), a = alturaEn(jx, jy);
-        const hi = hieloEn(jx, jy);
-        const r0 = rnd();
-        let kind = null, dens = 0;
-        if (b === 0 || hi > 0.5) { kind = "hielo"; dens = 0.55; }        // hielo / casquete
-        else if (b === 2) { kind = "conif"; dens = 0.55; }              // taiga
-        else if (b === 10 || b === 7) { kind = "arbol"; dens = 0.62; }  // bosque húmedo / templado
-        else if (b === 8) { kind = "arbol"; dens = 0.40; }             // bosque seco
-        else if (b === 9) { kind = "arbol"; dens = 0.22; }             // sabana (dispersos)
-        else if (b === 4 || b === 5) { kind = "duna"; dens = 0.30; }   // desierto
-        // tundra(1), estepa(3), pradera(6): nada
-        if (!kind || r0 > dens) continue;
-        if (kind !== "hielo" && a > 0.66) continue;                    // no árboles en cumbres
-        g.push({ x: jx, y: jy, cat: "veg", kind,
-                 s: pasoV * (0.5 + rnd() * 0.5), r: rnd() });
-      }
-    }
-
-    g.sort((p, q) => p.y - q.y);      // pintar de fondo a frente
-    st.glifos = g; st.glifosSem = semilla; st.glifosCal = st.calidad;
-  }
-
-  // ==========================================================================
-  //  dibujo de glifos individuales (coords en 'resolucion'; ctx ya escalado)
-  // ==========================================================================
-  function glifoMontana(cx, m, pal) {
-    const x = m.x, y = m.y, s = m.s, jag = (m.r - 0.5) * s * 0.4;
-    const apx = x + jag, apy = y - s * 1.35;
-    cx.beginPath();
-    cx.moveTo(x - s, y);
-    cx.lineTo(apx, apy);
-    cx.lineTo(x + s, y);
-    cx.closePath();
-    cx.fillStyle = `rgb(${pal.montF[0]},${pal.montF[1]},${pal.montF[2]})`;
-    cx.fill();
-    // ladera sombreada (derecha)
-    cx.beginPath();
-    cx.moveTo(apx, apy);
-    cx.lineTo(x + s, y);
-    cx.lineTo(x + s * 0.28, y);
-    cx.closePath();
-    cx.fillStyle = `rgb(${pal.montS[0]},${pal.montS[1]},${pal.montS[2]})`;
-    cx.fill();
-    cx.strokeStyle = pal.montI;
-    cx.lineWidth = Math.max(0.5, s * 0.09);
-    cx.lineJoin = "round";
-    cx.beginPath();
-    cx.moveTo(x - s, y); cx.lineTo(apx, apy); cx.lineTo(x + s, y);
-    cx.stroke();
-    // cresta / arruga
-    cx.lineWidth = Math.max(0.4, s * 0.06);
-    cx.beginPath();
-    cx.moveTo(apx, apy);
-    cx.lineTo(x + jag * 0.4 - s * 0.14, y - s * 0.35);
-    cx.stroke();
-  }
-  function glifoColina(cx, m, pal) {
-    const x = m.x, y = m.y, s = m.s;
-    cx.strokeStyle = pal.colina;
-    cx.lineWidth = Math.max(0.4, s * 0.12);
-    cx.lineCap = "round";
-    cx.beginPath();
-    cx.arc(x, y, s, Math.PI * 1.02, Math.PI * 1.98);
-    cx.stroke();
-  }
-  function glifoArbol(cx, m, pal) {
-    const x = m.x, y = m.y, s = m.s * 0.9;
-    cx.strokeStyle = pal.veg;
-    cx.lineWidth = Math.max(0.4, s * 0.18);
-    cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x, y - s * 0.6); cx.stroke();
-    cx.beginPath();
-    cx.arc(x, y - s * 1.1, s * 0.6, 0, 6.2832);
-    cx.fillStyle = pal.veg; cx.globalAlpha = 0.30; cx.fill(); cx.globalAlpha = 1;
-    cx.stroke();
-  }
-  function glifoConif(cx, m, pal) {
-    const x = m.x, y = m.y, s = m.s;
-    cx.fillStyle = pal.conif;
-    cx.strokeStyle = pal.conif;
-    cx.lineWidth = Math.max(0.4, s * 0.1);
-    cx.beginPath();
-    cx.moveTo(x, y - s * 1.5);
-    cx.lineTo(x - s * 0.55, y);
-    cx.lineTo(x + s * 0.55, y);
-    cx.closePath();
-    cx.globalAlpha = 0.32; cx.fill(); cx.globalAlpha = 1; cx.stroke();
-  }
-  function glifoDuna(cx, m, pal) {
-    const x = m.x, y = m.y, s = m.s * 0.8;
-    cx.strokeStyle = pal.desierto;
-    cx.lineWidth = Math.max(0.4, s * 0.14);
-    cx.lineCap = "round";
-    cx.beginPath(); cx.arc(x, y, s * 0.7, Math.PI * 1.08, Math.PI * 1.92); cx.stroke();
-    cx.beginPath(); cx.arc(x + s * 0.5, y + s * 0.4, s * 0.4, Math.PI * 1.08, Math.PI * 1.92); cx.stroke();
-  }
-  function glifoHielo(cx, m, pal) {
-    const x = m.x, y = m.y, s = m.s;
-    cx.strokeStyle = pal.hielo;
-    cx.lineWidth = Math.max(0.35, s * 0.09);
-    cx.globalAlpha = 0.7;
-    cx.beginPath();
-    cx.moveTo(x - s * 0.7, y); cx.lineTo(x + s * 0.7, y);
-    cx.moveTo(x - s * 0.4, y + s * 0.45); cx.lineTo(x + s * 0.4, y + s * 0.45);
-    cx.stroke();
-    cx.globalAlpha = 1;
-  }
-  function dibujarGlifos(cx, pal, verRel, verVeg, win) {
-    // culling: solo los glifos que caen dentro de la ventana horneada (con
-    // margen por el tamaño del símbolo); acelera el render de sectores
-    const x1 = win.x0 + win.w, y1 = win.y0 + win.h;
-    for (const m of st.glifos) {
-      if (m.cat === "rel" && !verRel) continue;
-      if (m.cat === "veg" && !verVeg) continue;
-      const mg = m.s * 4;
-      if (m.x + mg < win.x0 || m.x - mg > x1 ||
-          m.y + mg < win.y0 || m.y - mg > y1) continue;
-      switch (m.kind) {
-        case "mont": glifoMontana(cx, m, pal); break;
-        case "col": glifoColina(cx, m, pal); break;
-        case "arbol": glifoArbol(cx, m, pal); break;
-        case "conif": glifoConif(cx, m, pal); break;
-        case "duna": glifoDuna(cx, m, pal); break;
-        case "hielo": glifoHielo(cx, m, pal); break;
-      }
-    }
-  }
-
-  // ==========================================================================
-  //  ríos, caminos, rutas
-  // ==========================================================================
-  function trazarSuave(cx, pts) {
-    if (pts.length < 2) return;
-    cx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
-      cx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
-    }
-    const n = pts.length - 1;
-    cx.lineTo(pts[n][0], pts[n][1]);
-  }
-  function dibujarRios(cx, pal) {
-    const K = st.calidad, kw = Math.sqrt(K);   // trazos más finos en mundos grandes
-    cx.strokeStyle = pal.rio;
-    cx.lineCap = "round"; cx.lineJoin = "round";
-    for (const r of (st.capas.rios || [])) {
-      const pts = r.puntos || [];
-      if (pts.length < 2) continue;
-      cx.lineWidth = (0.7 + (r.caudal || 0.2) * 2.6) / kw;
-      cx.globalAlpha = 0.9;
-      cx.beginPath(); trazarSuave(cx, pts); cx.stroke();
-    }
-    cx.globalAlpha = 1;
-    // nombres de los ríos grandes, en cursiva siguiendo el trazo (a más
-    // calidad se nombran también ríos menores: se leen al acercarse)
-    cx.fillStyle = pal.rio;
-    for (const r of (st.capas.rios || [])) {
-      const pts = r.puntos || [];
-      if ((r.caudal || 0) < 0.4 / K || pts.length < 6 || !r.nombre) continue;
-      const i = Math.floor(pts.length / 2);
-      const a = pts[i - 1], b = pts[i + 1] || pts[i];
-      let ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
-      if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
-      cx.save();
-      cx.translate(pts[i][0], pts[i][1]); cx.rotate(ang);
-      const fs = Math.max(9 / K, uni() / 150);
-      cx.font = `italic ${fs}px Georgia, "Times New Roman", serif`;
-      cx.textAlign = "center"; cx.textBaseline = "bottom";
-      halo(cx, pal); cx.strokeText(r.nombre, 0, -1.5); cx.fillStyle = pal.rio;
-      cx.fillText(r.nombre, 0, -1.5);
-      cx.restore();
-    }
-  }
-  function dibujarCaminos(cx, pal) {
-    const u = uni(), K = st.calidad;
-    // caminos terrestres punteados
-    cx.strokeStyle = pal.tinta;
-    cx.lineWidth = Math.max(0.7 / K, u / 1400);
-    cx.setLineDash([u / 500, u / 380]);
-    cx.globalAlpha = 0.7;
-    for (const c of (st.capas.caminos || [])) {
-      const pts = c.puntos || [];
-      if (pts.length < 2) continue;
-      cx.beginPath(); trazarSuave(cx, pts); cx.stroke();
-    }
-    // rutas (marítimas en discontinua fina sobre el mar)
-    cx.strokeStyle = pal.mareText;
-    cx.lineWidth = Math.max(0.6 / K, u / 1700);
-    cx.setLineDash([u / 700, u / 550]);
-    for (const r of (st.capas.rutas || [])) {
-      const pts = r.puntos || [];
-      if (pts.length < 2) continue;
-      cx.beginPath(); trazarSuave(cx, pts); cx.stroke();
-    }
-    cx.setLineDash([]); cx.globalAlpha = 1;
-  }
-
-  // ==========================================================================
-  //  asentamientos
-  // ==========================================================================
-  function casita(cx, x, y, s, pal) {
-    cx.fillStyle = `rgb(${pal.papelA[0]},${pal.papelA[1]},${pal.papelA[2]})`;
-    cx.strokeStyle = pal.tinta; cx.lineWidth = Math.max(0.5, s * 0.16);
-    cx.beginPath();
-    cx.rect(x - s * 0.5, y - s * 0.5, s, s * 0.7);
-    cx.fill(); cx.stroke();
-    cx.beginPath();
-    cx.moveTo(x - s * 0.62, y - s * 0.5);
-    cx.lineTo(x, y - s * 1.15);
-    cx.lineTo(x + s * 0.62, y - s * 0.5);
-    cx.closePath(); cx.fill(); cx.stroke();
-  }
-  function castillo(cx, x, y, s, pal) {
-    cx.fillStyle = `rgb(${pal.papelA[0]},${pal.papelA[1]},${pal.papelA[2]})`;
-    cx.strokeStyle = pal.tinta; cx.lineWidth = Math.max(0.6, s * 0.14);
-    // muralla con almenas
-    const w = s * 1.5, h = s * 1.1, x0 = x - w / 2, y0 = y - h;
-    cx.beginPath();
-    cx.moveTo(x0, y);
-    cx.lineTo(x0, y0);
-    const almenas = 4, aw = w / (almenas * 2 - 1);
-    for (let i = 0; i < almenas * 2 - 1; i++) {
-      const up = i % 2 === 0;
-      cx.lineTo(x0 + i * aw, up ? y0 : y0 + s * 0.28);
-      cx.lineTo(x0 + (i + 1) * aw, up ? y0 : y0 + s * 0.28);
-    }
-    cx.lineTo(x0 + w, y);
-    cx.closePath(); cx.fill(); cx.stroke();
-    // torre con banderín
-    cx.strokeStyle = pal.tinta; cx.lineWidth = Math.max(0.5, s * 0.12);
-    cx.beginPath(); cx.moveTo(x, y0); cx.lineTo(x, y0 - s * 0.8); cx.stroke();
-    cx.beginPath();
-    cx.moveTo(x, y0 - s * 0.8);
-    cx.lineTo(x + s * 0.7, y0 - s * 0.62);
-    cx.lineTo(x, y0 - s * 0.44);
-    cx.closePath();
-    cx.fillStyle = "#b0342c"; cx.fill();
-  }
-  function dibujarAsent(cx, pal) {
-    const cfg = (st.capas.asentamientos || []).slice().sort((a, b) => a.y - b.y);
-    const K = st.calidad;
-    const base = Math.max(3.2 / K, uni() / 340);
-    for (const a of cfg) {
-      const x = a.x, y = a.y, rg = a.rango | 0;
-      if (rg >= 3) castillo(cx, x, y, base * 1.5, pal);
-      else if (rg === 2) casita(cx, x, y, base * 1.25, pal);
-      else {
-        cx.beginPath(); cx.arc(x, y, rg === 1 ? base * 0.7 : base * 0.5, 0, 6.2832);
-        cx.fillStyle = `rgb(${pal.papelA[0]},${pal.papelA[1]},${pal.papelA[2]})`;
-        cx.fill();
-        cx.lineWidth = Math.max(0.5, base * 0.16); cx.strokeStyle = pal.tinta; cx.stroke();
-        if (rg === 1) { cx.beginPath(); cx.arc(x, y, base * 0.22, 0, 6.2832); cx.fillStyle = pal.tinta; cx.fill(); }
-      }
-    }
-    // nombres (encima de los iconos); en calidades altas se rotulan también
-    // las aldeas menores, legibles solo al acercarse
-    for (const a of cfg) {
-      const rg = a.rango | 0;
-      if ((rg < 1 && K < 3) || !a.nombre) continue;
-      const fs = rg >= 3 ? Math.max(12 / K, uni() / 118) : Math.max(9.5 / K, uni() / 165);
-      cx.font = `${rg >= 3 ? "600 " : ""}${fs}px Georgia, "Times New Roman", serif`;
-      cx.textAlign = "left"; cx.textBaseline = "middle";
-      const off = (rg >= 3 ? base * 1.8 : rg === 2 ? base * 1.3 : base) + 2;
-      halo(cx, pal); cx.strokeText(a.nombre, a.x + off, a.y);
-      cx.fillStyle = pal.texto; cx.fillText(a.nombre, a.x + off, a.y);
-    }
-  }
-
-  // ==========================================================================
-  //  rótulos de países y mares
-  // ==========================================================================
-  function halo(cx, pal) {
-    cx.strokeStyle = pal.textoHalo;
-    cx.lineJoin = "round";
-    cx.lineWidth = Math.max(2 / st.calidad, uni() / 340);
-  }
-  function tieneLetterSpacing(cx) { return "letterSpacing" in cx; }
-  function dibujarRotulos(cx, pal) {
-    const K = st.calidad;
-    // países en grande (tipografía de fantasía, versalitas espaciadas); a más
-    // calidad los rótulos son más chicos respecto al mapa y entran más países
-    const paises = ((st.capas.paises && st.capas.paises.lista) || [])
-      .slice().sort((a, b) => b.area - a.area);
-    const areaMax = paises.length ? paises[0].area : 1;
-    for (const p of paises) {
-      if (p.area < areaMax * 0.03 / (K * K)) continue;   // omite países diminutos
-      const c = centroidePais(p.id);
-      if (!c) continue;
-      const fs = Math.max(15, Math.min(36, st.nx / 46 * Math.sqrt(p.area / areaMax) + 12)) / K;
-      cx.font = `${fs}px "Luminari", "Uncial Antiqua", Georgia, serif`;
-      cx.textAlign = "center"; cx.textBaseline = "middle";
-      const ls = tieneLetterSpacing(cx);
-      if (ls) cx.letterSpacing = Math.round(fs * 0.14) + "px";
-      const txt = p.nombre.toUpperCase();
-      halo(cx, pal); cx.lineWidth = Math.max(2.5 / K, fs * 0.18);
-      cx.strokeText(txt, c[0], c[1]);
-      cx.fillStyle = pal.texto; cx.globalAlpha = 0.92;
-      cx.fillText(txt, c[0], c[1]); cx.globalAlpha = 1;
-      if (ls) cx.letterSpacing = "0px";
-    }
-    // mares / golfos en cursiva azul lavada
-    const mares = ((st.capas.subregiones && st.capas.subregiones.mar) || [])
-      .slice().sort((a, b) => b.area - a.area);
-    const marMax = mares.length ? mares[0].area : 1;
-    let dibujados = 0;
-    for (const m of mares) {
-      if (m.area < marMax * 0.12 / K) continue;      // más mares a más calidad
-      if (dibujados > 9 * K * K) break;
-      const c = centroideId(m.id);
-      if (!c) continue;
-      const fs = Math.max(11, Math.min(24, st.nx / 70 * Math.sqrt(m.area / marMax) + 8)) / K;
-      cx.font = `italic ${fs}px Georgia, "Times New Roman", serif`;
-      cx.textAlign = "center"; cx.textBaseline = "middle";
-      halo(cx, pal); cx.lineWidth = Math.max(2 / K, fs * 0.16);
-      cx.strokeText(m.nombre, c[0], c[1]);
-      cx.fillStyle = pal.mareText; cx.globalAlpha = 0.9;
-      cx.fillText(m.nombre, c[0], c[1]); cx.globalAlpha = 1;
-      dibujados++;
-    }
-  }
-
-  // ==========================================================================
-  //  decoración: marco, rosa de los vientos, cartela, escala gráfica
-  // ==========================================================================
-  // Todas dibujan en un espacio de píxeles (W, H) arbitrario: el overlay del
-  // visor en la web o el PNG final al exportar. Nunca van dentro del canvas
-  // del mapa: así siguen visibles (y nítidas) a cualquier zoom.
-  function marco(cx, pal, W, H) {
-    const m = W * 0.018;
-    cx.strokeStyle = `rgb(${pal.marco[0]},${pal.marco[1]},${pal.marco[2]})`;
-    cx.lineWidth = W / 300;
-    cx.strokeRect(m, m, W - 2 * m, H - 2 * m);
-    cx.lineWidth = W / 700;
-    cx.strokeRect(m * 1.7, m * 1.7, W - 3.4 * m, H - 3.4 * m);
-    // esquinas ornamentadas
-    const q = m * 2.4;
-    for (const [sx, sy] of [[m, m], [W - m, m], [m, H - m], [W - m, H - m]]) {
-      const dx = sx < W / 2 ? 1 : -1, dy = sy < H / 2 ? 1 : -1;
-      cx.beginPath();
-      cx.moveTo(sx + dx * q, sy);
-      cx.quadraticCurveTo(sx, sy, sx, sy + dy * q);
-      cx.lineWidth = W / 260; cx.stroke();
-      cx.beginPath();
-      cx.arc(sx + dx * q * 0.42, sy + dy * q * 0.42, m * 0.28, 0, 6.2832);
-      cx.stroke();
-    }
-  }
-  function rosaVientos(cx, pal, W, H, marEn) {
-    // buscar una esquina que sea mar (marEn evalúa en coords del mundo)
-    const insX = W * 0.13, insY = H * 0.13;
-    const esquinas = [[insX, insY], [W - insX, insY],
-                      [insX, H - insY], [W - insX, H - insY]];
-    let pos = esquinas[3];
-    for (const e of esquinas) if (marEn(e[0], e[1])) { pos = e; break; }
-    const cxp = pos[0], cyp = pos[1], R = W * 0.062;
-    cx.save();
-    cx.translate(cxp, cyp);
-    cx.strokeStyle = pal.tinta; cx.fillStyle = pal.tinta;
-    cx.lineWidth = W / 900;
-    cx.beginPath(); cx.arc(0, 0, R, 0, 6.2832); cx.stroke();
-    cx.beginPath(); cx.arc(0, 0, R * 0.72, 0, 6.2832); cx.stroke();
-    for (let k = 0; k < 8; k++) {
-      const ang = k * Math.PI / 4, largo = (k % 2 === 0) ? R : R * 0.62;
-      const w = (k % 2 === 0) ? R * 0.14 : R * 0.09;
-      const ax = Math.cos(ang), ay = Math.sin(ang);
-      const px = Math.cos(ang + Math.PI / 2), py = Math.sin(ang + Math.PI / 2);
-      cx.beginPath();
-      cx.moveTo(ax * largo, ay * largo);
-      cx.lineTo(px * w, py * w);
-      cx.lineTo(-ax * w, -ay * w);
-      cx.lineTo(-px * w, -py * w);
-      cx.closePath();
-      cx.globalAlpha = (k % 2 === 0) ? 0.85 : 0.5; cx.fill();
-    }
-    cx.globalAlpha = 1;
-    const fs = R * 0.34;
-    cx.font = `${fs}px "Luminari", Georgia, serif`;
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    cx.fillText("N", 0, -R * 1.22);
-    cx.fillText("S", 0, R * 1.22);
-    cx.fillText("E", R * 1.22, 0);
-    cx.fillText("O", -R * 1.22, 0);
-    cx.restore();
-  }
-  function cartela(cx, pal, W, H) {
-    const paises = ((st.capas.paises && st.capas.paises.lista) || [])
-      .slice().sort((a, b) => b.area - a.area);
-    let titulo = "Tierras Ignotas";
-    if (paises.length && paises[0].nombre) titulo = paises[0].nombre;
-    else {
-      const cap = (st.capas.asentamientos || []).find(a => a.rango >= 3);
-      if (cap) titulo = "Tierras de " + cap.nombre;
-    }
-    const cw = W * 0.42, ch = H * 0.072;
-    const x = (W - cw) / 2, y = H * 0.028;
-    cx.fillStyle = `rgba(${pal.papelA[0]},${pal.papelA[1]},${pal.papelA[2]},.82)`;
-    cx.strokeStyle = `rgb(${pal.marco[0]},${pal.marco[1]},${pal.marco[2]})`;
-    cx.lineWidth = W / 500;
-    roundRect(cx, x, y, cw, ch, ch * 0.22); cx.fill(); cx.stroke();
-    cx.lineWidth = W / 1100;
-    roundRect(cx, x + ch * 0.14, y + ch * 0.14, cw - ch * 0.28, ch - ch * 0.28, ch * 0.16); cx.stroke();
-    const fs = Math.min(ch * 0.5, cw / (titulo.length * 0.62));
-    cx.font = `${fs}px "Luminari", "Uncial Antiqua", Georgia, serif`;
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    if ("letterSpacing" in cx) cx.letterSpacing = Math.round(fs * 0.08) + "px";
-    cx.fillStyle = pal.texto;
-    cx.fillText(titulo, W / 2, y + ch / 2);
-    if ("letterSpacing" in cx) cx.letterSpacing = "0px";
-  }
-  function escalaGrafica(cx, pal, W, H, winW) {
-    // barra en "leguas": el mapa completo mide 200·calidad leguas por cada
-    // 0.22 de su ancho; la barra representa la fracción visible (winW) y se
-    // redondea a un valor bonito 1/2/5·10^k ajustando su largo
-    const raw = 200 * st.calidad * winW / st.nx;   // leguas de una barra 0.22·W
-    if (!(raw > 0)) return;
-    const pot = Math.pow(10, Math.floor(Math.log10(raw)));
-    let lg = pot;
-    for (const m of [5, 2, 1]) if (m * pot <= raw) { lg = m * pot; break; }
-    const total = W * 0.22 * lg / raw, seg = 4, sw = total / seg;
-    const x = W * 0.055, y = H * 0.945;
-    cx.strokeStyle = pal.tinta; cx.fillStyle = pal.tinta;
-    cx.lineWidth = W / 1200;
-    const h = W * 0.008;
-    for (let i = 0; i < seg; i++) {
-      cx.beginPath();
-      cx.rect(x + i * sw, y, sw, h);
-      if (i % 2 === 0) cx.fill(); else cx.stroke();
-      cx.stroke();
-    }
-    cx.strokeRect(x, y, total, h);
-    const fs = W * 0.011;
-    cx.font = `${fs}px Georgia, serif`;
-    cx.textAlign = "center"; cx.textBaseline = "bottom";
-    const fmt = v => v % 1 ? v.toFixed(1) : String(v);
-    cx.fillText("0", x, y - 2);
-    cx.fillText(fmt(lg / 2), x + total / 2, y - 2);
-    cx.fillText(`${fmt(lg)} leguas`, x + total, y - 2);
-  }
-  // dibuja toda la decoración en un canvas de W×H px cuya vista corresponde a
-  // la ventana de mundo `win` (para la esquina marina de la rosa y la escala)
-  function decorar(cx, W, H, win) {
-    const pal = PALETAS[st.paleta];
-    const marEn = (x, y) =>
-      !!st.datos2 && esMar(win.x0 + x / W * win.w, win.y0 + y / H * win.h);
-    rosaVientos(cx, pal, W, H, marEn);
-    marco(cx, pal, W, H);
-    cartela(cx, pal, W, H);
-    escalaGrafica(cx, pal, W, H, win.w);
-  }
-  // overlay del visor: la decoración vive en la página, no en el mapa
-  const deco = $("deco");
-  function dibujarDeco() {
-    if (!st.capas || !st.datos2) return;
-    const dpr = window.devicePixelRatio || 1;
-    const W = Math.max(1, Math.round((visor.clientWidth || 1) * dpr));
-    const H = Math.max(1, Math.round((visor.clientHeight || 1) * dpr));
-    if (deco.width !== W || deco.height !== H) { deco.width = W; deco.height = H; }
-    const cx = deco.getContext("2d");
-    cx.clearRect(0, 0, W, H);
-    decorar(cx, W, H, winVisible(0));
-  }
-  function roundRect(cx, x, y, w, h, r) {
-    cx.beginPath();
-    cx.moveTo(x + r, y);
-    cx.arcTo(x + w, y, x + w, y + h, r);
-    cx.arcTo(x + w, y + h, x, y + h, r);
-    cx.arcTo(x, y + h, x, y, r);
-    cx.arcTo(x, y, x + w, y, r);
-    cx.closePath();
-  }
-
-  // ==========================================================================
-  //  render del mapa (ctx en coords de 'resolucion') sobre una ventana de
-  //  mundo `win` = {x0,y0,w,h}: el mapa completo o solo un sector. Como todo
-  //  se dibuja en coordenadas de mundo con semilla determinista, un sector
-  //  renderizado con más resolución es idéntico a esa zona del mapa completo.
-  // ==========================================================================
-  function drawMap(cx, outW, outH, win) {
-    win = win || { x0: 0, y0: 0, w: st.nx, h: st.ny };
-    const pal = PALETAS[st.paleta];
-    const sc = outW / win.w;
-    cx.save();
-    cx.setTransform(1, 0, 0, 1, 0, 0);
-    cx.clearRect(0, 0, outW, outH);
-    cx.setTransform(sc, 0, 0, sc, -win.x0 * sc, -win.y0 * sc);
-
-    // 1. base pergamino + mar + waterlines, horneada para esta ventana
-    const bk = [st.paleta, st.calidad, Math.round(win.x0), Math.round(win.y0),
-                Math.round(win.w)].join("|");
-    if (!st.baseCv || st.baseKey !== bk) { construirBase(pal, win); st.baseKey = bk; }
-    cx.imageSmoothingEnabled = true;
-    cx.drawImage(st.baseCv, st.baseWin.x0, st.baseWin.y0, st.baseWin.w, st.baseWin.h);
-
-    // 2. tinte político suave (opcional)
-    if ($("cb-tinte").checked && st.tinteCv) {
-      cx.globalAlpha = st.paleta === "noche" ? 0.30 : 0.20;
-      cx.drawImage(st.tinteCv, 0, 0, st.nx, st.ny);
-      cx.globalAlpha = 1;
-    }
-
-    // 3+4. relieve y vegetación
-    if (st.glifos) dibujarGlifos(cx, pal, $("cb-relieve").checked, $("cb-veg").checked, win);
-
-    // 5. ríos
-    if ($("cb-rios").checked) dibujarRios(cx, pal);
-
-    // 6. caminos y rutas
-    if ($("cb-caminos").checked) dibujarCaminos(cx, pal);
-
-    // 7. asentamientos
-    if ($("cb-asent").checked) dibujarAsent(cx, pal);
-
-    // 8. rótulos de países / mares
-    if ($("cb-rotulos").checked) dibujarRotulos(cx, pal);
-
-    // viñeteado de bordes
-    const g = cx.createRadialGradient(st.nx / 2, st.ny / 2, st.nx * 0.32,
-                                      st.nx / 2, st.ny / 2, st.nx * 0.72);
-    g.addColorStop(0, "rgba(0,0,0,0)");
-    g.addColorStop(1, pal.vineta);
-    cx.fillStyle = g; cx.fillRect(0, 0, st.nx, st.ny);
-
-    // (la decoración —marco, rosa, cartela, escala— no va aquí: en la web es
-    // un overlay fijo al visor y solo se hornea en el PNG al exportar)
-    cx.restore();
-  }
-
   // ---- ventana de mundo visible según el zoom/paneo actual ----
   function winVisible(pad) {
     const W = visor.clientWidth || 1, Hv = visor.clientHeight || 1;
@@ -1079,47 +247,56 @@
     // margen alrededor de lo visible: panear un poco no muestra lienzo vacío
     x0 -= w * pad; y0 -= h * pad;
     w *= 1 + 2 * pad; h *= 1 + 2 * pad;
-    // no gastar resolución fuera del mundo (el aspecto se mantiene: el visor
-    // tiene el mismo aspecto que el mundo)
     if (w > st.nx) { w = st.nx; h = st.ny; }
     x0 = Math.max(0, Math.min(st.nx - w, x0));
     y0 = Math.max(0, Math.min(st.ny - h, y0));
     return { x0, y0, w, h };
   }
 
-  // ---- horneado nítido del sector visible en el canvas ----
+  // ==========================================================================
+  //  carga del sector renderizado en el servidor
+  // ==========================================================================
+  let genRender = 0;        // descarta respuestas viejas fuera de orden
   function renderVisible() {
-    if (!st.capas) return;
-    if (!st.glifos || st.glifosSem !== st.semilla || st.glifosCal !== st.calidad)
-      construirGlifos(st.semilla);
+    if (!st.listo) return;
     const win = winVisible(0.18);
-    const pxW = workRes(), pxH = Math.round(pxW * win.h / win.w);
-    if (cv.width !== pxW || cv.height !== pxH) { cv.width = pxW; cv.height = pxH; }
-    drawMap(cv.getContext("2d"), pxW, pxH, win);
-    st.win = win;
-    colocarCanvas();
-    dibujarDeco();
+    const gen = ++genRender;
+    const url = urlSector(win);
+    $("estado").textContent = "renderizando sector en el servidor…";
+    const im = new Image();
+    im.onload = () => {
+      if (gen !== genRender) return;              // llegó tarde: ya hay otra vista
+      mapa.src = url;
+      st.win = win;
+      colocarMapa();
+      $("estado").textContent = "rueda = zoom (re-render nítido del sector) · arrastrar = paneo · sube la calidad para un mundo más grande y detallado";
+    };
+    im.onerror = () => {
+      if (gen !== genRender) return;
+      $("estado").textContent = "el servidor no pudo renderizar el sector";
+      $("estado").className = "error";
+    };
+    im.src = url;
+    // overlay de decoración: fijo al visor, para la vista visible exacta
+    deco.src = urlDeco(winVisible(0));
   }
-  // alias histórico: los controles simples re-hornean la ventana actual
   const redibujar = renderVisible;
 
-  // coloca el canvas (que contiene solo st.win) dentro del lienzo, de modo
+  // coloca la imagen (que contiene solo st.win) dentro del lienzo, de modo
   // que coincida pixel-perfecto con la posición de esa ventana en el mundo
-  function colocarCanvas() {
+  function colocarMapa() {
     if (!st.win) return;
-    // porcentajes (relativos al tamaño del propio canvas = tamaño del visor):
-    // la colocación sobrevive a cambios de layout (scrollbars, resize)
-    cv.style.transform =
+    mapa.style.transform =
       `translate(${st.win.x0 / st.nx * 100}%, ${st.win.y0 / st.ny * 100}%) ` +
       `scale(${st.win.w / st.nx})`;
   }
 
-  // re-render diferido: durante la interacción el canvas viejo se escala por
-  // CSS (rápido) y ~180 ms después de soltar se hornea nítido el sector
+  // re-render diferido: durante la interacción el PNG viejo se escala por
+  // CSS (rápido) y ~220 ms después de soltar se pide nítido el sector
   let tmrRender = 0;
   function programarRender() {
     clearTimeout(tmrRender);
-    tmrRender = setTimeout(renderVisible, 180);
+    tmrRender = setTimeout(renderVisible, 220);
   }
 
   function ajustarLienzo() {
@@ -1131,7 +308,6 @@
   // ==========================================================================
   function aplicar() {
     lienzo.style.transform = `translate(${st.tx}px,${st.ty}px) scale(${st.scale})`;
-    dibujarDeco();     // la escala y la rosa siguen al zoom/paneo en vivo
   }
   function acotar() {
     const W = visor.clientWidth, H = visor.clientHeight;
@@ -1160,11 +336,9 @@
     st.tx += e.movementX; st.ty += e.movementY;
     acotar(); aplicar(); programarRender();
   });
-  // si el visor cambia de tamaño (resize de ventana, scrollbar que aparece o
-  // desaparece, cambios de layout) se re-hornea la vista con las medidas reales
   new ResizeObserver(() => {
-    if (!st.capas || !st.win) return;
-    acotar(); aplicar(); colocarCanvas(); programarRender();
+    if (!st.listo || !st.win) return;
+    acotar(); aplicar(); colocarMapa(); programarRender();
   }).observe(visor);
 
   // ==========================================================================
@@ -1173,18 +347,17 @@
   for (const id of ["cb-relieve", "cb-veg", "cb-rios", "cb-caminos", "cb-asent", "cb-rotulos", "cb-tinte"])
     $(id).addEventListener("change", redibujar);
   $("sel-paleta").addEventListener("change", e => {
-    st.paleta = e.target.value; visor.style.background = PALETAS[st.paleta].fondoUI; redibujar();
+    st.paleta = e.target.value; visor.style.background = FONDO_UI[st.paleta]; redibujar();
   });
   $("sel-calidad").addEventListener("change", e => {
     st.calidad = Math.max(1, Math.min(4, parseInt(e.target.value, 10) || 1));
-    // el zoom máximo depende de la calidad: recortar si el nuevo es menor
     st.scale = Math.min(st.scale, 6 + 12 * st.calidad);
     acotar(); aplicar();
     renderVisible();
   });
   $("b-regen").addEventListener("click", () => {
     st.semilla = $("in-semilla").value || stem;
-    st.glifos = null; redibujar();
+    redibujar();
   });
   $("in-semilla").addEventListener("keydown", e => { if (e.key === "Enter") $("b-regen").click(); });
   $("b-reset").addEventListener("click", () => {
@@ -1193,35 +366,26 @@
   $("b-export").addEventListener("click", () => exportar(null));
   $("b-export-sector").addEventListener("click", () => exportar(winVisible(0)));
 
-  // exporta el mapa completo (win = null) o el sector visible, siempre
-  // renderizado desde cero a alta resolución (nunca píxeles escalados)
+  // exporta el mapa completo (win = null) o el sector visible: el servidor
+  // lo renderiza desde cero a alta resolución con la decoración horneada
   function exportar(win) {
-    if (!st.capas) return;
-    const prev = $("estado").textContent;
-    $("estado").textContent = "renderizando PNG…";
-    setTimeout(() => {
-      const sector = !!win;
-      win = win || { x0: 0, y0: 0, w: st.nx, h: st.ny };
-      // mapa completo: más calidad -> más píxeles; sector: resolución fija alta
-      const outW = sector ? 3072 : Math.min(st.nx * 2 * st.calidad, 8192);
-      const outH = Math.round(outW * win.h / win.w);
-      const c = document.createElement("canvas");
-      c.width = outW; c.height = outH;
-      drawMap(c.getContext("2d"), outW, outH, win);
-      // solo al exportar: la decoración se quema en el PNG, enmarcando la
-      // vista exportada (mapa completo o sector) tal como se ve en la web
-      decorar(c.getContext("2d"), outW, outH, win);
-      c.toBlob(b => {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(b);
-        const sufijo = sector
-          ? `_sector_${Math.round(win.x0)}x${Math.round(win.y0)}` : "";
-        a.download = `fantasia_${stem}_${st.paleta}_c${st.calidad}${sufijo}.png`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-        $("estado").textContent = prev;
-      }, "image/png");
-    }, 30);
+    if (!st.listo) return;
+    const sector = !!win;
+    let url;
+    if (sector) {
+      url = urlSector(win, { deco: "1", px: "3072" });
+    } else {
+      const p = paramsBase();
+      p.set("deco", "1");
+      p.set("px", String(Math.min(st.nx * 2 * st.calidad, 8192)));
+      url = "/api/fantasia/render?" + p;
+    }
+    const a = document.createElement("a");
+    a.href = url;
+    const sufijo = sector
+      ? `_sector_${Math.round(win.x0)}x${Math.round(win.y0)}` : "";
+    a.download = `fantasia_${stem}_${st.paleta}_c${st.calidad}${sufijo}.png`;
+    a.click();
   }
 })();
 </script>

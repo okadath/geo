@@ -19,13 +19,20 @@ La URL es `/juego?sello=…&d=<stem del detalle>`, con la misma query que
 
 | Archivo          | Cambio |
 |------------------|--------|
-| `juego.html`     | **Nuevo.** El juego completo (HTML + CSS + JS en una sola página, sin dependencias externas). |
-| `web.py`         | Nueva ruta `GET /juego` que sirve `juego.html` sin caché (igual que `/` y `/regiones`). |
+| `juego_srv.py`   | **El motor completo, en el servidor**: construcción del mapa jugable, economía, combate, IA, diplomacia, niebla de guerra, victoria/derrota, historia/replay y guardado de partidas. Módulo enchufable de `web.py` con endpoints `/api/juego/*`. |
+| `juego.html`     | Solo presentación: canvas (dueños, selección, flechas), zoom/paneo, tooltip, paneles y reproductor de replay. Dibuja el estado visible que manda el servidor. |
+| `web.py`         | Ruta `GET /juego` que sirve `juego.html` sin caché, y el sistema de módulos que carga `juego_srv`. |
 | `regiones.html`  | Enlace **«🎮 jugar conquista»** en el encabezado, apuntando a `/juego` con el `sello`/`d` del detalle actual. |
 
-No se añadieron rutas de datos nuevas: el juego consume los artefactos del
-detalle que ya expone el allowlist de `web.py` (`_capas.json`, `_regiones.png`,
-`_climahd.png`/`.png`).
+Endpoints del motor: `GET /api/juego/mapa` y `/api/juego/estado`;
+`POST /api/juego/nueva`, `/orden`, `/turno`, `/diplomacia` y `/borrar`. El
+front además carga `_regiones.png` (hit-test del ratón y pintado) y el clima HD
+de fondo por el allowlist estático de siempre.
+
+**Antitrampas por diseño:** la niebla de guerra se calcula en el servidor y el
+estado que llega al navegador ya viene censurado — las tropas no vistas llegan
+como `null` y el oro/puntos de los rivales ni siquiera se envían. El azar de
+las batallas y los turnos de la IA se resuelven del lado servidor.
 
 ## De dónde salen los datos
 
@@ -127,22 +134,23 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
 - **Clic** en provincia propia: seleccionar; clic en la ya seleccionada:
   deseleccionar; clic en objetivo resaltado: abre la orden con flecha y slider
   de tropas. **Esc** o clic fuera: cancelar la orden.
-- **💾 guardar:** guarda la partida en el navegador (`localStorage`, un
-  guardado por detalle). Al volver a abrir el juego con el mismo detalle, la
-  pantalla de inicio ofrece **«▶ continuar partida guardada»**. El guardado se
-  borra al terminar la partida (victoria o derrota).
+- **Guardado automático en el servidor:** la partida se persiste tras cada
+  acción en `salidas/<sello>/partidas/<stem>.json` (un guardado por detalle).
+  Al volver a abrir el juego con el mismo detalle, la pantalla de inicio ofrece
+  **«▶ continuar partida guardada»**. El guardado se borra al terminar la
+  partida (victoria o derrota).
 - **⟲ zoom:** restablecer vista.
 - **Terminar turno ▶:** resuelve la IA y avanza el turno.
 - Tooltip al pasar el cursor: nombre, país, tropas y población de cada provincia.
 
-## Constantes ajustables (en `juego.html`)
+## Constantes ajustables (en `juego_srv.py`)
 
-```js
-const COSTO_TROPA = 3;      // oro por tropa reclutada
-const BONO_DEFENSA = 1.2;   // ventaja del defensor
-const PENA_NAVAL = 0.72;    // penalización al desembarcar
-const PA_MOV = 1, PA_NAVAL = 2,  // puntos de acción por orden
-      PA_REC = 1, PA_EDIF = 2;   // (mover/naval, reclutar, construir)
+```python
+COSTO_TROPA = 3       # oro por tropa reclutada
+BONO_DEFENSA = 1.2    # ventaja del defensor
+PENA_NAVAL = 0.72     # penalización al desembarcar
+PA_MOV, PA_NAVAL = 1, 2   # puntos de acción por orden
+PA_REC, PA_EDIF = 1, 2    # (mover/naval, reclutar, construir)
 ```
 
 Otros números tocables en el código: dinero inicial de cada país (`dinero: 120`
@@ -151,10 +159,10 @@ ingreso por provincia y crecimiento de población por turno (`×1.006`).
 
 ## Notas
 
-- Todo corre en el navegador; el servidor solo sirve archivos estáticos y los
-  datos del detalle. El guardado es local al navegador (`localStorage`): un
-  slot por detalle con dueños, tropas, población, edificios, oro, puntos,
-  guerras, turno y dificultad. Si el guardado no encaja con el mapa (ids de
-  provincia distintos), se ignora.
+- El motor corre en el servidor (`juego_srv.py`); el navegador solo presenta.
+  El guardado vive en `salidas/<sello>/partidas/<stem>.json`: un slot por
+  detalle con dueños, tropas, población, edificios, oro, puntos, guerras,
+  turno y dificultad. Si el guardado no encaja con el mapa (ids de provincia
+  distintos), se ignora.
 - Requiere que el detalle traiga **subregiones**; si no, avisa y no arranca
   (regenera el detalle con provincias).

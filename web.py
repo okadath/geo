@@ -14,6 +14,7 @@ El servidor escucha solo en 127.0.0.1.
 """
 import argparse
 import hashlib
+import importlib
 import json
 import re
 import shutil
@@ -81,6 +82,18 @@ DETALLE = {
 jobs = {}
 procs = {}
 lock = threading.Lock()
+
+# modulos de backend enchufables (motor del juego, renders del lado servidor):
+# cada uno expone manejar_get(handler, url) -> bool y
+# manejar_post(handler, ruta, datos) -> bool; True = peticion atendida.
+# La logica propietaria (motor, calculos, generacion) vive en estos modulos,
+# NO en el navegador.
+MODULOS = []
+for _nombre in ("juego_srv", "fantasia_srv", "batalla_srv"):
+    try:
+        MODULOS.append(importlib.import_module(_nombre))
+    except ImportError:
+        pass
 
 
 def limpiar(datos, spec=PARAMS):
@@ -332,6 +345,16 @@ class Manejador(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(datos)
 
+    def _bytes(self, datos, ctype="image/png", cache=False):
+        """Respuesta binaria en memoria (PNG renderizados por los modulos)."""
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(datos)))
+        if not cache:
+            self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(datos)
+
     def _cuerpo(self):
         n = int(self.headers.get("Content-Length") or 0)
         try:
@@ -406,6 +429,9 @@ class Manejador(BaseHTTPRequestHandler):
                 return self._json({"error": "nombre invalido"}, 400)
             return self._archivo(SALIDAS / sello / rel, ctype,
                                  cache=(rel != "mapa_repro.json"))
+        for mod in MODULOS:
+            if mod.manejar_get(self, url):
+                return
         return self._json({"error": "no existe"}, 404)
 
     def do_POST(self):
@@ -478,6 +504,9 @@ class Manejador(BaseHTTPRequestHandler):
             if re.fullmatch(RE_SELLO, sello):
                 shutil.rmtree(SALIDAS / sello, ignore_errors=True)
             return self._json(cargar_corridas())
+        for mod in MODULOS:
+            if mod.manejar_post(self, self.path, datos):
+                return
         return self._json({"error": "no existe"}, 404)
 
 

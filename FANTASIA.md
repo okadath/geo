@@ -2,10 +2,24 @@
 
 Documento de referencia de la página `/fantasia`: un render **estilizado tipo
 mapa de fantasía** (pergamino, tinta, glifos de montaña y rótulos caligráficos)
-de un detalle ya generado por `tecto.py`. Todo corre **en el navegador**
-(`fantasia.html`, HTML + CSS + JS en una sola página, sin dependencias): el
-servidor solo sirve los artefactos del detalle que ya expone el allowlist de
-`web.py`.
+de un detalle ya generado por `tecto.py`. El render corre **en el servidor**
+(`fantasia_srv.py`, módulo enchufable de `web.py`, Python + PIL): paletas,
+glifos, ríos, rótulos y decoración se hornean del lado servidor y llegan al
+navegador como PNG. `fantasia.html` es solo presentación (controles de capas /
+paleta / semilla / calidad, visor con pan/zoom, export); su único fetch de
+datos es `{stem}_capas.json`, para conocer la resolución.
+
+Endpoints (todos GET, cacheados en disco en
+`salidas/<sello>/detalles/fantasia_cache/`):
+
+- `/api/fantasia/render?sello&d&calidad=1..4&semilla&paleta&capas&deco&px` →
+  PNG del mapa completo (el export usa `deco=1&px≤8192`).
+- `/api/fantasia/sector?…&cx&cy&w&h` → PNG re-horneado de una ventana (pan/zoom
+  nítido; el front pide con margen y re-render diferido).
+- `/api/fantasia/deco?…` → PNG RGBA transparente con marco/rosa/cartela/escala,
+  superpuesto fijo al visor.
+
+Mismo render determinista que siempre: misma semilla → PNG byte-idéntico.
 
 ## Cómo abrirla
 

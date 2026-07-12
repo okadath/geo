@@ -220,13 +220,13 @@ ruinas junto al río que sí corre cuesta abajo". Ese es el pitch.
 - **Donación/Patreon puro** (modelo Azgaar): techo bajo (~$5k/mes el mejor
   caso), sin fricción.
 
-**Restricción técnica que decide el mecanismo:** hoy todo corre en el navegador
-del cliente en un HTML autocontenido. No se puede "cerrar con llave" una función
-dentro de la página (el código fuente es legible). Quedan dos mecanismos
-honestos sin reescribir nada: **(a)** vender la *descarga* de la app (itch.io
-cobra por descargar; empaquetar con Tauri son ~2–4 semanas), o **(b)** montar un
-servidor que haga el render HD (eso sí es "cerrable", pero es infraestructura y
-meses). **Empezar por (a).**
+**Restricción técnica que decide el mecanismo:** ~~hoy todo corre en el
+navegador del cliente en un HTML autocontenido~~ → **resuelta el 11-jul-2026**:
+el motor del juego y los renders de fantasía/battlemaps se migraron al servidor
+(`juego_srv.py`, `fantasia_srv.py`, `batalla_srv.py`; el front es solo
+presentación). La opción **(b)** — el servidor "cerrable con llave" — ya
+existe, lo que cambia el mecanismo recomendado. **Ver §9**, que reemplaza a
+§8.3 como plan vigente.
 
 ### 8.3 Estrategia en orden
 
@@ -262,6 +262,116 @@ resto.
 
 ---
 
+## 9. Plan de precios v2 — con la lógica en el servidor (11-jul-2026)
+
+> **Qué cambió.** Toda la lógica propietaria corre ahora en el back Python:
+> motor del juego (con niebla censurada en servidor y guardado en disco),
+> render fantasía (`/api/fantasia/render|sector|deco`) y battlemaps
+> (`/api/batalla/*`), con caché en disco y render determinista por semilla.
+> El navegador ya no recibe ni el código ni los datos que valen dinero. Eso
+> desbloquea el mecanismo que en §8.2 estaba descartado: **SaaS con pasarela de
+> pago**, cobrando por el servicio alojado — el modelo de Inkarnate, no el de
+> Wonderdraft. La suscripción deja de ser deshonesta (§8.2) porque ahora sí hay
+> servidor que mantener y cómputo que pagar.
+
+### 9.1 Sí: ya puede ir detrás de una pasarela… con un colchón de trabajo
+
+Lo cobrable ya es cerrable (el free tier se limita en el servidor: calidad,
+resolución, marca de agua, nº de renders — el cliente no puede saltárselo).
+Lo que falta **no es producto, es plomería**, y conviene presupuestarlo:
+
+1. **Cuentas y sesiones** (hoy no hay usuarios): login simple + tabla de
+   suscriptores. ~1–2 semanas.
+2. **Endurecer el despliegue**: `web.py` es `http.server` escuchando en
+   127.0.0.1; para internet hay que ponerlo detrás de un proxy (Caddy/nginx +
+   HTTPS), meter rate-limiting por usuario y colas para los renders caros.
+   ~1–2 semanas.
+3. **Integrar la pasarela** (webhook de alta/baja → flag premium): ~1 semana.
+
+Total honesto: **3–6 semanas** para pasar de "migrado" a "cobrable". Nada de
+meses: el trabajo duro (mover el motor) ya está hecho.
+
+### 9.2 Qué pasarela (dev individual en México)
+
+| Opción | Comisión real | ¿Gestiona IVA global (MoR)? | Veredicto |
+|---|---|---|---|
+| **Paddle** | 5% + $0.50 | **Sí** | **La elegida**: merchant of record, paga a bancos mexicanos, sin cuota fija. En un plan de $5 se lleva ~15%; en el anual de $25, ~7% |
+| Stripe MX | 3.6% + MXN$3 (+0.5% intl., +2% divisa, +0.7% Billing, +16% IVA sobre comisiones) | No — tú remites impuestos de cada país | Más barata en apariencia, pero te vuelve responsable del IVA internacional; no para un dev solo |
+| Lemon Squeezy / Stripe Managed Payments | 5% + $0.50 (+0.5% subs) | Sí | Equivalente a Paddle; en transición (Stripe la absorbió; su MoR nativo está en preview desde feb-2026). Vigilar, no apostar aún |
+| Gumroad | 10% + $0.50 | Sí | El doble de comisión que Paddle; solo si se quiere cero fricción |
+| Patreon | ~13–15% efectivo (10% plano nuevos creadores + procesamiento) | Sí (IVA de membresías) | No para la herramienta; sigue siendo el canal correcto para el **contenido** (mundos curados, §8.3-2) |
+
+Regla que sale de la tabla: **cobrar anual por defecto** — la parte fija
+($0.50) y el peso de la comisión se diluyen 12×, y la caja llega por
+adelantado.
+
+### 9.3 El costo del servidor es ruido (números medidos, no estimados)
+
+Tiempos reales medidos en esta máquina: render fantasía completo **3.7–9.3 s**
+de CPU en frío, **~0.1 s** desde caché (determinista: misma semilla → mismo
+PNG, la caché en disco convierte lo repetido en gratis); battlemap
+**0.10–0.15 s** por generación. Servidor de referencia: **Hetzner CX33 (4
+vCPU, 8 GB) ≈ €9/mes** con IPv4 (~$10 USD).
+
+- Capacidad al 60% de uso sostenido: ~**6.2 millones de s-CPU/mes**.
+- Un suscriptor *muy* activo (un DM que genera 300 battlemaps y 40 mapas
+  fantasía HD al mes): ~420 s-CPU/mes. → **Un CX33 aguanta ~10,000 usuarios
+  así**; siendo pesimistas ×10 en consumo, ~1,000.
+- **Costo marginal por suscriptor: $0.01–0.10/mes.** El margen bruto del SaaS
+  es ~98%: la comisión de la pasarela pesa 100 veces más que el cómputo.
+- Arranque aún más barato: Fly.io con scale-to-zero (~$12/mes tope por 2
+  vCPU) mientras no haya tráfico; migrar a Hetzner al crecer.
+
+**Punto de equilibrio: 3 suscriptores mensuales** (3 × $4.25 netos ≈ $12.75 >
+$10 de servidor). Todo lo demás es margen.
+
+### 9.4 Precios (contra el mercado verificado a jul-2026)
+
+Referencias vigentes: Inkarnate subió a **$7.99/mes (Creator)** y
+**$14.99/mes (Studio, uso comercial)**; Dungeondraft sigue en ~$19.99 único;
+Czepeku cobra $5 por pack y factura ~$76k por lanzamiento; Dungeon Scrawl Pro
+$5/mes. Hay espacio debajo de Inkarnate y el pitch es distinto (geología real +
+"del planeta al encuentro").
+
+| Nivel | Precio | Qué incluye (todo se aplica en el servidor) |
+|---|---|---|
+| **Free** (demo permanente) | $0 | Mundos precocinados; fantasía calidad 1×; battlemap 70 px con marca de agua discreta; N renders/día. Es el marketing (§2) |
+| **Pro** | **$4.99/mes o $29/año** (≈ $2.42/mes efectivo) | Mundos propios: semillas y diales del generador; fantasía calidad 4× + export 8K; battlemap 140 px sin marca; sin límites razonables |
+| **Comercial** | **$9.99/mes o $59/año** | Pro + licencia comercial (DMs que publican módulos, escritores) + prioridad de cola. Espejo de la escalera de Inkarnate, ~un tercio más barato |
+
+Con las conversiones del nicho (herramientas hobby: **2.2% mediana, 3–5%
+bueno** según RevenueCat 2026 / Growth Unhinged):
+
+| Usuarios free | Conversión | Suscriptores | Neto/mes (mezcla 80% Pro anual, 20% Comercial, tras Paddle y servidor) |
+|---|---|---|---|
+| 1,000 | 2.2% | 22 | ~$75 |
+| 5,000 | 3% | 150 | ~$550 |
+| 20,000 | 4% | 800 | ~$3,000 |
+
+La fila de en medio es la meta realista del primer año; la última exige
+marketing constante (r/battlemaps, r/worldbuilding, TikTok de tectónica). Son
+los mismos escenarios de §8.4, pero ahora **recurrentes** en lugar de ventas
+únicas.
+
+### 9.5 Qué queda del plan anterior
+
+- **§8.3-1 (itch.io pago único)** baja de "empezar aquí" a **opcional**: sirve
+  como segundo canal (app de escritorio para quien no quiere suscripción, a
+  $15–20 único), pero ya no es el único mecanismo honesto — y el SaaS captura
+  valor recurrente que el pago único regala.
+- **§8.3-2 (Patreon de mundos curados)** no cambia: sigue siendo contenido, a
+  los 2–3 meses de tracción, y ahora cada mundo curado enlaza a la herramienta.
+- **§8.3-3 (`/juego` en Steam)** no cambia de calendario, pero la migración le
+  regaló la arquitectura multijugador-asíncrono-lista (§3: "mover toda la
+  lógica al servidor" ya está hecho — órdenes validadas y azar tirado en el
+  back). El asíncrono sigue condicionado a tracción, pero su costo bajó de
+  2–4 meses a semanas.
+- **Qué NO hacer** (actualiza §8.3): ya no aplica "no cobrar suscripción";
+  ahora lo que no hay que hacer es **cobrar suscripción sin free tier** (la
+  demo web es el embudo completo) ni gestionar el IVA a mano con Stripe puro.
+
+---
+
 ## Fuentes
 
 - [games-stats: Age of History II](https://games-stats.com/steam/game/age-of-civilizations-ii/)
@@ -281,3 +391,19 @@ resto.
 - [Azgaar's Fantasy Map Generator (GitHub)](https://github.com/Azgaar/Fantasy-Map-Generator)
 - [Inkarnate vs Wonderdraft](https://loreteller.com/learn/inkarnate-vs-wonderdraft/)
 - [rpgdrop: monetizar Patreon TTRPG](https://www.rpgdrop.com/how-to-build-a-successful-patreon-as-a-ttrpg-creator-a-guide-to-monetization/)
+
+Fuentes de §9 (verificadas 11-jul-2026):
+
+- [Paddle: pricing](https://www.paddle.com/pricing) · [países soportados](https://www.paddle.com/help/start/intro-to-paddle/which-countries-are-supported-by-paddle)
+- [Stripe México: pricing](https://stripe.com/mx/pricing)
+- [Lemon Squeezy: fees](https://docs.lemonsqueezy.com/help/getting-started/fees) · [estado 2026 / Stripe Managed Payments](https://www.lemonsqueezy.com/blog/2026-update)
+- [Gumroad: pricing](https://gumroad.com/pricing)
+- [Patreon: comisiones de creador](https://support.patreon.com/hc/en-us/articles/11111747095181-Creator-fees-overview) · [tarifa plana 10% (ago-2025)](https://support.patreon.com/hc/en-us/articles/36426991446797-A-standard-platform-fee-for-new-creators-effective-after-August-4-2025)
+- [Inkarnate: FAQ/precios](https://inkarnate.com/faq) · [historial del cambio de precios](https://pricetimeline.com/data/price/inkarnate)
+- [Graphtreon: Czepeku](https://graphtreon.com/creator/czepeku) · [Azgaar](https://graphtreon.com/creator/azgaar) · [Watabou](https://graphtreon.com/creator/watawatabou)
+- [Czepeku: web vs Patreon](https://www.czepeku.com/blog/website-vs-patreon)
+- [Hetzner: ajuste de precios jun-2026 (CX Gen3)](https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/)
+- [DigitalOcean: droplets](https://www.digitalocean.com/pricing/droplets) · [Fly.io: pricing](https://fly.io/docs/about/pricing/) · [Railway: planes](https://docs.railway.com/reference/pricing/plans) · [Render.com: pricing](https://render.com/pricing)
+- [Growth Unhinged: Free-to-Paid Conversion Report 2026](https://www.growthunhinged.com/p/free-to-paid-conversion-report)
+- [First Page Sage: conversión freemium por industria (jun-2026)](https://firstpagesage.com/seo-blog/saas-freemium-conversion-rates/)
+- [RevenueCat: State of Subscription Apps 2026](https://www.revenuecat.com/state-of-subscription-apps/)

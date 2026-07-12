@@ -2,9 +2,24 @@
 
 Documento de referencia de la página `/batalla`: un generador de **mapas
 tácticos de encuentro** (battlemaps con rejilla, estilo mesa de rol) coherentes
-con **un punto elegido del mundo**. Todo corre en el navegador
-(`batalla.html`, una sola página sin dependencias); el servidor solo sirve los
-artefactos del detalle ya permitidos por el allowlist de `web.py`.
+con **un punto elegido del mundo**. La generación corre **en el servidor**
+(`batalla_srv.py`, módulo enchufable de `web.py`): el análisis del punto, la
+detección de tema, los títulos narrativos y el dibujo del battlemap se hacen en
+Python y llegan al navegador como JSON/PNG. `batalla.html` es solo presentación
+(visor con zoom/paneo, ficha, controles). El PRNG del servidor es idéntico bit
+a bit al del JS original (Mulberry32 + FNV-1a), así que las semillas siguen
+siendo reproducibles.
+
+Endpoints (todos GET; el PNG se cachea en
+`salidas/<sello>/detalles/batalla_cache/`):
+
+- `/api/batalla/info?sello&d` → resolución + catálogo de temas y subtipos.
+- `/api/batalla/lugar?sello&d&rx&ry` → ficha del punto (bioma, altitud, clima,
+  río/camino/asentamiento cercanos, tema sugerido).
+- `/api/batalla/escena?…&tema&sub&semilla` → título narrativo y subtipo
+  efectivo.
+- `/api/batalla/mapa?…&cols&rows&px&rejilla&nums` → PNG del battlemap
+  (10–40 casillas, px 8–160; el export HD usa px=140).
 
 ## Cómo abrirla
 
