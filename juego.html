@@ -743,7 +743,9 @@
         ? 2 + Math.round(p.pob / 60000)
         : 4 + Math.round(p.pob / 40000) + (p.capital ? 8 : 0);
     }
-    conectarComponentes();
+    // garantía de conectividad; nunca debe impedir cargar el juego
+    try { conectarComponentes(); }
+    catch (e) { console.warn("conectarComponentes falló:", e); }
   }
 
   // garantiza que el grafo de movimiento (st.vecinos, tierra y mar juntos)

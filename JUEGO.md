@@ -45,6 +45,15 @@ El raster `_regiones.png` codifica el id de provincia por píxel en
 (tierra-tierra y tierra-mar-tierra), **centroides** (para las pastillas de
 tropas) y el mapeo píxel→provincia para el ratón.
 
+**Conectividad garantizada:** tras construir el grafo de adyacencias
+(`conectarComponentes`) se detectan con BFS las componentes conexas del grafo
+de movimiento; si hay más de una (una isla cuya costa quedó bajo el umbral de
+contacto, una cuenca aislada…), se añaden enlaces sintéticos entre el par de
+provincias más cercano (distancia entre centroides, envolviendo en x) hasta
+que todo el mapa sea una sola componente. Así ninguna provincia queda
+inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
+(cuestan 1 🏃) y, si unen tierra con mar, marcan la tierra como costera.
+
 ## Mecánicas
 
 ### Economía
@@ -63,10 +72,14 @@ tropas) y el mapeo píxel→provincia para el ratón.
 ### Ejércitos y órdenes
 - Cada provincia tiene una guarnición de tropas (pastilla numerada en su
   centroide, al estilo AoH; capitales con ★).
-- Selecciona una provincia **tuya** y haz clic en una vecina **resaltada**: se
-  abre una **orden pendiente** con una **flecha** origen→destino sobre el mapa
-  (verde mover, roja atacar, discontinua si es naval) y un **slider** para
-  elegir cuántas tropas enviar (siempre queda al menos 1 de guarnición).
+- Al seleccionar una provincia **tuya** se dibuja un **abanico de flechas
+  semitransparentes** hacia **todos** los destinos posibles de sus tropas
+  (verde mover a propia, roja atacar, discontinua si es travesía naval), para
+  ver de un vistazo a dónde puede ir el ejército.
+- Haz clic en una vecina **resaltada**: se
+  abre una **orden pendiente** con una **flecha** opaca origen→destino sobre
+  el mapa (verde mover, roja atacar, discontinua si es naval) y un **slider**
+  para elegir cuántas tropas enviar (siempre queda al menos 1 de guarnición).
 - Confirma (✔ mover / ⚔ atacar) para ejecutar y gastar los puntos, o cancela
   con ✕, `Esc` o clic en el mapa. Atacar a un país en paz **declara la guerra**.
 - Tras actuar, la provincia de origen queda marcada como «ya actuó» este turno
