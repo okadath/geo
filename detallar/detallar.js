@@ -24,8 +24,10 @@
   function pieDetalle(d) {
     const res = d.resolucion ? ` (${d.resolucion[0]}×${d.resolucion[1]}px)` : "";
     // los detalles viejos no traen clima ajustable: solo lo rotulamos si vino
+    // (y guardan el dial con la clave "humedad"; los nuevos, "precipitaciones")
+    const prec = (d.precipitaciones != null ? d.precipitaciones : d.humedad);
     const clima = "temperatura" in d
-      ? ` · temp ${d.temperatura} · humedad ${d.humedad}` : "";
+      ? ` · ${Math.round(d.temperatura * 16 + 14)} °C · precipitaciones ${Math.round(prec * 100)} %` : "";
     return `cuadro del paso ${d.paso} · ${fmtMa(d.ma || 0)} · ${d.factor}×${res}` +
       ` · ruido ${d.semilla_detalle} · casquetes ${d.casquetes} · relieve ${d.relieve}` +
       clima;
@@ -35,7 +37,7 @@
     const caja = $("detalles-lista");
     caja.textContent = "";
     $("detalles").hidden = !lista.length;
-    for (const d of lista.slice().reverse()) {     // el más nuevo arriba
+    for (const d of lista) {     // el servidor ya devuelve el más nuevo primero
       // detalle nuevo (con clima HD) -> visor interactivo; viejo -> como siempre
       if (d.climahd) { caja.appendChild(crearVisorHD(d)); continue; }
       const div = document.createElement("div");
@@ -81,11 +83,23 @@
     ctrl.innerHTML =
       `<label><input type="checkbox" data-capa="koppen">Köppen</label>` +
       `<label><input type="checkbox" data-capa="vientos">vientos e isoyetas</label>` +
+      `<label><input type="checkbox" data-capa="corrientes">corrientes marinas</label>` +
       `<label><input type="checkbox" data-capa="cuencas">cuencas y ríos</label>` +
+      `<label><input type="checkbox" data-capa="paises">países</label>` +
+      `<label><input type="checkbox" data-capa="civ">asentamientos, caminos y rutas</label>` +
       `<label><input type="checkbox" data-capa="inspector">inspector</label>` +
       `<button type="button" class="reset">⟲ zoom</button>` +
-      `<a class="abrir" target="_blank">abrir HD</a>`;
+      `<a class="abrir" target="_blank">abrir HD</a>` +
+      (d.civ ? `<a class="abrir abrir-civ" target="_blank">mapa político</a>` : "") +
+      (d.regiones ? `<a class="abrir abrir-reg" target="_blank">subregiones</a>` : "");
     ctrl.querySelector(".abrir").href = d.climahd;
+    if (d.civ) ctrl.querySelector(".abrir-civ").href = d.civ;
+    if (d.regiones) {
+      // /salidas/{sello}/detalles/{stem}_regiones.png -> /regiones?sello&d=stem
+      const m = d.regiones.match(/^\/salidas\/([^/]+)\/detalles\/(.+)_regiones\.png$/);
+      if (m) ctrl.querySelector(".abrir-reg").href =
+        `/regiones?sello=${encodeURIComponent(m[1])}&d=${encodeURIComponent(m[2])}`;
+    }
 
     const fila = document.createElement("div");
     fila.className = "visor-fila";
@@ -103,11 +117,17 @@
     koppen.className = "capa capa-koppen"; koppen.hidden = true;
     const cuencas = new Image();
     cuencas.className = "capa capa-cuencas"; cuencas.hidden = true;
+    const paises = new Image();
+    paises.className = "capa capa-paises"; paises.hidden = true;
     const cvVec = document.createElement("canvas");
     cvVec.className = "capa capa-vec"; cvVec.hidden = true;
+    const cvCor = document.createElement("canvas");
+    cvCor.className = "capa capa-cor"; cvCor.hidden = true;
     const cvRio = document.createElement("canvas");
     cvRio.className = "capa capa-rio"; cvRio.hidden = true;
-    lienzo.append(base, koppen, cuencas, cvVec, cvRio);
+    const cvCiv = document.createElement("canvas");
+    cvCiv.className = "capa capa-civ"; cvCiv.hidden = true;
+    lienzo.append(base, koppen, cuencas, paises, cvVec, cvCor, cvRio, cvCiv);
 
     const tip = document.createElement("div");
     tip.className = "tip-rio"; tip.hidden = true;
@@ -121,7 +141,9 @@
       `<div class="vacio">mueve el cursor sobre el mapa</div></div>`;
     const leyK = document.createElement("div");
     leyK.className = "leyenda-koppen"; leyK.hidden = true;
-    lado.append(insp, leyK);
+    const leyP = document.createElement("div");
+    leyP.className = "leyenda-paises"; leyP.hidden = true;
+    lado.append(insp, leyP, leyK);
 
     fila.append(visor, lado);
     wrap.append(pie, ctrl, fila);
@@ -148,7 +170,9 @@
     }
     function redibujar() {
       if (!cvVec.hidden) dibujarVec();
+      if (!cvCor.hidden) dibujarCor();
       if (!cvRio.hidden) dibujarRio();
+      if (!cvCiv.hidden) dibujarCiv();
     }
 
     visor.addEventListener("wheel", e => {
@@ -232,23 +256,82 @@
         ctx.stroke();
       }
       // vientos (gris claro sobre tierra)
-      const vi = c.vientos || [], co = c.corrientes || [];
+      const vi = c.vientos || [];
       let mv = 1e-6; for (const a of vi) mv = Math.max(mv, Math.hypot(a.u, a.v));
-      let mc = 1e-6; for (const a of co) mc = Math.max(mc, Math.hypot(a.u, a.v));
       const objetivo = (nx / 26) * 0.8, cab = aPx(4);
       ctx.lineWidth = aPx(1.1); ctx.strokeStyle = "rgba(210,214,224,.85)";
       for (const a of vi) {
         const L = objetivo / mv;
         flecha(ctx, a.x * kx, a.y * ky, (a.x + a.u * L) * kx, (a.y + a.v * L) * ky, cab);
       }
-      // corrientes (tintadas por anomalía: cálida rojo, fría azul)
-      ctx.lineWidth = aPx(1.4);
+    }
+
+    function dibujarCor() {
+      if (cvCor.hidden || !st.capas) return;
+      const c = st.capas, { ctx, kx, ky, aPx } = prep(cvCor);
+      // corrientes marinas (tintadas por anomalía: cálida rojo, fría azul);
+      // el grosor crece con la rapidez: las corrientes marcadas destacan
+      const co = c.corrientes || [];
+      let mc = 1e-6; for (const a of co) mc = Math.max(mc, Math.hypot(a.u, a.v));
+      const objetivo = (nx / 26) * 0.8;
+      ctx.lineCap = "round";
       for (const a of co) {
         const L = objetivo / mc;
+        const rel = Math.hypot(a.u, a.v) / mc;           // 0..1 rapidez relativa
         const t = Math.max(0, Math.min(1, Math.abs(a.anom || 0)));
+        ctx.lineWidth = aPx(1.8 + 2.2 * rel);
         ctx.strokeStyle = (a.anom || 0) >= 0
           ? `rgba(230,80,60,${0.5 + 0.45 * t})` : `rgba(90,150,235,${0.5 + 0.45 * t})`;
-        flecha(ctx, a.x * kx, a.y * ky, (a.x + a.u * L) * kx, (a.y + a.v * L) * ky, cab);
+        flecha(ctx, a.x * kx, a.y * ky, (a.x + a.u * L) * kx, (a.y + a.v * L) * ky,
+          aPx(4 + 3 * rel));
+      }
+      // circuitos (giros oceánicos): los CIRCUITOS DEL MAPA PEQUEÑO de clima
+      // (el backend los calcula sobre el cuadro original, donde salen bien
+      // formados) re-renderizados aquí con más calidad: curvas cuadráticas por
+      // los puntos medios (lazos redondos al hacer zoom, no poligonales);
+      // troceados donde cruzan el borde Este-Oeste (la longitud envuelve;
+      // los polos no) para no rayar el lienzo
+      ctx.lineJoin = "round";
+      const traza = tr => {
+        if (tr.length < 2) return;
+        ctx.beginPath(); ctx.moveTo(tr[0][0] * kx, tr[0][1] * ky);
+        for (let i = 1; i < tr.length - 1; i++) {
+          ctx.quadraticCurveTo(tr[i][0] * kx, tr[i][1] * ky,
+            (tr[i][0] + tr[i + 1][0]) / 2 * kx, (tr[i][1] + tr[i + 1][1]) / 2 * ky);
+        }
+        const u = tr[tr.length - 1];
+        ctx.lineTo(u[0] * kx, u[1] * ky); ctx.stroke();
+      };
+      for (const g of (c.circuitos || [])) {
+        const p = g.puntos || [];
+        if (p.length < 8) continue;
+        const col = (g.anom || 0) >= 0 ? "230,80,60" : "90,150,235";
+        const cerr = p.concat([p[0]]);
+        const tramos = [[cerr[0]]];
+        for (let i = 1; i < cerr.length; i++) {
+          if (Math.abs(cerr[i][0] - cerr[i - 1][0]) > nx / 2 ||
+              Math.abs(cerr[i][1] - cerr[i - 1][1]) > ny / 2) tramos.push([]);
+          tramos[tramos.length - 1].push(cerr[i]);
+        }
+        for (const pase of [[aPx(5.5), "rgba(255,255,255,.5)"],
+                            [aPx(3.2), `rgba(${col},.9)`]]) {
+          ctx.lineWidth = pase[0]; ctx.strokeStyle = pase[1];
+          for (const tr of tramos) traza(tr);
+        }
+        // tres puntas de flecha marcan el sentido del giro
+        ctx.strokeStyle = `rgba(${col},.95)`; ctx.lineWidth = aPx(3.2);
+        for (let k = 0; k < 3; k++) {
+          const i = Math.floor(k * p.length / 3), j = (i + 2) % p.length;
+          if (Math.abs(p[j][0] - p[i][0]) > nx / 2 ||
+              Math.abs(p[j][1] - p[i][1]) > ny / 2) continue;
+          const a2 = Math.atan2((p[j][1] - p[i][1]) * ky, (p[j][0] - p[i][0]) * kx);
+          const X = p[j][0] * kx, Y = p[j][1] * ky, cab = aPx(8);
+          ctx.beginPath(); ctx.moveTo(X, Y);
+          ctx.lineTo(X - cab * Math.cos(a2 - 0.45), Y - cab * Math.sin(a2 - 0.45));
+          ctx.moveTo(X, Y);
+          ctx.lineTo(X - cab * Math.cos(a2 + 0.45), Y - cab * Math.sin(a2 + 0.45));
+          ctx.stroke();
+        }
       }
     }
 
@@ -264,6 +347,91 @@
         for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0] * kx, p[i][1] * ky);
         ctx.stroke();
       }
+    }
+
+    // -- civilización: caminos, rutas comerciales y asentamientos (un canvas)
+    function poli(ctx, p, kx, ky) {
+      ctx.beginPath(); ctx.moveTo(p[0][0] * kx, p[0][1] * ky);
+      for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0] * kx, p[i][1] * ky);
+      ctx.stroke();
+    }
+    // paleta de asentamientos por rango: 0 aldea, 1 pueblo, 2 ciudad, 3 capital
+    const RANGO_R = [1.6, 2.6, 3.8, 5.2];
+    function dibujarCiv() {
+      if (cvCiv.hidden || !st.capas) return;
+      const c = st.capas, { ctx, kx, ky, aPx } = prep(cvCiv);
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      // 1. caminos (marrón claro, finos)
+      ctx.strokeStyle = "rgba(150,110,70,.85)"; ctx.lineWidth = aPx(1.1);
+      for (const r of (c.caminos || [])) {
+        if ((r.puntos || []).length >= 2) poli(ctx, r.puntos, kx, ky);
+      }
+      // 2. rutas comerciales: terrestres (oro, gruesas) y marítimas (turquesa, discontinuas)
+      for (const r of (c.rutas || [])) {
+        const p = r.puntos || [];
+        if (p.length < 2) continue;
+        if (r.mar) {
+          ctx.setLineDash([aPx(7), aPx(5)]);
+          ctx.strokeStyle = "rgba(40,180,190,.9)"; ctx.lineWidth = aPx(1.8);
+        } else {
+          ctx.setLineDash([]);
+          ctx.strokeStyle = "rgba(220,175,50,.95)"; ctx.lineWidth = aPx(2.4);
+        }
+        poli(ctx, p, kx, ky);
+      }
+      ctx.setLineDash([]);
+      // 3. asentamientos: punto por rango; capital con anillo; nombre al hacer zoom
+      const asent = c.asentamientos || [];
+      const escP = Math.max(1, st.scale);
+      for (const a of asent) {
+        const x = a.x * kx, y = a.y * ky, rr = aPx(RANGO_R[a.rango] || 1.6);
+        ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.2832);
+        ctx.fillStyle = a.rango >= 2 ? "#f4f0e6" : "#d8d2c2";
+        ctx.fill();
+        ctx.lineWidth = aPx(a.rango === 3 ? 1.6 : 1.0);
+        ctx.strokeStyle = a.rango === 3 ? "#b02a2a" : "#5a4632";
+        ctx.stroke();
+        if (a.rango === 3) {                       // anillo de capital
+          ctx.beginPath(); ctx.arc(x, y, rr + aPx(2.2), 0, 6.2832);
+          ctx.strokeStyle = "rgba(176,42,42,.85)"; ctx.lineWidth = aPx(1.1); ctx.stroke();
+        }
+        // rótulos: siempre capitales y ciudades; el resto solo con zoom
+        if (a.rango >= 2 || escP >= 3.5) {
+          const fs = aPx(a.rango === 3 ? 9 : 7.5);
+          ctx.font = `${fs}px system-ui, sans-serif`;
+          ctx.textBaseline = "middle";
+          ctx.lineWidth = aPx(2.4); ctx.strokeStyle = "rgba(20,18,14,.8)";
+          ctx.strokeText(a.nombre, x + rr + aPx(2), y);
+          ctx.fillStyle = "#f6f3ea"; ctx.fillText(a.nombre, x + rr + aPx(2), y);
+        }
+      }
+    }
+
+    // -- leyenda de países desde capas.json: nombre, población por región y
+    // % del suelo que domina (los detalles viejos no traen población)
+    function construirLeyendaPaises() {
+      if (leyP.dataset.listo || !st.capas) return;
+      const ls = (st.capas.paises && st.capas.paises.lista) || [];
+      if (!ls.length) { leyP.innerHTML = ""; return; }
+      const tierra = st.capas.paises.tierra || 0;
+      const filas = ls.slice().sort((a, b) => (b.poblacion || 0) - (a.poblacion || 0))
+        .map(p => {
+          const hab = p.poblacion != null
+            ? `<small>${p.poblacion.toLocaleString("es")} hab.` +
+              (tierra ? ` · ${(100 * p.area / tierra).toFixed(1)} % del suelo` : "") +
+              `</small>` : "";
+          return `<span><i class="cuad" style="background:rgb(${(p.rgb || [0, 0, 0]).join(",")})">` +
+            `</i><span class="ley-pais">${p.nombre}${hab}</span></span>`;
+        }).join("");
+      // suelo sin reclamar (países chicos): se rotula si queda una franja real
+      const reclamado = ls.reduce((s, p) => s + (p.area || 0), 0);
+      const libre = tierra > 0 ? 100 * (tierra - reclamado) / tierra : 0;
+      const pieLibre = libre >= 1
+        ? `<span><i class="cuad" style="background:#555"></i>` +
+          `<span class="ley-pais">tierras libres<small>${libre.toFixed(1)} % del suelo</small></span></span>`
+        : "";
+      leyP.innerHTML = `<div class="ley-tit">países</div>` + filas + pieLibre;
+      leyP.dataset.listo = "1";
     }
 
     // -- leyenda de clases Köppen desde capas.json
@@ -320,6 +488,8 @@
       const mar = bi === 255;
       const tair = esc.tair
         ? esc.tair[0] + (tr / 255) * (esc.tair[1] - esc.tair[0]) : tr / 255;
+      // tair abstracto -> °C con el mismo mapeo del pie (14 °C = 0, escala 16)
+      const tempC = tair * 16 + 14;
       const precip = tp / 255, alt = ta / 255, hielo = hi / 255;
       const bioma = mar ? "mar"
         : (((st.capas.biomas || []).find(x => x.id === bi) || {}).nombre || `#${bi}`);
@@ -331,10 +501,10 @@
       const hlab = hielo > 0.5 ? "hielo permanente" : hielo > 0.05 ? "algo de hielo" : "sin hielo";
       insp.querySelector(".insp-cuerpo").innerHTML =
         filaDato("bioma", bioma) + filaDato("Köppen", kop) +
-        filaDato("temperatura", `${tair.toFixed(2)} · ${cual(tr / 255, CUAL_T)}`) +
-        filaDato("lluvia", `${precip.toFixed(2)} · ${cual(precip, CUAL_LL)}`) +
-        filaDato("altitud", mar ? "— (mar)" : `${alt.toFixed(2)} · ${cual(alt, CUAL_ALT)}`) +
-        filaDato("hielo", `${hielo.toFixed(2)} · ${hlab}`);
+        filaDato("temperatura", `${tempC.toFixed(1)} °C · ${cual(tr / 255, CUAL_T)}`) +
+        filaDato("lluvia", `${Math.round(precip * 100)} % · ${cual(precip, CUAL_LL)}`) +
+        filaDato("altitud", mar ? "— (mar)" : `${Math.round(alt * 100)} % · ${cual(alt, CUAL_ALT)}`) +
+        filaDato("hielo", `${Math.round(hielo * 100)} % · ${hlab}`);
     }
 
     // -- hover: inspector + tooltip de río bajo el cursor
@@ -346,9 +516,28 @@
       const cx = a[0] + t * dx, cy = a[1] + t * dy;
       return (px - cx) ** 2 + (py - cy) ** 2;
     }
+    const RANGO_NOM = ["aldea", "pueblo", "ciudad", "capital"];
     function hover(e) {
       const c = coord(e);
       if (!insp.hidden) actualizarInspector(c);
+      // 1. asentamiento bajo el cursor (tiene prioridad sobre el río)
+      if (!cvCiv.hidden && st.capas) {
+        const tolA = 9 * nx / (c.W * st.scale);
+        let mejor = null, md = tolA * tolA;
+        for (const a of (st.capas.asentamientos || [])) {
+          const dd = (c.rx - a.x) ** 2 + (c.ry - a.y) ** 2;
+          if (dd < md) { md = dd; mejor = a; }
+        }
+        if (mejor) {
+          const ls = (st.capas.paises && st.capas.paises.lista) || [];
+          const p = ls.find(x => x.id === mejor.pais);
+          tip.hidden = false; tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
+          tip.textContent = `${mejor.nombre} · ${RANGO_NOM[mejor.rango]} · ` +
+            `${mejor.poblacion.toLocaleString("es")} hab.` + (p ? ` · ${p.nombre}` : "");
+          return;
+        }
+      }
+      // 2. río bajo el cursor
       if (!cvRio.hidden && st.capas) {
         const tol = 6 * nx / (c.W * st.scale);   // 6 px de pantalla en px de render
         let best = null, bd = tol * tol;
@@ -362,8 +551,10 @@
         if (best) {
           tip.hidden = false; tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
           tip.textContent = `${best.nombre} · caudal ${(best.caudal || 0).toFixed(2)}`;
-        } else tip.hidden = true;
+          return;
+        }
       }
+      tip.hidden = true;
     }
 
     // -- toggles independientes y combinables
@@ -378,10 +569,18 @@
           leyK.hidden = !on; if (on) construirLeyenda();
         } else if (capa === "vientos") {
           cvVec.hidden = !on; if (on) dibujarVec();
+        } else if (capa === "corrientes") {
+          cvCor.hidden = !on; if (on) dibujarCor();
         } else if (capa === "cuencas") {
           if (on && d.cuencas && !cuencas.src) cuencas.src = d.cuencas;
           cuencas.hidden = !(on && d.cuencas);
           cvRio.hidden = !on; if (on) dibujarRio(); else tip.hidden = true;
+        } else if (capa === "paises") {
+          if (on && d.paises && !paises.src) paises.src = d.paises;
+          paises.hidden = !(on && d.paises);
+          leyP.hidden = !on; if (on) construirLeyendaPaises();
+        } else if (capa === "civ") {
+          cvCiv.hidden = !on; if (on) dibujarCiv(); else tip.hidden = true;
         } else if (capa === "inspector") {
           insp.hidden = !on; if (on) cargarInspector();
         }
@@ -389,6 +588,15 @@
     });
 
     aplicar();
+    // detalle con civilización: países + asentamientos encendidos de entrada
+    // (los detalles previos a la capa civ no traen d.civ y quedan como antes)
+    if (d.civ) {
+      for (const nombre of ["paises", "civ"]) {
+        const cb = ctrl.querySelector(`input[data-capa="${nombre}"]`);
+        cb.checked = true;
+        cb.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
     return wrap;
   }
 
@@ -399,40 +607,57 @@
       () => $("v-det-casq").textContent = $("det-casq").value);
     $("det-relieve").addEventListener("input",
       () => $("v-det-relieve").textContent = parseFloat($("det-relieve").value).toFixed(1));
+    $("det-sinu").addEventListener("input",
+      () => $("v-det-sinu").textContent = parseFloat($("det-sinu").value).toFixed(1));
     $("det-temp").addEventListener("input",
       () => $("v-det-temp").textContent = $("det-temp").value);
-    $("det-hum").addEventListener("input",
-      () => $("v-det-hum").textContent = parseFloat($("det-hum").value).toFixed(2));
+    $("det-prec").addEventListener("input",
+      () => $("v-det-prec").textContent = $("det-prec").value);
 
-    $("b-detalle").onclick = async () => {
+    // salidas de la sección «Detallar con civilización» (0 = automático)
+    $("civ-asent").addEventListener("input", () => {
+      const v = parseInt($("civ-asent").value);
+      $("v-civ-asent").textContent = v ? String(v) : "auto";
+    });
+    $("civ-paises").addEventListener("input", () => {
+      const v = parseInt($("civ-paises").value);
+      $("v-civ-paises").textContent = v ? String(v) : "auto";
+    });
+
+    // lanzamiento compartido por ambas secciones: POST /api/detallar + sondeo.
+    // `extra` aporta los diales propios (factor/semilla y, en la sección de
+    // civilización, semilla_civ/asentamientos/paises); casquetes, relieve,
+    // sinuosidad, temperatura y precipitaciones salen SIEMPRE de «Detallar cuadro».
+    async function lanzarDetalle(boton, extra, rotulo) {
       const { repro, sello, idx } = getRepro();
       if (!repro || !sello) return;
       const f = repro.frames[idx];
       detenerRepro();
-      $("b-detalle").disabled = true;
+      boton.disabled = true;
       $("estado").className = "";
       $("estado").textContent =
-        `Detallando el cuadro de ${fmtMa(f.ma)} a ${$("det-factor").value}×…`;
+        `${rotulo} el cuadro de ${fmtMa(f.ma)} a ${extra.factor}×…`;
       $("barra").hidden = false;
       let res;
       try {
         res = await (await fetch("/api/detallar", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          body: JSON.stringify(Object.assign({
             sello: sello, paso: f.paso,
-            factor: parseInt($("det-factor").value),
-            semilla: Math.max(0, parseInt($("det-semilla").value) || 0),
             casquetes: parseFloat($("det-casq").value),
             relieve: parseFloat($("det-relieve").value),
-            temperatura: parseFloat($("det-temp").value),
-            humedad: parseFloat($("det-hum").value),
-          }),
+            sinuosidad: parseFloat($("det-sinu").value),
+            // diales reales de la UI -> dial abstracto que espera el backend:
+            // °C -> temperatura en [-1,1] (14 °C = 0), % -> precipitaciones en [0.2,2]
+            temperatura: Math.max(-1, Math.min(1, (parseFloat($("det-temp").value) - 14) / 16)),
+            precipitaciones: parseFloat($("det-prec").value) / 100,
+          }, extra)),
         })).json();
       } catch (e) { res = { error: "sin conexión" }; }
       if (res.error) {
         $("estado").textContent = "No se pudo detallar: " + res.error;
         $("estado").className = "error";
-        $("b-detalle").disabled = false; $("barra").hidden = true; return;
+        boton.disabled = false; $("barra").hidden = true; return;
       }
       const t0 = Date.now();
       setSondeo(setInterval(async () => {
@@ -440,11 +665,11 @@
         const segs = Math.round((Date.now() - t0) / 1000);
         $("barra").firstElementChild.style.width = (e.progreso * 100) + "%";
         if (e.estado === "corriendo") {
-          $("estado").textContent = `Detallando… ${segs} s`;
+          $("estado").textContent = `${rotulo}… ${segs} s`;
           return;
         }
         setSondeo(null);
-        $("b-detalle").disabled = false; $("barra").hidden = true;
+        boton.disabled = false; $("barra").hidden = true;
         if (e.estado === "listo") {
           $("estado").textContent =
             `Cuadro de ${fmtMa(f.ma)} detallado en ${segs} s.`;
@@ -455,12 +680,27 @@
           $("estado").className = "error"; $("log").textContent = e.log || "";
         }
       }, 700));
-    };
+    }
+
+    $("b-detalle").onclick = () => lanzarDetalle($("b-detalle"), {
+      factor: parseInt($("det-factor").value),
+      semilla: Math.max(0, parseInt($("det-semilla").value) || 0),
+    }, "Detallando");
+
+    $("b-civilizar").onclick = () => lanzarDetalle($("b-civilizar"), {
+      factor: parseInt($("civ-factor").value),
+      semilla: Math.max(0, parseInt($("civ-semilla").value) || 0),
+      semilla_civ: Math.max(0, parseInt($("civ-semciv").value) || 0),
+      asentamientos: Math.max(0, parseInt($("civ-asent").value) || 0),
+      paises: Math.max(0, parseInt($("civ-paises").value) || 0),
+      tam_paises: Math.max(0, parseInt($("civ-tam").value) || 0),
+    }, "Civilizando");
   }
 
-  // muestra u oculta la sección lateral según haya corrida con checkpoints
+  // muestra u oculta las secciones laterales según haya corrida con checkpoints
   function habilitar(extrapolable) {
     $("sec-detallar").hidden = !extrapolable;
+    $("sec-civilizar").hidden = !extrapolable;
   }
 
   function init(ctx) {

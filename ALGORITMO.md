@@ -13,7 +13,7 @@ Idioma del código y los comentarios: español. Un solo archivo (`tecto.py`,
 Notación: `DT = 1`, así que "por paso" y "por unidad de tiempo" son lo
 mismo; las derivadas temporales `d/dt` se implementan como incrementos por
 paso. ∇ = gradiente, ∇² = laplaciano, ∇· = divergencia; todos discretos
-sobre malla periódica (toro), ver §2.1.
+sobre malla equirrectangular esférica (X periódica, polos cerrados), ver §2.1.
 
 ---
 
@@ -38,7 +38,9 @@ Mantle.step(sink) ──u,v──▶  Crust.step(u,v,hot) ──C,F,A──▶  
 - `sink`: mapa de fosas de subducción reescalado al manto — enfría el manto
   superior y **ancla** las corrientes descendentes bajo las fosas (slab pull).
 
-Todo el dominio es **toroidal** (periódico en x e y). Todas las operaciones
+Todo el dominio es **esférico** sobre malla equirrectangular: la fila hace de
+latitud. El eje x (longitud) es periódico; el eje y (latitud) NO envuelve — los
+polos son borde (Neumann: fila replicada / vecinos inexistentes). Todas las operaciones
 son vectorizadas numpy; no hay bucles por celda.
 
 Estado completo: `Mantle.T` (48×48×8 floats), `Mantle.plumes` (lista de
@@ -241,7 +243,7 @@ nazcan plumas nuevas y mueran las viejas, y después que las plumas se muevan.
 `{y, x, dy, dx, age, life}` con posición uniforme, deriva fija por pluma
 `dy, dx ~ N(0, 0.04)` celdas/paso y vida `life ~ U{250…600}`. Cada paso
 inyecta en las 3 capas inferiores una gaussiana **periódica** (métrica
-toroidal `d = min(|Δ|, N − |Δ|)` por eje):
+esférica: `d = min(|Δ|, N − |Δ|)` en x, lineal `|Δ|` en y):
 
 ```
 blob(y,x) = exp(−(dy² + dx²)/(2r²))            r = 3.5 celdas
@@ -485,7 +487,8 @@ mejora con estos cambios: velocidad continental ≈ la de su placa (antes
 ~0.5×), rotación visible, y colisiones que se completan.
 
 **Rotación rígida (polo de Euler).** Además de trasladarse, cada placa gira:
-se ajusta por mínimos cuadrados la rotación alrededor del centroide toroidal
+se ajusta por mínimos cuadrados la rotación alrededor del centroide (media
+circular en x, lineal en y)
 (media circular por `bincount`),
 
 ```
@@ -527,7 +530,7 @@ estacionario (`P` constante sobre una pendiente sostenida):
 La fuerza por paso queda **amplificada ×(1/λ) = ×50**: una pendiente de
 dorsal modesta aporta hasta `0.15/0.02 = 7.5·|∇ridge|` de velocidad
 sostenida. Ese factor es el que empuja las dos orillas de un rift a través
-de todo el océano hasta colisionar en el lado opuesto del toro; aplicado a
+de todo el océano hasta colisionar en el lado opuesto del mapa; aplicado a
 la velocidad instantánea, el empuje sería 50 veces más débil e invisible.
 
 **Tirón de losa en superficie (`SLAB_PULL_SURF = 0.08`)**: el término
@@ -863,7 +866,7 @@ C += (d < 0) ? 0.35·d : d
 El laplaciano es negativo en picos y positivo en valles; multiplicar solo la
 parte negativa por 0.35 significa: *los valles reciben el depósito completo,
 pero las cimas solo pierden el 35% de lo que la difusión pediría*. Balance
-de masa: la difusión pura conserva ΣC (`Σ∇²C = 0` en el toro); con la
+de masa: la difusión pura conserva ΣC (`Σ∇²C = 0` en malla cerrada); con la
 asimetría, `ΣΔC = Σd⁺ + 0.35·Σd⁻ > 0` — la erosión **inyecta volumen
 neto**, y esa inyección ES el rebote isostático: el 65% "no perdido" es la
 raíz cortical que asciende al descargarse la cordillera. El factor
@@ -1020,7 +1023,7 @@ simbología encima:
        *"continuidad hasta la placa o dorsal más cercana"* pedida
        explícitamente por el usuario: una dorsal partida en tramos se une en
        una línea continua (los conectores son las transformantes rojas).
-       Todo el trabajo por fragmento corre en una **ventana toroidal
+       Todo el trabajo por fragmento corre en una **ventana local
        recortada** (`_zona`/`_puentes_de`, BFS `plano` sin envolver): ~1.3 s
        por frame a 256² en vez de ~3 s con BFS de mapa completo.
      - `_subdividir`: se quitan los píxeles de eje, se re-etiquetan las
@@ -1109,7 +1112,7 @@ neutra; el azul marca las verdaderas zonas de hundimiento, bajo las fosas.
 Paleta divergente (azul = losa fría que baja; oscuro = neutro;
 naranja→amarillo = pluma caliente que sube), más un **anillo blanco** en
 la posición de cada pluma activa
-(alfa ∝ su fade de §3, con copias toroidales para las que cruzan el borde).
+(alfa ∝ su fade de §3, con copias en x para las que cruzan el borde Este-Oeste).
 Se calcula **solo desde `T`** — sin depender de `w` ni del estado del paso —
 para que `--reconstruir` pueda regenerarlo desde los frames guardados
 (que almacenan `T` completo y las plumas en `meta`).

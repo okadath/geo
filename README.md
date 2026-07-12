@@ -123,7 +123,7 @@ rangos seguros antes de invocar el CLI.
 
 Tres capas, cada una una aproximación deliberadamente barata:
 
-### 1. Manto 3D (48×48×8 celdas, toroidal)
+### 1. Manto 3D (48×48×8 celdas; esférico: longitud periódica, polos sin envolver)
 
 La convección se reduce a tres reglas por paso, sin Navier-Stokes ni presión:
 
@@ -246,8 +246,68 @@ Dos diales globales (grupo *algoritmo* del CLI, también en la web):
 
 - `--temperatura` (−1 … 0 … +1): de bola de nieve a templado (Tierra) a
   invernadero; desplaza toda la curva térmica del planeta.
-- `--humedad` (0.2 … 1 … 2): de árido a normal a muy húmedo; escala la
-  evaporación, la lluvia, los ríos y la extensión de selva.
+- `--precipitaciones` (0.2 … 1 … 2): de árido a normal a muy húmedo; escala el
+  nivel de lluvia final, la densidad de la red fluvial y la extensión de selva
+  (`--humedad` se acepta como alias del nombre viejo).
+
+## Capa de civilización
+
+Al **detallar un cuadro** (`tecto.py --detallar`, o el botón *Detallar* de la
+web) se genera además, en `civ.py`, una capa de civilización derivada de los
+mismos campos que el clima HD —el mapa de **Köppen** y las **cuencas y ríos** de
+la hidrología fina— y **no** de los colores del render:
+
+- **Asentamientos humanos**: máximos de un campo de *habitabilidad* (clima
+  Köppen + acceso a agua dulce y costa − altitud y pendiente) sembrados con
+  separación mínima. Cada uno trae nombre, rango (aldea / pueblo / ciudad /
+  capital), población orientativa y si es costero o ribereño.
+- **Caminos**: red terrestre de mínimo coste entre asentamientos (árbol de
+  expansión mínima sobre un campo de coste del terreno, más un anillo de
+  redundancia); rodean montañas y siguen los valles.
+- **Rutas comerciales**: troncales de largo alcance entre las capitales,
+  **terrestres** y **marítimas** (estas saltan de un continente a otro por el
+  mar, hugging la costa).
+- **Países**: reparto del suelo entre las capitales por Dijkstra multi-fuente
+  sobre un coste donde **montañas y ríos son barreras**, así que las fronteras
+  caen solas sobre divisorias y cauces —no siguen a Köppen, sí a la geografía
+  del agua, como pidió el diseño.
+
+Todo es **determinista y pasivo** igual que el clima: la semilla se deriva de la
+propia elevación (no toca el generador aleatorio de la simulación, la
+continuación de un mundo sigue siendo bit-exacta) y se calcula sobre una malla
+reducida para que el A*/Dijkstra en Python sea barato.
+
+**Formato legible y evaluable.** La información de la ampliación queda guardada
+por cuadro detallado en `{nombre}_capas.json` (más los rásters `{nombre}_datos.png`
+—tair/precip/altitud— y `{nombre}_datos2.png` —bioma/Köppen/hielo— para el
+inspector, y el overlay `{nombre}_paises.png`). El JSON reúne, en coordenadas de
+píxel del render, las capas ya existentes (Köppen, cuencas, ríos, vientos,
+corrientes, isoyetas) y las nuevas:
+
+```jsonc
+{
+  "asentamientos": [{"x","y","nombre","rango","poblacion","costa","rio","pais"}],
+  "caminos":       [{"puntos":[[x,y],…], "clase"}],
+  "rutas":         [{"puntos":[[x,y],…], "mar", "a", "b"}],
+  "paises": {"png":"…_paises.png",
+             "lista":[{"id","nombre","rgb","area"}]}
+}
+```
+
+El visor de clima HD de la web añade dos casillas combinables —**países** y
+**asentamientos, caminos y rutas**— con leyenda de países y *tooltip* del
+asentamiento bajo el cursor (nombre, rango, población y país). En los detalles
+con civilización ambas capas arrancan encendidas.
+
+**Diales de civilización.** El CLI (`--semilla-civ`, `--asentamientos`,
+`--paises`; 0 = automático) y la sección **«Detallar con civilización»** de la
+web (que reusa los diales geográficos de «Detallar cuadro» y añade semilla de
+civilización, nº de asentamientos y nº de países) controlan el poblamiento:
+la semilla de civilización se mezcla con la derivada de la geografía, así que
+cambiarla da otros asentamientos, nombres y países sobre el mismo mapa.
+Además del JSON se rinde `{nombre}_civ.png`: el **mapa político** ya compuesto
+(clima HD + tinte de países + caminos, rutas y asentamientos rotulados), que el
+visor enlaza como «mapa político».
 
 ## Diales interesantes (constantes al inicio de `tecto.py`)
 
@@ -267,3 +327,9 @@ detalle: por qué se agregó, sus variables, su comportamiento, las trampas ya
 resueltas (invariantes que no hay que romper) y las técnicas de depuración
 que funcionaron. Es el punto de entrada para retomar o extender el proyecto
 (por una IA o un desarrollador) sin el historial original.
+
+[`DETALLE_HD.md`](DETALLE_HD.md) documenta la capa de clima del cuadro
+**ampliado** (`clima.py` + `tecto.py::detallar`): corrientes reutilizadas del
+mapa pequeño y re-escaladas al detalle, el dial de **sinuosidad** (meandros) y
+los **lagos extendidos / cuencas endorreicas** de la hidrología fina, con su
+matemática, sus diales y las trampas ya resueltas.

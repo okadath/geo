@@ -8,20 +8,25 @@ bit-exactas). Es determinista: misma elevacion + mismos diales => mismo clima.
 
 Convencion de latitud: la FILA hace de latitud (como `detallar` con los
 casquetes). `lat_norm = linspace(1, -1, n)`: fila 0 = polo norte, fila n-1 = polo
-sur, centro = ecuador. La malla sigue siendo toroidal para las advecciones (se
-reutiliza el esquema periodico de tecto.py); la envoltura polo-a-polo es
-inofensiva visualmente porque ambos extremos son frios.
+sur, centro = ecuador. Geometria ESFERICA (equirrectangular): el eje X
+(longitud) es periodico y el eje Y (latitud) termina en los polos — las
+advecciones, suavizados y el drenaje NO envuelven de polo a polo.
 
 Cadena fisica (todo vectorizado, sin bucles por celda):
   temperatura latitudinal + altitud + continentalidad + corrientes
   -> vientos por bandas de Hadley con desviacion orografica
   -> corrientes marinas por esfuerzo del viento (Ekman) tangentes a la costa
      + SST advectada (lenguas calidas/frias)
-  -> humedad evaporada del mar advectada por el viento -> lluvia base +
-     orografica (sombra de lluvia a sotavento) + conveccion ecuatorial
+  -> humedad evaporada del mar advectada por el viento (con reciclaje
+     continental: parte de la lluvia se re-evapora y sigue viento abajo)
+     -> lluvia base + orografica (sombra de lluvia a sotavento) + conveccion
+     ecuatorial
   -> glaciaciones (banquisa en el mar, casquetes/glaciares en tierra)
-  -> rios por drenaje de descenso mas empinado con acumulacion de caudal,
-     lagos endorreicos y estuarios
+  -> rios por drenaje de descenso mas empinado con acumulacion de caudal y
+     umbral ABSOLUTO (la cantidad de rios emerge de cuanto llueve), lagos
+     endorreicos y estuarios
+  -> realimentacion: la evapotranspiracion de rios/lagos/grandes cuencas se
+     re-inyecta como vapor y la lluvia + el drenaje se recalculan (2do pase)
   -> biomas (Whittaker simplificado sobre temperatura x precipitacion).
 
 Solo numpy + PIL. NO importa tecto.py (tecto importara clima; se evita el ciclo);
@@ -33,9 +38,18 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
+import civ
+
 # ============================ diales por defecto ============================
 TEMPERATURA = 0.0   # -1 = bola de nieve .. 0 = templado (Tierra) .. +1 = invernadero
-HUMEDAD = 1.0       # 0.2 = arido .. 1 = normal .. 2 = muy humedo
+PRECIPITACIONES = 1.0  # 0.2 = arido .. 1 = normal .. 2 = muy humedo (antes HUMEDAD)
+
+# Bono de humedad riberena: cuanto suma la cercania a rios/lagos/grandes cuencas
+# a la precipitacion USADA SOLO para clasificar biomas (no a la precip mostrada
+# ni a la fisica de lluvia). Empuja la vegetacion hacia bosque a lo largo de los
+# cauces, modulado por temperatura por los umbrales de Whittaker (taiga en frio,
+# bosque templado/humedo en templado/calido). Compartido por todos los renders.
+BONO_RIBERA = 0.25
 
 # ============================ paleta de biomas ==============================
 # CONTRATO: estos ids y colores son fijos (otros modulos y la web los replican).
@@ -60,41 +74,63 @@ for _k, (_n, _c) in BIOMAS.items():
 # ============================ helpers (de tecto.py) =========================
 # Copiados localmente para no importar tecto.py (evita el import circular).
 
+def rolly(f, s, axis=0):
+    """np.roll SIN envolver en el eje de latitud (== tecto.rolly): las filas
+    que saldrian por un polo se sustituyen por la fila del borde (replicada).
+    El eje X (longitud) sigue usando np.roll periodico."""
+    g = np.roll(f, s, axis)
+    if s == 0:
+        return g
+    dst = [slice(None)] * f.ndim
+    src = [slice(None)] * f.ndim
+    if s > 0:
+        dst[axis] = slice(0, s); src[axis] = slice(0, 1)
+    else:
+        dst[axis] = slice(s, None); src[axis] = slice(-1, None)
+    g[tuple(dst)] = f[tuple(src)]
+    return g
+
 def grad_periodic(f):
-    """Gradiente centrado en malla periodica (== tecto.grad_periodic)."""
-    fy = (np.roll(f, -1, 0) - np.roll(f, 1, 0)) * 0.5
+    """Gradiente centrado (== tecto.grad_periodic): periodico en X, unilateral
+    (borde replicado) en Y."""
+    fy = (rolly(f, -1) - rolly(f, 1)) * 0.5
     fx = (np.roll(f, -1, 1) - np.roll(f, 1, 1)) * 0.5
     return fx, fy
 
 def upsample(f, ny, nx):
-    """Bilineal periodico (== tecto.upsample). Aqui no se usa para el manto sino
-    para difundir campos gruesos si hiciera falta; se conserva por compatibilidad."""
+    """Bilineal (== tecto.upsample): periodico en X, recortado en Y. Aqui no se
+    usa para el manto sino para difundir campos gruesos si hiciera falta; se
+    conserva por compatibilidad."""
     y = np.arange(ny) * f.shape[0] / ny
     x = np.arange(nx) * f.shape[1] / nx
     y0 = np.floor(y).astype(int); x0 = np.floor(x).astype(int)
     fy = (y - y0)[:, None]; fx = (x - x0)[None, :]
-    y1 = (y0 + 1) % f.shape[0]; x1 = (x0 + 1) % f.shape[1]
+    y1 = np.minimum(y0 + 1, f.shape[0] - 1); x1 = (x0 + 1) % f.shape[1]
     return (f[np.ix_(y0, x0)] * (1 - fy) * (1 - fx) + f[np.ix_(y0, x1)] * (1 - fy) * fx
             + f[np.ix_(y1, x0)] * fy * (1 - fx) + f[np.ix_(y1, x1)] * fy * fx)
 
 def _advect(f, u, v, yy, xx):
-    """Adveccion semi-lagrangiana periodica con backtrace bilineal (dt=1).
-    Adaptada de tecto.advect: recibe las mallas base `yy,xx` YA calculadas para
-    no rehacer meshgrid en cada una de las ~80 iteraciones del bucle de humedad
-    (el meshgrid por-llamada dominaba el costo)."""
+    """Adveccion semi-lagrangiana con backtrace bilineal (dt=1): periodica en X,
+    recortada en Y (nada cruza los polos). Adaptada de tecto.advect: recibe las
+    mallas base `yy,xx` YA calculadas para no rehacer meshgrid en cada una de
+    las ~80 iteraciones del bucle de humedad (el meshgrid por-llamada dominaba
+    el costo)."""
     ny, nx = f.shape
     sx = (xx - u) % nx
-    sy = (yy - v) % ny
+    sy = np.clip(yy - v, 0.0, ny - 1)
     x0 = np.floor(sx).astype(np.intp); y0 = np.floor(sy).astype(np.intp)
     fx = sx - x0; fy = sy - y0
-    x1 = (x0 + 1) % nx; y1 = (y0 + 1) % ny
+    # (xx-u) % nx puede devolver exactamente nx por redondeo float -> envolver
+    x0 %= nx
+    x1 = (x0 + 1) % nx; y1 = np.minimum(y0 + 1, ny - 1)
     return (f[y0, x0] * (1 - fx) * (1 - fy) + f[y0, x1] * fx * (1 - fy)
             + f[y1, x0] * (1 - fx) * fy + f[y1, x1] * fx * fy)
 
 def _suaviza(f, pasadas=1):
-    """Difusion isotropa por promedio de 5 puntos en malla periodica (blur)."""
+    """Difusion isotropa por promedio de 5 puntos (blur): periodica en X,
+    Neumann (borde replicado) en Y."""
     for _ in range(pasadas):
-        f = 0.2 * (f + np.roll(f, 1, 0) + np.roll(f, -1, 0)
+        f = 0.2 * (f + rolly(f, 1) + rolly(f, -1)
                    + np.roll(f, 1, 1) + np.roll(f, -1, 1))
     return f
 
@@ -102,14 +138,16 @@ def _upsample_bicubico_a(f, ny, nx):
     """Bicubico periodico via PIL a una resolucion destino (ny,nx) ARBITRARIA
     (== tecto._upsample_bicubico, pero a shape en vez de factor entero: el clima
     se capa por slicing y el aumento campo->detalle puede no ser entero).
-    Rellena un margen toroidal, escala y recorta: continuo y sin los rombos que
-    la bilineal deja a grandes aumentos. Es el helper que usa render_clima_detalle
-    para llevar los campos continuos (tair, precip, sst...) a plena resolucion."""
+    Rellena un margen (periodico en X, replicado en Y), escala y recorta:
+    continuo y sin los rombos que la bilineal deja a grandes aumentos. Es el
+    helper que usa render_clima_detalle para llevar los campos continuos (tair,
+    precip, sst...) a plena resolucion."""
     m = 4
     fh, fw = f.shape
     # el margen tambien se escala (aprox); recortarlo devuelve exactamente (ny,nx)
     my = max(1, int(round(m * ny / fh))); mx = max(1, int(round(m * nx / fw)))
-    g = np.pad(np.asarray(f, np.float32), m, mode="wrap")
+    g = np.pad(np.asarray(f, np.float32), ((m, m), (0, 0)), mode="edge")
+    g = np.pad(g, ((0, 0), (m, m)), mode="wrap")
     im = Image.fromarray(g, mode="F").resize(
         (nx + 2 * mx, ny + 2 * my), Image.BICUBIC)
     a = np.asarray(im, np.float32)
@@ -117,12 +155,21 @@ def _upsample_bicubico_a(f, ny, nx):
 
 # ============================ simulacion ====================================
 
-def simular_clima(elev, temperatura=0.0, humedad=1.0):
+def simular_clima(elev, temperatura=0.0, precipitaciones=1.0, humedad=None,
+                  solo_corrientes=False):
     """Calcula el clima snapshot de una geografia.
 
     elev: array (n,n) float en -1..1 (0 = linea de costa, ya con eustasia).
+    precipitaciones: dial 0.2 (arido) .. 1 (normal) .. 2 (muy humedo); escala
+    la evaporacion/lluvia. `humedad` es el alias retrocompatible del mismo
+    dial (nombre viejo): si se pasa, manda.
+    solo_corrientes: corta tras la circulacion oceanica y devuelve solo
+    {cu, cv, sst, sst_anom, psi} (lo usa `detallar` para reutilizar las
+    corrientes del cuadro original sin pagar lluvia/drenaje/biomas).
     Devuelve dict de campos (n,n) segun el contrato del plan.
     """
+    if humedad is not None:
+        precipitaciones = humedad
     elev = np.asarray(elev, np.float64)
     n = elev.shape[0]
     tierra = elev > 0.0
@@ -180,15 +227,71 @@ def simular_clima(elev, temperatura=0.0, humedad=1.0):
     vu = _suaviza(vu, 1); vv = _suaviza(vv, 1)
 
     # ---------------- 3. corrientes marinas + SST ----------------
-    # Arranque: esfuerzo del viento sobre el mar, rotado ~25 grados (deriva de
-    # Ekman; el giro real depende del hemisferio, se toma el sentido dominante).
-    th = np.deg2rad(25.0); ct, st = np.cos(th), np.sin(th)
-    cu = (ct * vu - st * vv) * 0.55 * mar
-    cv = (st * vu + ct * vv) * 0.55 * mar
-    # Condicion de costa: la corriente debe ser TANGENTE a la costa. La normal a
-    # la costa apunta de mar a tierra ~ gradiente de la mascara de tierra
+    # Las corrientes emergen de sus GENERADORES fisicos (no de una rotacion fija):
+    #   (a) deriva de Ekman del viento, desviada por Coriolis (a la DERECHA en el
+    #       hemisferio N, a la IZQUIERDA en el S);
+    #   (b) giros por el ROTACIONAL del esfuerzo del viento (funcion de corriente
+    #       barotropica que cierra los giros contra los continentes);
+    #   (c) tangencia a la costa (corrientes de borde occidental);
+    #   (d) afloramiento (upwelling) que enfria los bordes orientales.
+
+    # (a) DERIVA DE EKMAN con signo de Coriolis por hemisferio. Se rota el
+    # esfuerzo del viento `signo*25` grados: +25 en el N (a la derecha), -25 en el
+    # S (a la izquierda); en el ecuador signo=0 y no hay desviacion.
+    ang = signo * np.deg2rad(25.0)                 # (n,1) por fila
+    ce = np.cos(ang); se = np.sin(ang)
+    eu = (ce * vu - se * vv) * 0.55 * mar
+    ev = (se * vu + ce * vv) * 0.55 * mar
+
+    # (b) GIROS POR ROTACIONAL DEL ESFUERZO DEL VIENTO. curl = dvv/dx - dvu/dy.
+    # Se resuelve la funcion de corriente barotropica psi de la Poisson
+    # ∇²psi = curl por relajacion de Jacobi (promedio de 4 vecinos - curl/4),
+    # anclada a psi=0 en tierra (Dirichlet en las costas -> los giros cierran
+    # contra los continentes). La velocidad geostrofica es (gu,gv)=(-dpsi/dy,
+    # +dpsi/dx). El signo de la fuente esta elegido para que en los subtropicos
+    # del N (entre alisios ~15 y westerlies ~47, donde con y=sur+ resulta curl>0)
+    # psi sea un minimo y el giro salga ANTICICLONICO (horario): al oeste hacia el
+    # polo, al este hacia el ecuador (que alimenta el afloramiento de borde este).
+    dvv_dx, _ = grad_periodic(vv)
+    _, dvu_dy = grad_periodic(vu)
+    curl = (dvv_dx - dvu_dy) * mar
+    # Efecto BETA (Stommel): Coriolis crece con la latitud, y ese gradiente
+    # rompe la simetria este-oeste de los giros. Se anade el termino
+    # beta*dpsi/dx a la Poisson (r∇²psi + beta*psi_x = curl): la solucion se
+    # APRIETA contra el borde OESTE de cada cuenca -> corrientes de borde
+    # occidental estrechas e intensas (Golfo/Kuroshio) y retorno oriental ancho
+    # y lento, como en los oceanos terrestres. BETA < 2 mantiene positivos los
+    # coeficientes del Jacobi (estable).
+    # 400 iteraciones: con menos el Jacobi no converge y el sesgo beta ni
+    # aparece (medido en cuenca sintetica: ratio oeste/este 0.8 con 60 iters,
+    # 2.8 con 400).
+    BETA = 1.2
+    psi = np.zeros_like(elev)
+    for _ in range(400):
+        pe = np.roll(psi, -1, 1); pw = np.roll(psi, 1, 1)
+        psi = 0.25 * (rolly(psi, 1) + rolly(psi, -1) + pe + pw
+                      - curl + 0.5 * BETA * (pe - pw))
+        psi *= mar                                 # Dirichlet: psi=0 en tierra
+    gpx, gpy = grad_periodic(psi)
+    gu = -gpy * mar
+    gv = gpx * mar
+    # Ganancia de los giros normalizada a la deriva de Ekman (robusta a la
+    # resolucion): que su magnitud tipica sea ~0.7x la de Ekman -> giros visibles
+    # sin desbordar el tope de estabilidad al sumarlos a la deriva.
+    if mar.any():
+        rms_ek = float(np.sqrt(np.mean(eu[mar] ** 2 + ev[mar] ** 2))) + 1e-9
+        rms_gy = float(np.sqrt(np.mean(gu[mar] ** 2 + gv[mar] ** 2))) + 1e-9
+    else:
+        rms_ek = rms_gy = 1.0
+    GYRE_RATIO = 0.70
+    gan = GYRE_RATIO * rms_ek / rms_gy
+    cu = (eu + gan * gu) * mar
+    cv = (ev + gan * gv) * mar
+
+    # (c) TANGENCIA A LA COSTA: la corriente debe ser TANGENTE a la costa. La
+    # normal a la costa apunta de mar a tierra ~ gradiente de la mascara de tierra
     # difundida. Se resta la componente que entra en tierra -> el flujo bloqueado
-    # DOBLA por la costa y emergen corrientes de borde (giros subtropicales).
+    # DOBLA por la costa y se concentran las corrientes de borde occidental.
     tierra_soft = _suaviza(tierra.astype(np.float64), 3)
     nnx, nny = grad_periodic(tierra_soft)
     nrm = np.hypot(nnx, nny) + 1e-9
@@ -205,54 +308,153 @@ def simular_clima(elev, temperatura=0.0, humedad=1.0):
     exceso = vel > tope
     cu[exceso] *= tope / vel[exceso]; cv[exceso] *= tope / vel[exceso]
 
-    # SST: perfil latitudinal (como tair pero sin altitud, solo mar) advectado
-    # por (cu,cv) con relajacion debil al perfil -> lenguas calidas hacia los
-    # polos y frias hacia el ecuador segun el lado de la cuenca.
+    # (c2) COMPONENTE TERMICA (geostrofica): el agua calida abomba la
+    # superficie (altura dinamica ~ SST) y la rotacion desvia el flujo A LO
+    # LARGO de las isotermas: horario alrededor de lo calido en el hemisferio
+    # N, antihorario en el S (en el ecuador signo=0 y no aporta). Se estima una
+    # SST provisional advectada por deriva+giros y su gradiente suavizado da la
+    # componente termica -> refuerza las lenguas calidas de borde occidental y
+    # el flujo zonal de latitudes medias hacia el este.
     sst_perfil = t_ecuador - 1.55 * lat_abs ** 2 * np.ones_like(elev)
+    sst_prov = sst_perfil.copy()
+    for _ in range(12):
+        sst_prov = _advect(sst_prov, cu, cv, yy, xx)
+        sst_prov = sst_prov + 0.15 * (sst_perfil - sst_prov)
+    h_din = _suaviza(np.where(mar, sst_prov, sst_perfil), 4)
+    ghx, ghy = grad_periodic(h_din)
+    tu = (signo * ghy) * mar          # con y=sur+: calor al sur (ecuador) en el
+    tv = (-signo * ghx) * mar         # N -> flujo al este; giro horario en calido
+    if mar.any():
+        rms_t = float(np.sqrt(np.mean(tu[mar] ** 2 + tv[mar] ** 2))) + 1e-9
+    else:
+        rms_t = 1.0
+    TERM_RATIO = 0.35                 # ganancia termica ~0.35x la deriva de Ekman
+    cu = cu + (TERM_RATIO * rms_ek / rms_t) * tu
+    cv = cv + (TERM_RATIO * rms_ek / rms_t) * tv
+    # re-tangencia breve y nuevo cap tras sumar la componente termica
+    for _ in range(3):
+        dot = cu * nnx + cv * nny
+        entra = np.clip(dot, 0.0, None)
+        cu = cu - entra * nnx
+        cv = cv - entra * nny
+        cu = _suaviza(cu, 1) * mar
+        cv = _suaviza(cv, 1) * mar
+    vel = np.hypot(cu, cv)
+    exceso = vel > tope
+    cu[exceso] *= tope / vel[exceso]; cv[exceso] *= tope / vel[exceso]
+
+    # Funcion de corriente del flujo TOTAL (rotacional de cu,cv con psi=0 en
+    # tierra): sus extremos localizan los GIROS cerrados para dibujar los
+    # circuitos de corriente en los renders y la web.
+    dcv_dx, _ = grad_periodic(cv)
+    _, dcu_dy = grad_periodic(cu)
+    zeta = (dcv_dx - dcu_dy) * mar
+    psi_tot = np.zeros_like(elev)
+    for _ in range(300):
+        psi_tot = 0.25 * (rolly(psi_tot, 1) + rolly(psi_tot, -1)
+                          + np.roll(psi_tot, 1, 1) + np.roll(psi_tot, -1, 1)
+                          - zeta)
+        psi_tot *= mar
+
+    # (d) AFLORAMIENTO (upwelling) + SST. Donde las corrientes DIVERGEN sobre el
+    # mar (div>0: el agua superficial se va, tipico de bordes orientales y del
+    # ecuador) aflora agua fria profunda. La SST advectada por (cu,cv) se relaja
+    # hacia un perfil REDUCIDO por el afloramiento -> costas orientales frias
+    # (Atacama/Namib) que despues suprimen la evaporacion.
+    divx, _ = grad_periodic(cu)
+    _, divy = grad_periodic(cv)
+    upw = np.clip((divx + divy), 0.0, None) * mar
+    if (upw > 0).any():
+        esc_upw = np.percentile(upw[upw > 0], 90) + 1e-9
+    else:
+        esc_upw = 1.0
+    upwn = np.clip(upw / esc_upw, 0.0, 1.0)
+    UPW_COOL = 0.30                                 # enfriamiento max por afloramiento
+    # SST: perfil latitudinal (como tair pero sin altitud, solo mar; `sst_perfil`
+    # ya calculado en (c2)) advectado por (cu,cv) con relajacion debil al
+    # OBJETIVO (perfil - afloramiento) -> lenguas calidas hacia los polos, frias
+    # hacia el ecuador segun el lado de la cuenca, y bordes orientales frios.
+    sst_obj = sst_perfil - UPW_COOL * upwn         # objetivo con agua fria aflorada
     sst = sst_perfil.copy()
     for _ in range(30):
         sst = _advect(sst, cu, cv, yy, xx)
-        sst = sst + 0.12 * (sst_perfil - sst)     # relajacion al perfil
-    sst[tierra] = sst_perfil[tierra]              # en tierra: valor de referencia
-    sst_anom = (sst - sst_perfil) * mar           # anomalia (calida/fria)
+        sst = sst + 0.12 * (sst_obj - sst)         # relajacion al objetivo
+    sst[tierra] = sst_perfil[tierra]               # en tierra: valor de referencia
+    sst_anom = (sst - sst_perfil) * mar            # anomalia (calida/fria)
+
+    if solo_corrientes:
+        return {"cu": cu, "cv": cv, "sst": np.where(mar, sst, 0.0),
+                "sst_anom": sst_anom, "psi": psi_tot}
 
     # Influencia de corrientes en la temperatura del aire: la costa junto a
     # corriente calida se templa y junto a fria se enfria. Se difunde la anomalia
-    # de SST unas celdas tierra adentro.
-    anom_costa = _suaviza(sst_anom, 4)
-    tair = tair + 0.35 * anom_costa * (maritimidad if True else 1.0)
+    # de SST bastantes celdas tierra adentro (acople reforzado: una corriente
+    # calida debe notarse en el clima de toda la franja costera, no solo en la
+    # orilla — piensa en la corriente del Golfo sobre Europa occidental).
+    anom_costa = _suaviza(sst_anom, 9)
+    tair = tair + 0.65 * anom_costa * maritimidad
 
     # ---------------- 4. humedad y lluvia (precip) ----------------
     # El vapor `q` nace sobre el mar: la evaporacion crece con la SST (mar frio
     # evapora poco -> costas junto a corriente fria = desierto costero tipo
-    # Atacama/Namib). El dial `humedad` escala la evaporacion.
-    evap = np.clip((sst + 0.15) * 0.6, 0.03, 1.2) * humedad * mar
+    # Atacama/Namib). El dial `precipitaciones` escala la evaporacion.
+    # (el dial NO multiplica aqui: el ciclo de lluvia es lineal en la
+    # evaporacion y la normalizacion lo dividiria de vuelta —el dial viejo era
+    # un no-op sobre la precip—; se aplica en _normaliza_precip, donde SI
+    # cambia el nivel final de lluvia que ven biomas, Koppen y rios)
+    evap = np.clip((sst + 0.15) * 0.6, 0.03, 1.2) * mar
+    # Acoplamiento corriente->evaporacion REFORZADO: las corrientes calidas
+    # (anom>0) humedecen la costa a sotavento y las frias/afloramiento (anom<0,
+    # bordes orientales) la secan (desiertos costeros). Se mantienen las
+    # invariantes (barlovento>sotavento, ecuador>lat25).
+    evap = evap * np.clip(1.0 + 0.55 * sst_anom, 0.25, 1.8)
     # ITCZ: franja ecuatorial de conveccion profunda.
     itcz = np.exp(-((lat_deg / 9.0) ** 2)) * np.ones_like(elev)
     calidez = np.clip(tair, 0.0, 1.0)
-    q = evap.copy()
-    precip = np.zeros_like(elev)
+    # Reciclaje continental (evapotranspiracion): una fraccion de la lluvia
+    # caida vuelve al aire y sigue viento abajo. Sin esto el vapor marino se
+    # agota a pocas celdas de la costa y TODO interior salia desierto.
+    reciclaje = (0.20 + 0.30 * calidez) * tierra
+    adv_asc = np.clip(vu * gx_e + vv * gy_e, 0.0, None)       # ascenso orografico
     K_HUM = 64
-    K_BASE, K_OROG, K_CONV = 0.022, 0.85, 0.060
-    for _ in range(K_HUM):
-        q = _advect(q, vu, vv, yy, xx)
-        # sobre el mar el aire se re-satura hacia la evaporacion local
-        q = np.where(mar, np.maximum(q, evap), q)
-        # lluvia sobre tierra
-        adv_asc = np.clip(vu * gx_e + vv * gy_e, 0.0, None)   # ascenso orografico
-        r = (K_BASE * q                                       # lluvia base
-             + K_OROG * q * adv_asc                           # orografica (barlovento)
-             + K_CONV * q * itcz * calidez)                   # conveccion ITCZ
-        r = r * tierra
-        r = np.minimum(r, q)          # no puede llover mas vapor del que hay
-        q = q - r
-        precip = precip + r
-    # normalizar la precipitacion a 0..1 (por percentil, robusto a picos)
-    if tierra.any():
-        pref = np.percentile(precip[tierra], 99) + 1e-9
-    else:
-        pref = 1.0
-    precip = np.clip(precip / pref, 0.0, 1.0)
+    K_BASE, K_OROG, K_CONV = 0.028, 0.85, 0.060
+
+    def _ciclo_lluvia(fuente_rib=None):
+        """Adveccion del vapor con lluvia base + orografica + convectiva.
+        `fuente_rib`: aporte de vapor por evapotranspiracion riberena (rios,
+        lagos y grandes cuencas del pase hidrologico previo), por iteracion."""
+        q = evap.copy()
+        pr = np.zeros_like(elev)
+        for _ in range(K_HUM):
+            q = _advect(q, vu, vv, yy, xx)
+            # sobre el mar el aire se re-satura hacia la evaporacion local
+            q = np.where(mar, np.maximum(q, evap), q)
+            if fuente_rib is not None:
+                q = q + fuente_rib
+            # lluvia sobre tierra
+            r = (K_BASE * q                                   # lluvia base
+                 + K_OROG * q * adv_asc                       # orografica (barlovento)
+                 + K_CONV * q * itcz * calidez)               # conveccion ITCZ
+            r = r * tierra
+            r = np.minimum(r, q)      # no puede llover mas vapor del que hay
+            q = q - r * (1.0 - reciclaje)   # parte se re-evapora y sigue
+            pr = pr + r
+        return pr
+
+    def _normaliza_precip(pr):
+        # normalizar a 0..1 por un percentil MEDIO-ALTO con gamma < 1: el viejo
+        # percentil 99 aplastaba casi toda la tierra hacia los tramos aridos de
+        # Whittaker/Koppen y el mapa salia sesgado a desierto. El dial
+        # `precipitaciones` escala AQUI el nivel final (con clip: un mundo muy
+        # humedo satura amplias zonas en 1).
+        if tierra.any():
+            pref = np.percentile(pr[tierra], 92) + 1e-9
+        else:
+            pref = 1.0
+        return np.clip(precipitaciones * pr / pref, 0.0, 1.0) ** 0.85
+
+    # PASE 1: lluvia puramente marina (los rios aun no existen)
+    precip = _normaliza_precip(_ciclo_lluvia())
 
     # ---------------- 5. glaciaciones (hielo) ----------------
     # Tierra: por debajo de un umbral de temperatura crece el casquete/glaciar
@@ -268,16 +470,17 @@ def simular_clima(elev, temperatura=0.0, humedad=1.0):
     # Se rompe la horizontalidad de las mesetas con ruido determinista minusculo
     # (rng LOCAL) para que el descenso mas empinado tenga siempre un ganador.
     elev_h = elev + rng_local.random(elev.shape) * 1e-4
-    # Direccion de drenaje: descenso mas empinado a 8 vecinos (toroidal). Se
-    # apila la elevacion de los 8 vecinos y se toma el minimo (vectorizado).
+    # Direccion de drenaje: descenso mas empinado a 8 vecinos (periodico en X,
+    # sin cruzar los polos). Se apila la elevacion de los 8 vecinos y se toma
+    # el minimo (vectorizado).
     offs = [(-1, -1), (-1, 0), (-1, 1), (0, -1),
             (0, 1), (1, -1), (1, 0), (1, 1)]
-    vecinos = np.stack([np.roll(np.roll(elev_h, -dy, 0), -dx, 1)
+    vecinos = np.stack([np.roll(rolly(elev_h, -dy), -dx, 1)
                         for dy, dx in offs], axis=0)          # (8,n,n)
     kmin = np.argmin(vecinos, axis=0)                         # dir del mas bajo
     vmin = np.take_along_axis(vecinos, kmin[None], 0)[0]      # su elevacion
     dyv = np.array([o[0] for o in offs]); dxv = np.array([o[1] for o in offs])
-    ry = (yy.astype(np.intp) + dyv[kmin]) % n
+    ry = np.clip(yy.astype(np.intp) + dyv[kmin], 0, n - 1)    # Y no envuelve
     rx = (xx.astype(np.intp) + dxv[kmin]) % n
     receptor = ry * n + rx                                    # indice destino plano
     idx = (yy.astype(np.intp) * n + xx.astype(np.intp))
@@ -285,48 +488,79 @@ def simular_clima(elev, temperatura=0.0, humedad=1.0):
     pozo = (vmin >= elev_h) | mar
     receptor = np.where(pozo, idx, receptor)
     receptor_f = receptor.ravel()
-    # Acumulacion de caudal: se siembra la precipitacion en tierra (poca sobre
-    # hielo) y se empuja K iteraciones aguas abajo con scatter-add via bincount
-    # (mas rapido que np.add.at; vectorizado, sin bucles por celda).
-    peso = ((precip + 0.02) * tierra * (1.0 - 0.9 * hielo_tierra)).ravel()
-    total = peso.copy()
-    contrib = peso.copy()
-    N = elev.size
-    for _ in range(96):
-        contrib = np.bincount(receptor_f, weights=contrib, minlength=N)
-        total = total + contrib
-        if contrib.sum() < 1e-6:
-            break
-    caudal = total.reshape(elev.shape)
-    # Rios: caudal por encima de un percentil (umbral relativo -> siempre hay
-    # red fluvial visible), solo en tierra sin hielo.
+    pozo2d = pozo & tierra
     tierra_libre = tierra & (hielo_tierra < 0.5)
-    if tierra_libre.any():
-        umb_rio = np.percentile(caudal[tierra_libre], 95)
-    else:
-        umb_rio = np.inf
-    rios = (caudal > umb_rio) & tierra_libre
-    # Lagos: pozos interiores (endorreicos) donde el caudal se estanca.
     vecino_mar = np.zeros_like(mar)
     for dy, dx in offs:
-        vecino_mar |= np.roll(np.roll(mar, dy, 0), dx, 1)
+        vecino_mar |= np.roll(rolly(mar, dy), dx, 1)
     interior = tierra & ~vecino_mar
-    pozo2d = pozo & tierra
-    if tierra_libre.any():
-        umb_lago = np.percentile(caudal[tierra_libre], 88)
-    else:
-        umb_lago = np.inf
-    lagos = pozo2d & interior & (caudal > umb_lago)
-    # Estuarios: celda de rio con vecino de mar (desembocadura); se dilata 1 px
-    # para que se vea.
-    estuarios = rios & vecino_mar
-    est_dil = estuarios.copy()
-    for dy, dx in offs:
-        est_dil |= np.roll(np.roll(estuarios, dy, 0), dx, 1)
-    estuarios = est_dil & tierra
+    N = elev.size
+    # Umbral de rio ABSOLUTO por celda de tierra (no percentil ni fraccion del
+    # agua real: ambos son invariantes a la escala de la lluvia). El viejo
+    # percentil 95 fijaba SIEMPRE el mismo 5% de celdas como rio, lloviera lo
+    # que lloviera; con umbral fijo la cantidad de rios EMERGE del calculo:
+    # mundo humedo -> mas caudal -> mas celdas lo superan -> mas rios.
+    UMBRAL_RIO = 4.5e-4 * float(tierra.sum())
+
+    def _drenaje(pr):
+        """Acumulacion de caudal (scatter-add via bincount) sembrando la precip
+        dada y umbrales absolutos para rios/lagos. Devuelve tambien el umbral
+        para construir `ribera` en la misma escala."""
+        peso = ((pr + 0.02) * tierra * (1.0 - 0.9 * hielo_tierra)).ravel()
+        total = peso.copy()
+        contrib = peso.copy()
+        for _ in range(96):
+            contrib = np.bincount(receptor_f, weights=contrib, minlength=N)
+            total = total + contrib
+            if contrib.sum() < 1e-6:
+                break
+        cau = total.reshape(elev.shape)
+        umb = UMBRAL_RIO
+        rio = (cau > umb) & tierra_libre
+        # Lagos: pozos interiores (endorreicos) donde el caudal se estanca.
+        lag = pozo2d & interior & (cau > 0.6 * umb)
+        # Estuarios: celda de rio con vecino de mar (desembocadura); se dilata
+        # 1 px para que se vea.
+        est = rio & vecino_mar
+        est_dil = est.copy()
+        for dy, dx in offs:
+            est_dil |= np.roll(rolly(est, dy), dx, 1)
+        return cau, rio, lag, est_dil & tierra, umb
+
+    def _ribera_de(cau, rio, lag, umb):
+        """Banda riberena (0..1): arranca en rios|lagos, suma el caudal alto
+        (rampa relativa al umbral de rio) y se DILATA unas celdas para que la
+        influencia abrace los cauces."""
+        rib = (rio | lag).astype(np.float64)
+        rib = np.maximum(rib, np.clip((cau - 0.5 * umb) / (4.0 * umb + 1e-9),
+                                      0.0, 1.0))
+        rib *= tierra
+        for _ in range(2):
+            dil = rib.copy()
+            for dy, dx in offs:
+                dil = np.maximum(dil, np.roll(rolly(rib, dy), dx, 1) * 0.85)
+            rib = dil
+        return np.clip(_suaviza(rib, 1), 0.0, 1.0) * tierra
+
+    caudal, rios, lagos, estuarios, umb_rio = _drenaje(precip)
+    ribera = _ribera_de(caudal, rios, lagos, umb_rio)
+
+    # ---------------- 6b. realimentacion rios -> humedad -> clima ----------
+    # PASE 2: los rios, lagos y grandes cuencas evapotranspiran; ese vapor
+    # viaja viento abajo y vuelve a llover. La precip FINAL (la mostrada, la de
+    # Koppen y la de biomas) ya siente la red fluvial, y el drenaje se recalcula
+    # con ella (los rios se auto-refuerzan de forma verosimil: valles humedos).
+    fuente_rib = 0.055 * ribera * (0.35 + 0.65 * calidez) * tierra
+    precip = _normaliza_precip(_ciclo_lluvia(fuente_rib))
+    caudal, rios, lagos, estuarios, umb_rio = _drenaje(precip)
+    ribera = _ribera_de(caudal, rios, lagos, umb_rio)
 
     # ---------------- 7. biomas (Whittaker simplificado) ----------------
-    bioma = _clasificar_biomas(tair, precip, hielo_tierra, tierra)
+    # se clasifica con la precip + bono ribereno (no la precip real devuelta): en
+    # frio -> taiga, templado -> bosque templado, calido -> bosque humedo, sin
+    # forzar bosque sobre hielo ni desiertos genuinos lejos del agua.
+    precip_bioma = np.clip(precip + BONO_RIBERA * ribera, 0.0, 1.0)
+    bioma = _clasificar_biomas(tair, precip_bioma, hielo_tierra, tierra)
 
     return {
         "tair": tair,
@@ -343,6 +577,12 @@ def simular_clima(elev, temperatura=0.0, humedad=1.0):
         # extras utiles para el render (no rompen el contrato: son claves de mas)
         "sst_anom": sst_anom,
         "tierra": tierra,
+        # funcion de corriente del flujo total: localiza los giros oceanicos
+        # (circuitos cerrados de corriente) para los renders y la capa web
+        "psi": psi_tot,
+        # humedad riberena (0..1): reutilizable por los renders de detalle/HD para
+        # empujar los biomas hacia bosque a lo largo de los cauces
+        "ribera": ribera,
         # direccion de drenaje (indice plano ry*n+rx de la celda receptora aguas
         # abajo): la usa render_clima_detalle para trazar los rios como lineas
         # vectoriales celda->receptor en vez de bloques upsampleados
@@ -353,7 +593,7 @@ def simular_clima(elev, temperatura=0.0, humedad=1.0):
 def _clasificar_biomas(tair, precip, hielo_tierra, tierra):
     """Clasificacion Whittaker simplificada sobre temperatura x precipitacion.
     Devuelve int8 con el id de bioma en tierra y -1 en el mar. Los umbrales
-    estan calibrados para que con temperatura=0, humedad=1 salga un reparto
+    estan calibrados para que con temperatura=0, precipitaciones=1 salga un reparto
     verosimil (selva ecuatorial, desiertos subtropicales, taiga/tundra polares)."""
     b = np.full(tair.shape, -1, np.int8)
     t = tair; p = precip
@@ -453,6 +693,9 @@ def render_clima(campos, elev):
 
     # --- flechas de corrientes sobre el mar, tintadas por anomalia de SST ---
     _flechas_corriente(d, cu, cv, sst_anom, mar, n)
+    # --- circuitos cerrados (giros oceanicos) donde la corriente es marcada ---
+    circ = circuitos_corriente(cu, cv, sst_anom, mar, campos.get("psi"))
+    _dibuja_circuitos(d, circ, n, n)
 
     return im
 
@@ -502,8 +745,16 @@ def render_clima_detalle(campos, elev_detalle, elev_c, temperatura=0.0):
     # hielo en tierra fino: misma rampa que simular_clima, ya con la tair fina
     hielo_tierra_det = (np.clip((np.float32(-0.30) - tair_det) / np.float32(0.30),
                                 0.0, 1.0) * tierra_det).astype(np.float32)
-    bioma_det = _clasificar_biomas(tair_det, precip_up, hielo_tierra_det, tierra_det)
-    del tair_det, tair_up, precip_up
+    # bono de humedad riberena upsampleado (empuja los biomas hacia bosque a lo
+    # largo de los cauces; solo afecta a la clasificacion, no a la precip mostrada)
+    ribera_c = campos.get("ribera")
+    if ribera_c is None:
+        ribera_c = np.zeros_like(campos["precip"])
+    ribera_up = np.clip(_upsample_bicubico_a(ribera_c, ny, nx), 0.0, 1.0)
+    precip_bioma = np.clip(precip_up + np.float32(BONO_RIBERA) * ribera_up, 0.0, 1.0)
+    del ribera_up
+    bioma_det = _clasificar_biomas(tair_det, precip_bioma, hielo_tierra_det, tierra_det)
+    del tair_det, tair_up, precip_up, precip_bioma
 
     # --- 3+4. ensamblado del color por canal (memoria: RGB float32 gigante) ---
     img = np.empty((ny, nx, 3), np.float32)
@@ -587,7 +838,7 @@ def render_clima_detalle(campos, elev_detalle, elev_c, temperatura=0.0):
             a = int(120 + 135 * min(float(caudal[i, j]) / cmax, 1.0))
             x0 = (j + 0.5) * kx; y0 = (i + 0.5) * ky
             x1 = (rj + 0.5) * kx; y1 = (ri + 0.5) * ky
-            # si el receptor envuelve el toro (salto enorme) no cruces el lienzo:
+            # si el receptor envuelve el borde Este-Oeste (salto enorme) no cruces el lienzo:
             # traza un tramo corto en el sentido local para no rayar el mapa
             if abs(rj - j) > 1 or abs(ri - i) > 1:
                 d.line([(x0, y0), (x0, y0)], fill=(40, 90, 180, a), width=ancho)
@@ -605,6 +856,9 @@ def render_clima_detalle(campos, elev_detalle, elev_c, temperatura=0.0):
     sst_anom = campos.get("sst_anom", np.zeros_like(elev_c))
     mar_c = ~(elev_c > 0.0)
     _flechas_corriente(d, cu, cv, sst_anom, mar_c, nc_x, escala=(kx + ky) * 0.5)
+    # circuitos cerrados (giros) escalados al lienzo grande
+    circ = circuitos_corriente(cu, cv, sst_anom, mar_c, campos.get("psi"))
+    _dibuja_circuitos(d, circ, nc_y, nc_x, escala=(kx + ky) * 0.5)
 
     return im
 
@@ -621,7 +875,7 @@ def _flechas_corriente(d, cu, cv, sst_anom, mar, n, escala=1.0):
     calida = np.array([230, 80, 60]); fria = np.array([90, 150, 235])
     paso = max(16, n // 12)
     s = float(escala)
-    w = max(1, int(round(s)))                 # grosor del trazo escalado
+    w = max(2, int(round(1.8 * s)))           # trazo grueso escalado (legible)
     for y in range(paso // 2, n - 2, paso):
         for x in range(paso // 2, n - 2, paso):
             sub = mar[y - 2:y + 3, x - 2:x + 3]
@@ -650,24 +904,190 @@ def _flechas_corriente(d, cu, cv, sst_anom, mar, n, escala=1.0):
             d.line([pa, (X1, Y1), pb], fill=col, width=w)
 
 
+# ---------------- circuitos de corriente (giros oceanicos) -----------------
+# Los giros terrestres (subtropicales/subpolares) son CIRCUITOS cerrados de
+# corriente. Aqui se detectan sobre la funcion de corriente psi del flujo
+# total: cada extremo local de |psi| en mar abierto es un candidato a centro de
+# giro y su circuito es el CONTORNO de psi a media altura entre el centro y la
+# costa (psi=0). Solo se aceptan los circuitos que CIERRAN sobre si mismos y
+# cuya rapidez media supera con margen a la mediana del oceano: los lazos se
+# dibujan unicamente donde las corrientes son marcadas.
+
+def _bilin_esf(F, y, x):
+    """Muestreo bilineal del campo F en el punto real (y, x): periodico en X,
+    recortado en Y (los polos no envuelven)."""
+    ny, nx = F.shape
+    y = min(max(y, 0.0), ny - 1.0)
+    y0 = int(np.floor(y)); x0 = int(np.floor(x))
+    fy = y - y0; fx = x - x0
+    x0 %= nx
+    y1 = min(y0 + 1, ny - 1); x1 = (x0 + 1) % nx
+    return float(F[y0, x0] * (1 - fy) * (1 - fx) + F[y0, x1] * (1 - fy) * fx
+                 + F[y1, x0] * fy * (1 - fx) + F[y1, x1] * fy * fx)
+
+
+def _dist_esf(y0, x0, y1, x1, ny, nx):
+    """Distancia en la malla esferica: envuelve solo en X (longitud)."""
+    dy = abs(y1 - y0)
+    dx = abs(x1 - x0); dx = min(dx, nx - dx)
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _traza_circuito(ps, gpx, gpy, cu, cv, marf, cy, cx, vmed):
+    """Sigue el contorno de psi al nivel 0.55*psi(centro) partiendo del anillo
+    del giro (cy,cx): paso tangente (el rotacional de psi apunta a lo largo del
+    contorno, en el sentido REAL de la corriente) + correccion de Newton hacia
+    el nivel. Devuelve (puntos [(x,y)...], rapidez_media) si el lazo cierra sin
+    tocar tierra y es rapido; None si no."""
+    ny, nx = marf.shape
+    nivel = 0.55 * _bilin_esf(ps, cy, cx)
+    # semilla: caminar desde el centro hacia +x y hacia -x hasta cruzar el
+    # nivel del contorno (con beta el giro es asimetrico: al oeste el gradiente
+    # es abrupto y cruza cerca; al este decae lento). Vale el primer cruce en
+    # mar de cualquiera de los dos lados.
+    seed = None
+    for r in np.arange(1.0, max(ny, nx) * 0.6, 0.5):
+        for lado in (1.0, -1.0):
+            xs = (cx + lado * r) % nx
+            if _bilin_esf(marf, cy, xs) < 0.7:
+                continue                      # ese lado topo tierra: probar el otro
+            if abs(_bilin_esf(ps, cy, xs)) <= abs(nivel):
+                seed = (float(cy), float(xs)); break
+        if seed is not None:
+            break
+    if seed is None:
+        return None
+    y, x = seed
+    paso = 0.6
+    puntos = [(x, y)]; raps = []
+    for i in range(int(6 * max(ny, nx))):
+        up = -_bilin_esf(gpy, y, x)          # rotacional de psi: tangente al
+        vp = _bilin_esf(gpx, y, x)           # contorno, sentido de la corriente
+        Lp = (up * up + vp * vp) ** 0.5
+        if Lp < 1e-9 or _bilin_esf(marf, y, x) < 0.6:
+            return None                       # contorno degenerado o toca tierra
+        x += paso * up / Lp; y += paso * vp / Lp
+        # correccion de Newton: reengancha el punto al nivel del contorno
+        e = _bilin_esf(ps, y, x) - nivel
+        gx = _bilin_esf(gpx, y, x); gy = _bilin_esf(gpy, y, x)
+        g2 = gx * gx + gy * gy + 1e-12
+        x = (x - e * gx / g2) % nx
+        y = min(max(y - e * gy / g2, 0.0), ny - 1.0)   # Y no envuelve
+        raps.append((_bilin_esf(cu, y, x) ** 2 + _bilin_esf(cv, y, x) ** 2) ** 0.5)
+        puntos.append((x, y))
+        if i > 15 and _dist_esf(y, x, seed[0], seed[1], ny, nx) < paso * 1.4:
+            rap = float(np.mean(raps))
+            if rap >= vmed * 1.15 and len(puntos) >= 20:
+                return puntos, rap            # cierra y es marcadamente rapido
+            return None
+    return None
+
+
+def circuitos_corriente(cu, cv, sst_anom, mar, psi, max_giros=6):
+    """Detecta los giros oceanicos y devuelve [{'puntos': [[x,y]...], 'anom':
+    anomalia SST media, 'fuerza': rapidez relativa 0..1}] con los circuitos
+    cerrados de corriente mas marcados (analogos a los giros terrestres)."""
+    if psi is None or not mar.any():
+        return []
+    ny, nx = mar.shape
+    marf = _suaviza(mar.astype(np.float64), 1)
+    vel = np.hypot(cu, cv)
+    vmed = float(np.median(vel[mar])) + 1e-9
+    vmax = float(vel[mar].max()) + 1e-9
+    ps = _suaviza(psi, 2) * mar
+    gpx, gpy = grad_periodic(ps)
+    aps = np.abs(ps)
+    # extremos locales de |psi| en ventana 5x5 con nivel alto -> centros de giro
+    vecmax = aps.copy()
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            if dy or dx:
+                vecmax = np.maximum(vecmax, np.roll(rolly(aps, dy), dx, 1))
+    umbral = float(np.percentile(aps[mar], 82))
+    cand = np.argwhere((aps >= vecmax) & mar & (aps >= umbral) & (aps > 0))
+    cand = sorted(cand.tolist(), key=lambda p: -aps[p[0], p[1]])
+    sep = max(6, min(ny, nx) // 10)
+    circuitos = []; centros = []
+    for cy, cx in cand:
+        if len(circuitos) >= max_giros:
+            break
+        if any(_dist_esf(cy, cx, y0, x0, ny, nx) < sep for y0, x0 in centros):
+            continue
+        tr = _traza_circuito(ps, gpx, gpy, cu, cv, marf, cy, cx, vmed)
+        centros.append((cy, cx))              # aunque falle: no reintentar al lado
+        if tr is None:
+            continue
+        puntos, rap = tr
+        anom = float(np.mean([_bilin_esf(sst_anom, p[1], p[0])
+                              for p in puntos[::4]]))
+        circuitos.append({"puntos": puntos, "anom": anom,
+                          "fuerza": min(1.0, rap / vmax)})
+    return circuitos
+
+
+def _dibuja_circuitos(d, circuitos, ny, nx, escala=1.0):
+    """Dibuja los circuitos (giros) como lazos gruesos cerrados con puntas de
+    flecha en el sentido de la corriente, tintados calida/fria por su anomalia.
+    Los lazos que envuelven el borde Este-Oeste se trocean en el salto para no rayar el
+    lienzo. `escala` posiciona sobre el lienzo final (como _flechas_corriente)."""
+    calida = np.array([230, 80, 60]); fria = np.array([90, 150, 235])
+    s = float(escala)
+    w = max(3, int(round(2.6 * s)))
+    for c in circuitos:
+        pts = c["puntos"]
+        if len(pts) < 8:
+            continue
+        t = float(np.clip(c["anom"] / 0.25, -1, 1))
+        col = tuple(int(v) for v in (fria + (calida - fria) * (t * 0.5 + 0.5)))
+        # trocear el lazo cerrado donde salta por el borde Este-Oeste
+        cerr = pts + [pts[0]]
+        tramos = [[cerr[0]]]
+        for p0, p1 in zip(cerr, cerr[1:]):
+            if abs(p1[0] - p0[0]) > nx / 2 or abs(p1[1] - p0[1]) > ny / 2:
+                tramos.append([])
+            tramos[-1].append(p1)
+        for tramo in tramos:
+            if len(tramo) < 2:
+                continue
+            xy = [(p[0] * s, p[1] * s) for p in tramo]
+            d.line(xy, fill=(255, 255, 255, 140), width=w + 3, joint="curve")
+            d.line(xy, fill=col + (235,), width=w, joint="curve")
+        # tres puntas de flecha equiespaciadas marcan el sentido del giro
+        m = len(pts)
+        for k in range(3):
+            i = (k * m) // 3; j = (i + 2) % m
+            if abs(pts[j][0] - pts[i][0]) > nx / 2 or abs(pts[j][1] - pts[i][1]) > ny / 2:
+                continue                       # el tramo cruza el borde E-O: saltar
+            ang = np.arctan2(pts[j][1] - pts[i][1], pts[j][0] - pts[i][0])
+            X, Y = pts[j][0] * s, pts[j][1] * s
+            cab = 5.0 * s
+            pa = (X - cab * np.cos(ang - 0.45), Y - cab * np.sin(ang - 0.45))
+            pb = (X - cab * np.cos(ang + 0.45), Y - cab * np.sin(ang + 0.45))
+            d.line([pa, (X, Y), pb], fill=col + (255,), width=w)
+
+
 # ============================ hidrologia fina (HD) =========================
 # La fisica (vientos/SST/precip/hielo/tair) se queda en la malla capada de
 # simular_clima: es fenomeno de gran escala. La HIDROLOGIA, en cambio, se
 # recalcula aqui sobre la elevacion DETALLADA (malla `res_hidro` <= 4096) para
-# que los rios sigan el terreno fino. Topologia TOROIDAL en todo. Sin rng
-# global: un generador local de semilla fija (12345, como simular_clima) rompe
-# los empates del drenaje sin tocar la continuacion bit-exacta de los mundos.
+# que los rios sigan el terreno fino. Topologia ESFERICA en todo: X (longitud)
+# periodica, Y (latitud) sin envolver (los polos son borde). Sin rng global:
+# un generador local de semilla fija (12345, como simular_clima) rompe los
+# empates del drenaje sin tocar la continuacion bit-exacta de los mundos.
 
 _OFFS8 = [(-1, -1), (-1, 0), (-1, 1), (0, -1),
           (0, 1), (1, -1), (1, 0), (1, 1)]
 
 
 def _min_vecinos8(W):
-    """Minimo sobre los 8 vecinos (EXCLUIDO el centro), toroidal. Se rellena UN
-    borde envolvente y se recorren VISTAS (sin copiar el array 8 veces con
-    np.roll, que a 4096^2 domina el costo)."""
+    """Minimo sobre los 8 vecinos (EXCLUIDO el centro): periodico en X, con
+    +inf mas alla de los polos (esos vecinos no existen). Se rellena UN borde
+    y se recorren VISTAS (sin copiar el array 8 veces con np.roll, que a
+    4096^2 domina el costo)."""
     ny, nx = W.shape
-    Wp = np.pad(W, 1, mode="wrap")
+    Wp = np.pad(W, ((1, 1), (0, 0)), mode="constant",
+                constant_values=np.float32(np.inf))
+    Wp = np.pad(Wp, ((0, 0), (1, 1)), mode="wrap")
     m = None
     for dy, dx in _OFFS8:
         nb = Wp[1 + dy:1 + dy + ny, 1 + dx:1 + dx + nx]
@@ -676,7 +1096,8 @@ def _min_vecinos8(W):
 
 
 def _rellenar_depresiones(elev, tierra, niter):
-    """Relleno de depresiones ACOTADO (Planchon-Darboux ascendente, toroidal).
+    """Relleno de depresiones ACOTADO (Planchon-Darboux ascendente; X periodico,
+    los polos no envuelven).
     Cada pasada sube los pozos de tierra a `min(vecino)+eps` (drenaje definido
     hacia el vecino mas bajo). El mar es el nivel de base fijo: no se sube. Tras
     `niter` pasadas, las depresiones grandes que no se llenaron quedan como
@@ -693,11 +1114,14 @@ def _rellenar_depresiones(elev, tierra, niter):
 
 
 def _receptor_d8(W, mar):
-    """Indice plano (fila*nx+col) del vecino MAS BAJO a 8 direcciones, toroidal.
-    Pozo (minimo local) o mar -> receptor = si mismo (nodo terminal). argmin
-    incremental para no apilar los 8 vecinos."""
+    """Indice plano (fila*nx+col) del vecino MAS BAJO a 8 direcciones
+    (periodico en X; mas alla de los polos no hay vecino: +inf). Pozo (minimo
+    local) o mar -> receptor = si mismo (nodo terminal). argmin incremental
+    para no apilar los 8 vecinos."""
     ny, nx = W.shape
-    Wp = np.pad(W, 1, mode="wrap")
+    Wp = np.pad(W, ((1, 1), (0, 0)), mode="constant",
+                constant_values=np.float32(np.inf))
+    Wp = np.pad(Wp, ((0, 0), (1, 1)), mode="wrap")
     best = np.full(W.shape, np.float32(np.inf), np.float32)
     kbest = np.zeros(W.shape, np.int8)
     for k, (dy, dx) in enumerate(_OFFS8):
@@ -709,8 +1133,8 @@ def _receptor_d8(W, mar):
                          np.arange(nx, dtype=np.int32), indexing="ij")
     dyv = np.array([o[0] for o in _OFFS8], np.int32)
     dxv = np.array([o[1] for o in _OFFS8], np.int32)
-    ry = (yy + dyv[kbest]) % ny
-    rx = (xx + dxv[kbest]) % nx
+    ry = np.clip(yy + dyv[kbest], 0, ny - 1)   # Y no envuelve (nunca elegido:
+    rx = (xx + dxv[kbest]) % nx                # el pad es +inf; clip por si acaso)
     recv = (ry * nx + rx).astype(np.int32)
     self_idx = (yy * nx + xx).astype(np.int32)
     pozo = (best >= W) | mar
@@ -757,16 +1181,42 @@ def _raices(recv_flat):
     return root
 
 
-def hidrologia_fina(elev_h, precip_h, hielo_h, umbral_frac=2.2e-4,
-                    niter_fill=None):
+def _meandro_visual(ny, nx, sinuosidad, tierra, rng):
+    """Campo de desplazamiento suave (dx, dy) en CELDAS de la malla hidro para
+    ondular las polilineas de los rios al dibujarlas/exportarlas. El drenaje D8
+    con relleno de depresiones tiende a rectas aunque se perturbe la elevacion
+    (el relleno aplana las cubetas del ruido y el flujo cruza el llano en linea
+    recta al desague), asi que el serpenteo VISIBLE se anade al TRAZO: un mismo
+    campo continuo desplaza cada vertice, con lo que los rios se ondulan
+    coherentes entre si y ningun tramo se rompe. Se atenua hacia la costa
+    (mascara de tierra difundida) para que las desembocaduras no bailen sobre
+    el mar. Determinista (comparte el rng local de la hidrologia)."""
+    amp = np.float32(1.8 * sinuosidad)
+    campos = []
+    for _ in range(2):
+        g = rng.standard_normal((max(6, ny // 20), max(6, nx // 20))).astype(np.float32)
+        o = _upsample_bicubico_a(g, ny, nx)
+        campos.append(amp * o / (float(np.abs(o).max()) + 1e-12))
+    borde = _suaviza(tierra.astype(np.float32), 3).astype(np.float32)
+    return ((campos[0] * borde).astype(np.float32),
+            (campos[1] * borde).astype(np.float32))
+
+
+def hidrologia_fina(elev_h, precip_h, hielo_h, umbral_frac=1.4e-4,
+                    niter_fill=None, sinuosidad=1.0):
     """Hidrologia de detalle sobre la elevacion FINA (malla `res_hidro`,
-    toroidal): D8 con relleno de depresiones acotado, acumulacion de caudal
+    esferica: X periodica, polos sin envolver): D8 con relleno de depresiones
+    acotado, acumulacion de caudal
     exacta, rios por AREA DE DRENAJE ABSOLUTA (fraccion del peso total de la
     tierra, no percentil: el percentil sobre fBm fino motea el mapa), lagos,
     estuarios y cuencas.
 
     elev_h: elevacion detallada (nhy,nhx) en -1..1 (0 = costa).
     precip_h, hielo_h: campos gruesos ya upsampleados a la malla hidro (0..1).
+    sinuosidad: amplitud del ruido de MEANDRO (0 = drenaje puro por pendiente,
+    rios rectos; 1 = normal; >1 muy serpenteante). El ruido dobla los cauces
+    sin cambiar de cuenca y ademas siembra depresiones suaves -> cuencas
+    endorreicas y lagos donde el terreno y la lluvia lo permiten.
     Devuelve dict con caudal, receptor(2d int32), rios/lagos/estuarios(bool),
     root(2d) de cuenca, tierra, y metadatos."""
     elev_h = np.asarray(elev_h, np.float32)
@@ -783,37 +1233,84 @@ def hidrologia_fina(elev_h, precip_h, hielo_h, umbral_frac=2.2e-4,
     # (red comparable al mapa clasico) y ademas acelera el relleno (menos pozos).
     pas = int(round(max(1, nx / 512)))
     elev_dren = _suaviza(elev_j, pas)
+    # ruido de MEANDRO: un campo suave de grano ANCHO (~12 granos por mapa)
+    # sumado SOLO en tierra, con amplitud pequena frente a las pendientes
+    # regionales pero muy por encima del desempate de 1e-4: los cauces lo
+    # rodean en detours largos en vez de bajar en rectas D8. La longitud de
+    # onda manda mucho mas que la amplitud, y el grano FINO es
+    # contraproducente (medido en un plano inclinado sintetico: ~12 granos
+    # triplica la sinuosidad L/D; ~21 granos o mezclar una octava fina la
+    # devuelve a ~1.5, porque el gradiente de alta frecuencia domina la
+    # direccion local y corta los detours). Ademas siembra depresiones suaves
+    # que el relleno acotado no siempre vacia -> cuencas endorreicas y lagos.
+    # Determinista (rng local de semilla fija).
+    if sinuosidad > 0.0:
+        ngr = 12
+        g = rng_local.standard_normal(
+            (max(6, ngr * ny // max(nx, 1)), ngr)).astype(np.float32)
+        # _upsample_bicubico_a devuelve una vista de solo-lectura (np.asarray
+        # sobre el buffer de PIL): normalizar SIN operar en sitio
+        meandro = _upsample_bicubico_a(g, ny, nx)
+        meandro = meandro / (float(np.abs(meandro).max()) + 1e-12)
+        elev_dren = elev_dren + (np.float32(0.008 * sinuosidad)
+                                 * meandro * tierra)
+        del g, meandro
     # el mar conserva su cota baja real: la tierra debe drenar a la costa fina
     elev_dren = np.where(mar, elev_j, elev_dren).astype(np.float32)
     del elev_j
     if niter_fill is None:
         niter_fill = int(max(24, min(96, nx // 24)))
     W = _rellenar_depresiones(elev_dren, tierra, niter_fill)
+    # agua embalsada: donde el relleno subio el terreno hay una depresion real
+    # (el "nivel de agua" W queda por encima del suelo del drenaje). Es la
+    # huella de los lagos EXTENDIDOS: tanto los que rebosan por un emisario
+    # (relleno completo) como los endorreicos (pozos residuales sin salida).
+    prof = (W - elev_dren) * tierra
     del elev_dren
     recv, self_idx = _receptor_d8(W, mar)
     del W
     recv_flat = recv.ravel()
     self_flat = self_idx.ravel()
-    # peso = area de drenaje ponderada por humedad; el hielo apenas aporta
+    # peso = area de drenaje ponderada por la precipitacion; el hielo apenas
+    # aporta. El suelo (0.12) pesa poco frente a la lluvia (0.88): la densidad
+    # de la red fluvial responde de verdad a cuanto llueve en cada cuenca
+    # (antes el suelo aportaba 0.3 y los desiertos criaban rios como si nada).
     hielo_t = np.clip(hielo_h, 0.0, 1.0) * tierra
-    peso = ((np.float32(0.3) + np.float32(0.7) * np.clip(precip_h, 0.0, 1.0))
+    peso = ((np.float32(0.12) + np.float32(0.88) * np.clip(precip_h, 0.0, 1.0))
             * tierra * (np.float32(1.0) - np.float32(0.9) * hielo_t)).astype(np.float64).ravel()
     caudal_flat, iters = _acumular_caudal(recv_flat, self_flat, peso)
     caudal = caudal_flat.reshape(ny, nx).astype(np.float32)
     del caudal_flat
     total = float(peso.sum()) + 1e-12
-    umb = np.float32(umbral_frac * total)
+    # umbral por REFERENCIA fija (0.5 = peso medio de un mundo normal), no por
+    # fraccion del agua real: asi la densidad de rios crece en un mundo humedo
+    # y baja en uno arido, en vez de salir siempre la misma
+    umb = np.float32(umbral_frac * 0.5 * (float(tierra.sum()) + 1e-9))
     tierra_libre = tierra & (hielo_t < 0.5)
     rios = (caudal > umb) & tierra_libre
-    # lagos: pozos residuales (terminal en tierra) con caudal grande
+    root = _raices(recv_flat)
+    # lagos EXTENDIDOS: la cubeta embalsada entera (prof = cuanto subio el
+    # relleno el suelo), no solo la celda del pozo. Cuentan tanto los lagos
+    # con emisario (la depresion se lleno y rebosa) como los ENDORREICOS
+    # (pozos residuales sin salida al mar). El lago solo se moja si su cuenca
+    # recoge agua de verdad (caudal en la raiz > 3x umbral de rio): en zonas
+    # aridas la cubeta queda seca — cuenca endorreica sin lago.
     sink2d = (recv_flat == self_flat).reshape(ny, nx)
-    lagos = sink2d & tierra & (caudal > umb * np.float32(3.0))
+    caudal_raiz = caudal.reshape(-1)[root].reshape(ny, nx)
+    lagos = (tierra_libre & (prof > np.float32(2e-4))
+             & (caudal_raiz > umb * np.float32(3.0)))
+    # el pozo terminal caudaloso siempre cuenta (lago minimo de 1 celda)
+    lagos |= sink2d & tierra_libre & (caudal > umb * np.float32(3.0))
+    del caudal_raiz, prof
     # estuarios: celda de rio junto al mar (desembocadura)
     vecino_mar = np.zeros((ny, nx), bool)
     for dy, dx in _OFFS8:
-        vecino_mar |= np.roll(np.roll(mar, dy, 0), dx, 1)
+        vecino_mar |= np.roll(rolly(mar, dy), dx, 1)
     estuarios = rios & vecino_mar
-    root = _raices(recv_flat).reshape(ny, nx)
+    root = root.reshape(ny, nx)
+    # desplazamiento de meandro para el TRAZO (render y JSON): ver helper
+    meandro = (_meandro_visual(ny, nx, sinuosidad, tierra, rng_local)
+               if sinuosidad > 0.0 else None)
     return {
         "caudal": caudal,
         "receptor": recv,
@@ -829,6 +1326,8 @@ def hidrologia_fina(elev_h, precip_h, hielo_h, umbral_frac=2.2e-4,
         "peso_total": total,
         "iters": int(iters),
         "res": (int(ny), int(nx)),
+        # (dx, dy) en celdas para ondular las polilineas al trazar, o None
+        "meandro": meandro,
     }
 
 
@@ -927,7 +1426,13 @@ def _campos_en_malla(campos, elev2, elev_c, ny2, nx2):
     precip = np.clip(_upsample_bicubico_a(campos["precip"], ny2, nx2), 0.0, 1.0)
     hielo = np.clip(_upsample_bicubico_a(campos["hielo"], ny2, nx2), 0.0, 1.0)
     hielo_t = np.clip((np.float32(-0.30) - tair) / np.float32(0.30), 0.0, 1.0) * tierra
-    bioma = _clasificar_biomas(tair, precip, hielo_t, tierra)
+    # bono ribereno solo para biomas (koppen conserva la precip real)
+    ribera_c = campos.get("ribera")
+    if ribera_c is None:
+        ribera_c = np.zeros_like(campos["precip"])
+    ribera = np.clip(_upsample_bicubico_a(ribera_c, ny2, nx2), 0.0, 1.0)
+    precip_bioma = np.clip(precip + BONO_RIBERA * ribera, 0.0, 1.0)
+    bioma = _clasificar_biomas(tair, precip_bioma, hielo_t, tierra)
     koppen = clasificar_koppen(tair, precip, hielo_t, tierra)
     return {"tierra": tierra, "alt": np.clip(elev2d, 0.0, 1.0), "tair": tair,
             "precip": precip, "hielo": hielo, "bioma": bioma, "koppen": koppen}
@@ -937,12 +1442,16 @@ def _dibujar_hidro_fina(d, hidro, nx, ny):
     """Traza rios/lagos/estuarios de la hidrologia FINA como polilineas continuas
     celda->receptor sobre el lienzo (nx,ny), escaladas desde la malla hidro. El
     ancho y el alpha crecen con el caudal. Se omiten los tramos que envuelven el
-    toro (saltos de mas de una celda) para no rayar el mapa."""
+    borde Este-Oeste (saltos de mas de una celda) para no rayar el mapa. Si `hidro` trae el
+    campo de meandro, cada vertice se desplaza con el (mismo campo continuo para
+    todos los tramos: los cauces se ondulan coherentes sin romperse)."""
     recv = hidro["receptor"]
     caudal = hidro["caudal"]
     rios = hidro["rios"]
     lagos = hidro["lagos"]
     estuarios = hidro["estuarios"]
+    meandro = hidro.get("meandro")
+    mdx, mdy = meandro if meandro is not None else (None, None)
     nhy, nhx = recv.shape
     kx = nx / nhx
     ky = ny / nhy
@@ -969,13 +1478,17 @@ def _dibujar_hidro_fina(d, hidro, nx, ny):
                 continue
             dj = rj - j
             di = ri - i
-            if abs(dj) > 1 or abs(di) > 1:   # envuelve el toro: no cruzar
+            if abs(dj) > 1 or abs(di) > 1:   # envuelve el borde E-O: no cruzar
                 continue
             frac = (np.log1p(c / umb) / np.log1p(cmax / umb)) if cmax > umb else 0.0
             w = max(1, int(round(base_w * (0.5 + 1.9 * frac))))
             a = int(110 + 140 * frac)
-            x0 = (j + 0.5) * kx; y0 = (i + 0.5) * ky
-            x1 = (rj + 0.5) * kx; y1 = (ri + 0.5) * ky
+            ox0 = oy0 = ox1 = oy1 = 0.0
+            if mdx is not None:              # meandro: desplazar los vertices
+                ox0 = float(mdx[i, j]); oy0 = float(mdy[i, j])
+                ox1 = float(mdx[ri, rj]); oy1 = float(mdy[ri, rj])
+            x0 = (j + 0.5 + ox0) * kx; y0 = (i + 0.5 + oy0) * ky
+            x1 = (rj + 0.5 + ox1) * kx; y1 = (ri + 0.5 + oy1) * ky
             d.line([(x0, y0), (x1, y1)], fill=(38, 96, 180, a), width=w)
     # estuarios: puntos turquesa
     ys, xs = np.nonzero(estuarios)
@@ -1007,8 +1520,26 @@ def render_clima_hd(campos, elev_detalle, elev_c, hidro, temperatura=0.0):
     del alt_up, alt_det, tair_up
     hielo_tierra_det = (np.clip((np.float32(-0.30) - tair_det) / np.float32(0.30),
                                 0.0, 1.0) * tierra_det).astype(np.float32)
-    bioma_det = _clasificar_biomas(tair_det, precip_up, hielo_tierra_det, tierra_det)
-    del tair_det, precip_up
+    # bono de humedad riberena: el grueso upsampleado REFORZADO con los rios/lagos
+    # FINOS de `hidro` (dilatados unos px) para que el bosque abrace los cauces
+    # nitidos del render HD. Solo afecta a la clasificacion de biomas.
+    ribera_c = campos.get("ribera")
+    if ribera_c is None:
+        ribera_c = np.zeros_like(campos["precip"])
+    ribera_up = np.clip(_upsample_bicubico_a(ribera_c, ny, nx), 0.0, 1.0).astype(np.float32)
+    hr = (hidro["rios"] | hidro["lagos"])
+    hrd = hr.copy()
+    for dy, dx in _OFFS8:
+        hrd |= np.roll(rolly(hr, dy), dx, 1)
+    nhy, nhx = hrd.shape
+    yi = (np.arange(ny) * nhy / ny).astype(np.intp)
+    xi = (np.arange(nx) * nhx / nx).astype(np.intp)
+    ribera_up = np.maximum(ribera_up, hrd[np.ix_(yi, xi)].astype(np.float32))
+    del hr, hrd, yi, xi
+    precip_bioma = np.clip(precip_up + np.float32(BONO_RIBERA) * ribera_up, 0.0, 1.0)
+    del ribera_up
+    bioma_det = _clasificar_biomas(tair_det, precip_bioma, hielo_tierra_det, tierra_det)
+    del tair_det, precip_up, precip_bioma
 
     img = np.empty((ny, nx, 3), np.float32)
     sst_up = _upsample_bicubico_a(campos["sst"], ny, nx)
@@ -1048,7 +1579,7 @@ def render_clima_hd(campos, elev_detalle, elev_c, hidro, temperatura=0.0):
 # ============================ exportacion de capas =========================
 
 def _marching_squares(campo, niveles, escx, escy):
-    """Isolineas por marching squares sobre `campo` (malla pequena, NO toroidal:
+    """Isolineas por marching squares sobre `campo` (malla pequena, NO envolvente:
     la ultima fila/columna no se procesa para no rayar el borde envolvente).
     Devuelve por nivel una lista de segmentos [[x0,y0],[x1,y1]] en pixeles del
     render (escalados por escx,escy). Segmentos cortos, ya recortados al borde."""
@@ -1133,12 +1664,14 @@ def _rios_json(hidro, nx, ny, n=12, cada=4):
     cuyo receptor es mar), se ordenan por caudal, se deduplican por cuenca y se
     trazan aguas ARRIBA siguiendo el afluente de mayor caudal. Se decima 1 punto
     cada `cada` celdas, se escala a pixeles de render y se parte en el borde
-    toroidal. Devuelve la lista lista para el JSON (aguas arriba -> abajo)."""
+    Este-Oeste. Devuelve la lista lista para el JSON (aguas arriba -> abajo)."""
     recv = hidro["receptor"]
     caudal = hidro["caudal"]
     rios = hidro["rios"]
     mar = hidro["mar"]
     root = hidro["root"]
+    meandro = hidro.get("meandro")
+    mdx, mdy = meandro if meandro is not None else (None, None)
     nhy, nhx = recv.shape
     kx = nx / nhx
     ky = ny / nhy
@@ -1179,7 +1712,10 @@ def _rios_json(hidro, nx, ny, n=12, cada=4):
             mejor = None; mejor_c = -1.0
             here = ci * nhx + cj
             for dy, dx in _OFFS8:
-                ni = (ci + dy) % nhy; nj = (cj + dx) % nhx
+                ni = ci + dy
+                if ni < 0 or ni >= nhy:          # no cruzar el polo
+                    continue
+                nj = (cj + dx) % nhx
                 if not rios[ni, nj]:
                     continue
                 if int(recv[ni, nj]) != here:
@@ -1197,7 +1733,7 @@ def _rios_json(hidro, nx, ny, n=12, cada=4):
         dec = camino[::cada]
         if dec[-1] != camino[-1]:
             dec.append(camino[-1])
-        # a pixeles + partir en el toro
+        # a pixeles + partir en el borde E-O
         polis = []
         actual = []
         prev = None
@@ -1207,7 +1743,12 @@ def _rios_json(hidro, nx, ny, n=12, cada=4):
                     if len(actual) >= 2:
                         polis.append(actual)
                     actual = []
-            actual.append([round((pj + 0.5) * kx, 1), round((pi + 0.5) * ky, 1)])
+            # meandro: mismo desplazamiento que el trazo del render HD, para
+            # que la capa web y el PNG dibujen exactamente el mismo cauce
+            ox = float(mdx[pi, pj]) if mdx is not None else 0.0
+            oy = float(mdy[pi, pj]) if mdy is not None else 0.0
+            actual.append([round((pj + 0.5 + ox) * kx, 1),
+                           round((pi + 0.5 + oy) * ky, 1)])
             prev = (pi, pj)
         if len(actual) >= 2:
             polis.append(actual)
@@ -1226,8 +1767,242 @@ def _quant(v, lo, hi):
                    0, 255).astype(np.uint8)
 
 
+def _bloque_max(a, ny2, nx2):
+    """Reduce (ny,nx)->(ny2,nx2) por MAXIMO de bloque (preserva rasgos finos como
+    los cauces, que la media borraria). Submuestreo si no divide exacto."""
+    ny, nx = a.shape
+    if (ny2, nx2) == (ny, nx):
+        return np.asarray(a)
+    if ny % ny2 == 0 and nx % nx2 == 0 and ny2 <= ny and nx2 <= nx:
+        ky, kx = ny // ny2, nx // nx2
+        return np.asarray(a).reshape(ny2, ky, nx2, kx).max(axis=(1, 3))
+    yi = (np.arange(ny2) * ny / ny2).astype(np.intp)
+    xi = (np.arange(nx2) * nx / nx2).astype(np.intp)
+    return np.asarray(a)[np.ix_(yi, xi)]
+
+
+def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
+                       civ_dials=None):
+    """Construye el `campo` de civ a una malla reducida a partir de los campos ya
+    calculados (Koppen + hidrologia fina), invoca civ.generar y escala el
+    resultado a pixeles de render. Ademas escribe {salida}_paises.png (overlay de
+    paises con fronteras) y {salida}_civ.png (mapa politico renderizado sobre el
+    clima HD, con asentamientos rotulados). Devuelve (dict JSON-listo, nombre_png).
+    civ_dials: {"semilla": int, "asentamientos": int, "paises": int,
+    "tam": int 0 auto | 1 grandes | 2 chicos} (0 = auto)."""
+    import zlib
+    civ_dials = civ_dials or {}
+    # malla de civilizacion: acotada para que el A*/Dijkstra en Python sea barato
+    ncw = int(min(nx, 200))
+    m = _campos_en_malla(campos, elev2, elev_c, ncw, ncw)
+    elev_w = _malla_bloques(elev2, ncw, ncw)
+    # rios/caudal/cuenca desde la hidrologia fina (max/any/nearest -> no se borran)
+    caudal_w = _bloque_max(hidro["caudal"], ncw, ncw).astype(np.float32)
+    cmax = float(caudal_w.max()) + 1e-9
+    caudal_w = np.clip(caudal_w / cmax, 0.0, 1.0)
+    rio_w = _bloque_max((hidro["rios"] | hidro["lagos"]).astype(np.uint8), ncw, ncw) > 0
+    hy, hx = hidro["root"].shape
+    yi = (np.arange(ncw) * hy / ncw).astype(np.intp)
+    xi = (np.arange(ncw) * hx / ncw).astype(np.intp)
+    cuenca_w = hidro["root"][np.ix_(yi, xi)]
+
+    campo = {
+        "tierra": m["tierra"], "mar": ~m["tierra"],
+        "elev": elev_w.astype(np.float32), "alt": m["alt"].astype(np.float32),
+        "koppen": m["koppen"].astype(np.int16), "caudal": caudal_w,
+        "rio": rio_w & m["tierra"], "cuenca": cuenca_w,
+    }
+    # semilla reproducible derivada de la geografia (no toca el rng de la sim);
+    # la semilla de civilizacion del usuario se MEZCLA: otra semilla civ = otros
+    # asentamientos/nombres/paises sobre la MISMA geografia
+    seed = zlib.crc32(np.ascontiguousarray(elev_c, np.float32).tobytes()) & 0x7FFFFFFF
+    seed ^= (int(civ_dials.get("semilla", 0)) * 0x9E3779B1) & 0x7FFFFFFF
+    civd = civ.generar(campo, seed,
+                       n_asent=int(civ_dials.get("asentamientos", 0)),
+                       n_paises=int(civ_dials.get("paises", 0)),
+                       tam_paises=int(civ_dials.get("tam", 0)))
+
+    kx = nx / ncw; ky = ny / ncw
+    tierra_f = elev2 > 0.0                     # costa FINA (la malla civ es gruesa)
+
+    def esc_polis(polis):
+        return [[round(p[0] * kx, 1), round(p[1] * ky, 1)] for p in polis]
+
+    def a_tierra(px, py):
+        """Ajusta un punto (px,py) render al pixel de TIERRA fina mas cercano si
+        cayo en mar por el desajuste malla-gruesa vs costa-fina (busca en espiral
+        acotada); asi los asentamientos costeros no quedan flotando en el agua."""
+        xi = int(min(nx - 1, max(0, round(px)))); yi = int(min(ny - 1, max(0, round(py))))
+        if tierra_f[yi, xi]:
+            return px, py
+        for r in range(1, int(max(kx, ky)) + 3):
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    ny2 = yi + dy
+                    if ny2 < 0 or ny2 >= ny:     # no cruzar el polo
+                        continue
+                    nx2 = (xi + dx) % nx
+                    if tierra_f[ny2, nx2]:
+                        return float(nx2), float(ny2)
+        return px, py
+
+    asent_j = []
+    for a in civd["asentamientos"]:
+        px = (a["j"] + 0.5) * kx; py = (a["i"] + 0.5) * ky
+        px, py = a_tierra(px, py)
+        asent_j.append({
+            "x": round(px, 1), "y": round(py, 1),
+            "nombre": a["nombre"], "rango": a["rango"], "poblacion": a["poblacion"],
+            "costa": a["costa"], "rio": a["rio"], "pais": a["pais"]})
+    caminos_j = [{"puntos": esc_polis(c["puntos"]), "clase": c["clase"]}
+                 for c in civd["caminos"]]
+    rutas_j = [{"puntos": esc_polis(r["puntos"]), "mar": r["mar"],
+                "a": r["a"], "b": r["b"]} for r in civd["rutas"]]
+
+    # ---- overlay de paises (RGBA) a res_koppen, con fronteras remarcadas ----
+    idmap = civd["paises"]["idmap"]           # (ncw,ncw) int, -1 mar/inalcanzable
+    lista = civd["paises"]["lista"]
+    nky, nkx = res_koppen
+    yk = (np.arange(nky) * ncw / nky).astype(np.intp)
+    xk = (np.arange(nkx) * ncw / nkx).astype(np.intp)
+    pmap = idmap[np.ix_(yk, xk)]
+    pal = np.zeros((max(1, len(lista)), 3), np.uint8)
+    for p in lista:
+        pal[p["id"]] = p["rgb"]
+    pa = np.zeros((nky, nkx, 4), np.uint8)
+    val = pmap >= 0
+    ids = np.clip(pmap, 0, max(0, len(lista) - 1))
+    for ch in range(3):
+        pa[..., ch] = np.where(val, pal[ids, ch], 0)
+    # interior casi opaco (235): con el opacity .6 del CSS queda ~55 % efectivo,
+    # igual que el overlay Koppen — antes iba a 120 y la capa apenas se veia
+    pa[..., 3] = np.where(val, 235, 0).astype(np.uint8)
+    # frontera: celda cuyo pais difiere de algun vecino (linea opaca oscura)
+    borde = np.zeros((nky, nkx), bool)
+    for dy, dx in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+        borde |= (np.roll(rolly(pmap, dy), dx, 1) != pmap)
+    borde &= val
+    for ch in range(3):
+        pa[..., ch] = np.where(borde, (pal[ids, ch] * 0.35).astype(np.uint8), pa[..., ch])
+    pa[..., 3] = np.where(borde, 255, pa[..., 3]).astype(np.uint8)
+    png_name = Path(salida).name + "_paises.png"
+    img_paises = Image.fromarray(pa, "RGBA")
+    img_paises.save(f"{salida}_paises.png")
+
+    paises_j = {"png": png_name,
+                "tierra": int(civd["paises"].get("tierra_total", 0)),
+                "lista": [{"id": p["id"], "nombre": p["nombre"], "rgb": p["rgb"],
+                           "area": p["area"],
+                           "poblacion": int(p.get("poblacion", 0))}
+                          for p in lista]}
+
+    # ---- raster de SUBREGIONES (provincias + cuencas marinas) a res_koppen ----
+    # id combinado 1-based en el PNG: R = byte bajo, G = byte alto, 0 = nada.
+    # ids 1..Nt provincias (tierra), Nt+1.. regiones marinas. La costa se toma
+    # de elev2 (fina), asi el raster respeta el litoral del render pleno y la
+    # pagina de regiones puede hacer hit-testing por pixel.
+    subr = civd.get("subregiones") or {}
+    lt = (subr.get("tierra") or {}).get("lista", [])
+    lm = (subr.get("mar") or {}).get("lista", [])
+    subregiones_j = None
+    if lt or lm:
+        it = (subr.get("tierra") or {}).get("idmap")
+        im2 = (subr.get("mar") or {}).get("idmap")
+        vacio = np.full((ncw, ncw), -1, np.int32)
+        it_k = (it if it is not None else vacio)[np.ix_(yk, xk)]
+        im_k = (im2 if im2 is not None else vacio)[np.ix_(yk, xk)]
+        ty = (np.arange(nky) * elev2.shape[0] / nky).astype(np.intp)
+        tx = (np.arange(nkx) * elev2.shape[1] / nkx).astype(np.intp)
+        tierra_k = elev2[np.ix_(ty, tx)] > 0.0
+        nt = len(lt)
+        comb = np.where(tierra_k,
+                        np.where(it_k >= 0, it_k + 1, 0),
+                        np.where(im_k >= 0, im_k + 1 + nt, 0)).astype(np.int32)
+        rid = np.zeros((nky, nkx, 3), np.uint8)
+        rid[..., 0] = (comb & 255).astype(np.uint8)
+        rid[..., 1] = ((comb >> 8) & 255).astype(np.uint8)
+        Image.fromarray(rid).save(f"{salida}_regiones.png")
+        subregiones_j = {
+            "png": Path(salida).name + "_regiones.png",
+            "res": [int(nkx), int(nky)],
+            "res_civ": [int(ncw), int(ncw)],
+            "tierra": [{"id": r["id"] + 1, "nombre": r["nombre"],
+                        "pais": r["pais"], "asentamiento": r["asent"],
+                        "rgb": r["rgb"], "area": r["area"]} for r in lt],
+            "mar": [{"id": r["id"] + 1 + nt, "nombre": r["nombre"],
+                     "rgb": r["rgb"], "area": r["area"]} for r in lm],
+        }
+
+    civ_json = {"asentamientos": asent_j, "caminos": caminos_j, "rutas": rutas_j,
+                "paises": paises_j, "subregiones": subregiones_j}
+    _render_civ_png(salida, civ_json, img_paises, nx, ny)
+    return (civ_json, png_name)
+
+
+def _render_civ_png(salida, civ_json, img_paises, nx, ny):
+    """Mapa POLITICO renderizado: el clima HD de fondo + tinte de paises +
+    caminos, rutas comerciales y asentamientos ROTULADOS (capitales y ciudades
+    siempre; pueblos y aldeas solo con el punto). Se guarda como
+    {salida}_civ.png; si el clima HD aun no existe, el fondo es plano."""
+    try:
+        base = Image.open(f"{salida}_climahd.png").convert("RGBA")
+        if base.size != (nx, ny):
+            base = base.resize((nx, ny), Image.BILINEAR)
+    except OSError:
+        base = Image.new("RGBA", (nx, ny), (24, 46, 74, 255))
+    tinte = img_paises.resize((nx, ny), Image.NEAREST)
+    # el overlay trae alpha 235 (interior, pensado para el visor) / 255
+    # (frontera): aqui el interior se atenua a ~120 para que el relieve
+    # respire debajo del tinte; la frontera queda opaca
+    ta = np.asarray(tinte).copy()
+    ta[..., 3] = np.where(ta[..., 3] >= 250, 255,
+                          ta[..., 3] // 2).astype(np.uint8)
+    img = Image.alpha_composite(base, Image.fromarray(ta, "RGBA"))
+    d = ImageDraw.Draw(img)
+    esc = max(1.0, nx / 1024.0)               # grosores/radios ~constantes en px vistos
+
+    for r in civ_json["caminos"]:
+        p = [tuple(q) for q in r["puntos"]]
+        if len(p) >= 2:
+            d.line(p, fill=(120, 88, 55, 230), width=max(1, int(round(1.5 * esc))))
+    for r in civ_json["rutas"]:
+        p = [tuple(q) for q in r["puntos"]]
+        if len(p) < 2:
+            continue
+        if r["mar"]:
+            # discontinua manual (PIL no trae dash): tramos alternos por segmento
+            on = True
+            for a, b in zip(p[:-1], p[1:]):
+                if on:
+                    d.line([a, b], fill=(45, 190, 200, 235),
+                           width=max(1, int(round(2.0 * esc))))
+                on = not on
+        else:
+            d.line(p, fill=(225, 178, 48, 245), width=max(2, int(round(2.5 * esc))))
+
+    radios = (2.2, 3.2, 4.6, 6.0)             # aldea, pueblo, ciudad, capital
+    for a in sorted(civ_json["asentamientos"], key=lambda q: q["rango"]):
+        x, y = a["x"], a["y"]
+        rr = radios[min(a["rango"], 3)] * esc
+        relleno = (246, 242, 232, 255) if a["rango"] >= 2 else (218, 212, 196, 255)
+        borde = (176, 42, 42, 255) if a["rango"] == 3 else (74, 58, 40, 255)
+        d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=relleno, outline=borde,
+                  width=max(1, int(round((1.6 if a["rango"] == 3 else 1.0) * esc))))
+        if a["rango"] == 3:
+            r2 = rr + 2.5 * esc
+            d.ellipse([x - r2, y - r2, x + r2, y + r2], outline=(176, 42, 42, 220),
+                      width=max(1, int(round(1.2 * esc))))
+        if a["rango"] >= 2:                    # rotulo con halo oscuro (legible)
+            tx, ty = x + rr + 3 * esc, y
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                d.text((tx + dx, ty + dy), a["nombre"], fill=(15, 14, 10, 220),
+                       anchor="lm")
+            d.text((tx, ty), a["nombre"], fill=(248, 245, 236, 255), anchor="lm")
+    img.convert("RGB").save(f"{salida}_civ.png")
+
+
 def exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
-                   res_datos, res_koppen, temperatura=0.0):
+                   res_datos, res_koppen, temperatura=0.0, civ_dials=None):
     """Escribe los artefactos de inspeccion/overlays del contrato:
     {salida}_koppen.png, _cuencas.png, _datos.png, _datos2.png y _capas.json.
     Coordenadas vectoriales en PIXELES DEL RENDER PLENO. Devuelve
@@ -1287,7 +2062,7 @@ def exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
     # frontera de cuenca: celda cuyo id difiere de algun vecino
     borde = np.zeros((ncy2, ncx2), bool)
     for dy, dx in ((0, 1), (1, 0), (0, -1), (-1, 0)):
-        borde |= (np.roll(np.roll(bmap, dy, 0), dx, 1) != bmap)
+        borde |= (np.roll(rolly(bmap, dy), dx, 1) != bmap)
     borde &= val
     for ch in range(3):
         cue[..., ch] = np.where(borde, (_CUENCA_RGB[ids, ch] * 0.45).astype(np.uint8), cue[..., ch])
@@ -1318,6 +2093,16 @@ def exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
                                    "v": round(float(cv[yy, xx]), 4),
                                    "anom": round(float(sst_anom[yy, xx]), 4)})
 
+    # ---- circuitos (giros oceanicos) escalados a px del lienzo ----
+    circuitos_j = []
+    for c in circuitos_corriente(cu, cv, sst_anom, mar_c, campos.get("psi")):
+        pts = c["puntos"][::2]                 # decimado suave: lazos redondos
+                                               # al hacer zoom sin inflar el JSON
+        circuitos_j.append({
+            "puntos": [[round(p[0] * kx_c, 1), round(p[1] * ky_c, 1)] for p in pts],
+            "anom": round(c["anom"], 4),
+            "fuerza": round(c["fuerza"], 3)})
+
     # ---- isoyetas (precip gruesa, decimada) ----
     niso = min(ncx, 160)
     niso_y = min(ncy, 160)
@@ -1333,7 +2118,14 @@ def exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
                                       [round(seg[1][0], 1), round(seg[1][1], 1)]]})
 
     # ---- rios ----
-    rios_j = _rios_json(hidro, nx, ny, n=12, cada=4)
+    rios_j = _rios_json(hidro, nx, ny, n=20, cada=4)
+
+    # ---- capa de civilizacion (asentamientos, caminos, rutas, paises) ----
+    # se calcula sobre una malla de civ reducida a partir de los mismos campos
+    # (Koppen + cuencas/rios), en formato vectorial legible; escala a px de render
+    civ_j, paises_png = _capa_civilizacion(campos, elev2, elev_c, hidro,
+                                           nx, ny, res_koppen, salida,
+                                           civ_dials=civ_dials)
 
     capas = {
         "version": 1,
@@ -1351,8 +2143,14 @@ def exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
         "cuencas": {"png": Path(salida).name + "_cuencas.png", "n": int(len(top_roots))},
         "vientos": vientos,
         "corrientes": corrientes,
+        "circuitos": circuitos_j,
         "isoyetas": {"niveles": niveles, "lineas": lineas},
         "rios": rios_j,
+        "asentamientos": civ_j["asentamientos"],
+        "caminos": civ_j["caminos"],
+        "rutas": civ_j["rutas"],
+        "paises": civ_j["paises"],
+        "subregiones": civ_j.get("subregiones"),
     }
     Path(f"{salida}_capas.json").write_text(
         _json.dumps(capas, separators=(",", ":"), ensure_ascii=False),
@@ -1364,8 +2162,8 @@ def exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
 if __name__ == "__main__":
     import time
 
-    SALIDA = ("/tmp/claude-1000/-home-okadath-Desktop-python-geo/"
-              "d53ea614-c73e-47ab-969a-a50bf62af55d/scratchpad")
+    SALIDA = str(Path(__file__).resolve().parent / "salidas" / "autoprueba")
+    Path(SALIDA).mkdir(parents=True, exist_ok=True)
 
     def _elev_sintetico(n):
         """Un continente central (oceano al este y al oeste) con una CORDILLERA
@@ -1404,15 +2202,19 @@ if __name__ == "__main__":
         ("templado",  0.0, 1.0),
         ("frio",     -0.7, 1.0),
         ("calido_arido", 0.6, 0.35),
+        ("humedo",    0.0, 1.8),
     ]
     resultados = {}
-    for nombre, temp, hum in escenarios:
-        c = simular_clima(elev, temp, hum)
+    for nombre, temp, prec in escenarios:
+        c = simular_clima(elev, temp, prec)
         render_clima(c, elev).save(f"{SALIDA}/prueba_clima_{nombre}.png")
         resultados[nombre] = c
+        b = c["bioma"]; nt = float((elev > 0).sum())
+        desierto = float(((b == 4) | (b == 5)).sum()) / nt
         print(f"[{nombre:14s}] tmedia_tierra={c['tair'][elev>0].mean():+.3f}  "
               f"hielo={float((c['hielo']>0.5).mean()):.4f}  "
-              f"rios={int(c['rios'].sum())}  estuarios={int(c['estuarios'].sum())}")
+              f"rios={int(c['rios'].sum())}  estuarios={int(c['estuarios'].sum())}  "
+              f"desierto={desierto:.3f}")
 
     # ---- invariantes ----
     tmpl = resultados["templado"]
@@ -1452,6 +2254,21 @@ if __name__ == "__main__":
     # (d) hay rios y estuarios.
     assert tmpl["rios"].sum() > 0, "no hay rios"
     assert tmpl["estuarios"].sum() > 0, "no hay estuarios"
+
+    # (e) la red fluvial responde al dial de precipitaciones (umbral absoluto,
+    #     no percentil): mundo humedo -> mas celdas de rio que mundo arido.
+    r_hum = int(resultados["humedo"]["rios"].sum())
+    r_ari = int(resultados["calido_arido"]["rios"].sum())
+    r_tmp = int(tmpl["rios"].sum())
+    print(f"rios humedo={r_hum}  templado={r_tmp}  arido={r_ari}")
+    assert r_hum > r_tmp > r_ari, "los rios deberian crecer con la lluvia"
+
+    # (f) sin sesgo desertico: en el mundo templado el desierto (calido+frio)
+    #     no domina la tierra.
+    b = tmpl["bioma"]
+    frac_des = float(((b == 4) | (b == 5)).sum()) / float(tierra.sum())
+    print(f"fraccion de desierto (templado) = {frac_des:.3f}")
+    assert frac_des < 0.35, "demasiado desierto en un mundo templado"
 
     # ---- rendimiento a 256^2 ----
     elev256 = _elev_sintetico(256)

@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tecto — subregiones</title>
+<style>
+  :root {
+    --fondo: #10141c; --panel: #171d28; --borde: #262f40;
+    --texto: #dde4ee; --tenue: #8090a5; --acento: #3fb8af; --rojo: #d06a5a;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--texto);
+    font: 15px/1.5 system-ui, sans-serif; min-height: 100vh;
+  }
+  header { padding: 16px 26px 6px; display: flex; align-items: baseline; gap: 14px; }
+  h1 { margin: 0; font-size: 20px; font-weight: 650; }
+  h1 small { color: var(--tenue); font-weight: 400; margin-left: 10px; font-size: 13px; }
+  header a { color: var(--acento); font-size: 13px; text-decoration: none; }
+  main {
+    display: grid; grid-template-columns: 1fr 340px; gap: 18px;
+    padding: 12px 26px 26px; align-items: start;
+  }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  section {
+    background: var(--panel); border: 1px solid var(--borde);
+    border-radius: 12px; padding: 14px;
+  }
+  h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
+       letter-spacing: .08em; color: var(--tenue); font-weight: 600; }
+  button {
+    background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px;
+    cursor: pointer; white-space: nowrap;
+  }
+  button:hover { border-color: var(--acento); }
+  .vacio { color: var(--tenue); font-size: 13px; }
+  .error { color: var(--rojo); }
+
+  /* visor con zoom/paneo (mismo esquema que el visor HD del index) */
+  .visor-ctrl { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+                font-size: 13px; margin-bottom: 10px; }
+  .visor-ctrl label { display: inline-flex; gap: 5px; align-items: center;
+                      cursor: pointer; color: var(--texto); }
+  .visor-ctrl input[type=checkbox] { accent-color: var(--acento); }
+  .visor-ctrl input[type=range] { width: 90px; accent-color: var(--acento); }
+  #visor {
+    position: relative; overflow: hidden; border-radius: 10px;
+    border: 1px solid var(--borde); background: #0a0d13; cursor: crosshair;
+    width: 100%;
+  }
+  #visor.agarrando { cursor: grabbing; }
+  #lienzo { position: absolute; inset: 0; transform-origin: 0 0; }
+  #lienzo > img, #lienzo > canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    image-rendering: pixelated; user-select: none; -webkit-user-drag: none;
+  }
+  #tip {
+    position: absolute; pointer-events: none; transform: translate(12px, 14px);
+    background: rgba(10, 13, 19, .92); border: 1px solid var(--borde);
+    border-radius: 8px; padding: 5px 9px; font-size: 12.5px; max-width: 260px;
+    z-index: 3;
+  }
+  #tip b { color: var(--acento); }
+
+  /* panel lateral */
+  .cuad { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+          margin-right: 7px; vertical-align: -1px; border: 1px solid rgba(255,255,255,.25); }
+  #ficha .fila-dato { display: flex; justify-content: space-between; gap: 10px;
+                      font-size: 13.5px; padding: 2px 0; }
+  #ficha .fila-dato span { color: var(--tenue); }
+  #ficha ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+  #ficha li { margin: 1px 0; }
+  #seleccion .item, .arbol .item {
+    display: flex; align-items: center; gap: 4px; padding: 3px 6px;
+    border-radius: 7px; font-size: 13.5px; cursor: pointer;
+  }
+  #seleccion .item:hover, .arbol .item:hover { background: rgba(63,184,175,.10); }
+  .arbol .item.sel { background: rgba(63,184,175,.18); }
+  .arbol .item .area { margin-left: auto; color: var(--tenue); font-size: 12px;
+                       font-variant-numeric: tabular-nums; }
+  .arbol { max-height: 46vh; overflow: auto; }
+  .arbol .grupo { margin: 8px 0 2px; font-size: 12.5px; font-weight: 600; }
+  .arbol .grupo .cuad { width: 10px; height: 10px; }
+  #seleccion .item .quitar { margin-left: auto; color: var(--rojo); border: 0;
+                             background: none; font-size: 14px; padding: 0 4px; }
+  #resumen-sel { font-size: 12.5px; color: var(--tenue); margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>subregiones<small id="sub-titulo"></small></h1>
+  <a href="/">← volver al simulador</a>
+  <a href="#" id="a-juego">🎮 jugar conquista</a>
+</header>
+<main>
+  <section>
+    <div class="visor-ctrl">
+      <label><input type="checkbox" id="cb-tinte" checked>colorear todas las regiones</label>
+      <label>opacidad <input type="range" id="rg-alfa" min="0" max="100" value="42"></label>
+      <label><input type="checkbox" id="cb-asent" checked>asentamientos</label>
+      <label><input type="checkbox" id="cb-rotulos" checked>rótulos de selección</label>
+      <button type="button" id="b-reset">⟲ zoom</button>
+      <button type="button" id="b-limpiar">limpiar selección</button>
+    </div>
+    <div id="visor">
+      <div id="lienzo">
+        <img id="base" alt="mapa">
+        <canvas id="cv-regiones"></canvas>
+        <canvas id="cv-sel"></canvas>
+        <canvas id="cv-civ"></canvas>
+      </div>
+      <div id="tip" hidden></div>
+    </div>
+    <p class="vacio" id="estado">cargando…</p>
+  </section>
+  <div>
+    <section id="ficha-caja">
+      <h2>región</h2>
+      <div id="ficha"><div class="vacio">pasa el cursor o haz clic sobre el mapa</div></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>selección</h2>
+      <div id="seleccion"><div class="vacio">nada seleccionado</div></div>
+      <div id="resumen-sel" hidden></div>
+    </section>
+    <section style="margin-top:14px">
+      <h2>todas las regiones</h2>
+      <div class="arbol" id="arbol"></div>
+    </section>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  const sello = q.get("sello") || "", stem = q.get("d") || "";
+  // mismas reglas que el allowlist del servidor: si no cuadran, ni intentamos
+  if (!/^[0-9]{8}-[0-9]{6}(?:-[0-9]+)?$/.test(sello) ||
+      !/^d[0-9]{6}_f[0-9]+_[0-9a-f]{6}$/.test(stem)) {
+    $("estado").textContent = "Falta ?sello=…&d=… válidos en la URL (abre esta página desde un detalle).";
+    $("estado").className = "error";
+    return;
+  }
+  const RUTA = `/salidas/${sello}/detalles/${stem}`;
+  $("sub-titulo").textContent = `${sello} · ${stem}`;
+  $("a-juego").href = `/juego?sello=${sello}&d=${stem}`;
+
+  // ---- estado ----
+  const st = {
+    scale: 1, tx: 0, ty: 0,
+    capas: null,            // capas.json
+    ids: null, rw: 0, rh: 0,// raster de ids (Uint16 por pixel) y su resolución
+    reg: new Map(),         // id -> región {nombre, tipo, pais?, rgb, area}
+    sel: new Set(),         // ids seleccionados
+    hover: 0,               // id bajo el cursor (0 = nada)
+    nx: 1024, ny: 1024,
+    asentPorReg: new Map(), // id región -> [asentamientos]
+    totalCeldas: 1,
+  };
+  const visor = $("visor"), lienzo = $("lienzo"), tip = $("tip");
+  const base = $("base"), cvR = $("cv-regiones"), cvS = $("cv-sel"), cvC = $("cv-civ");
+
+  function cargarImg(url) {
+    return new Promise((ok, mal) => {
+      const im = new Image();
+      im.onload = () => ok(im); im.onerror = () => mal(new Error(url));
+      im.src = url;
+    });
+  }
+
+  // ---- carga: capas.json + raster de ids + imagen base ----
+  fetch(`${RUTA}_capas.json`).then(r => {
+    if (!r.ok) throw new Error("capas.json");
+    return r.json();
+  }).then(c => {
+    st.capas = c;
+    const sr = c.subregiones;
+    if (!sr || !sr.png) throw new Error("este detalle no trae subregiones (regenera el detalle)");
+    [st.nx, st.ny] = c.resolucion || [1024, 1024];
+    visor.style.aspectRatio = st.nx + " / " + st.ny;
+    st.totalCeldas = (sr.res_civ ? sr.res_civ[0] * sr.res_civ[1] : 40000);
+    for (const r of (sr.tierra || [])) st.reg.set(r.id, Object.assign({ tipo: "tierra" }, r));
+    for (const r of (sr.mar || [])) st.reg.set(r.id, Object.assign({ tipo: "mar" }, r));
+    base.src = `${RUTA}_climahd.png`;
+    base.onerror = () => { base.onerror = null; base.src = `${RUTA}.png`; };
+    return cargarImg(`${RUTA}_regiones.png`);
+  }).then(im => {
+    st.rw = im.naturalWidth; st.rh = im.naturalHeight;
+    const cv = document.createElement("canvas");
+    cv.width = st.rw; cv.height = st.rh;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(im, 0, 0);
+    const d = ctx.getImageData(0, 0, st.rw, st.rh).data;
+    const ids = new Uint16Array(st.rw * st.rh);
+    for (let i = 0, o = 0; i < ids.length; i++, o += 4) ids[i] = d[o] | (d[o + 1] << 8);
+    st.ids = ids;
+    indexarAsentamientos();
+    pintarRegiones();
+    pintarSel();
+    pintarCiv();
+    pintarArbol();
+    $("estado").textContent = "clic = seleccionar / deseleccionar · rueda = zoom · arrastrar = paneo";
+  }).catch(e => {
+    $("estado").textContent = "No se pudo cargar: " + e.message;
+    $("estado").className = "error";
+  });
+
+  function idEn(rx, ry) {          // rx,ry en píxeles de render -> id del raster
+    if (!st.ids) return 0;
+    let x = Math.floor(rx * st.rw / st.nx), y = Math.floor(ry * st.rh / st.ny);
+    if (x < 0 || y < 0 || x >= st.rw || y >= st.rh) return 0;
+    return st.ids[y * st.rw + x];
+  }
+
+  function indexarAsentamientos() {
+    for (const a of (st.capas.asentamientos || [])) {
+      const id = idEn(a.x, a.y);
+      if (!id) continue;
+      if (!st.asentPorReg.has(id)) st.asentPorReg.set(id, []);
+      st.asentPorReg.get(id).push(a);
+    }
+  }
+
+  // ---- capa 1: tinte de todas las regiones + fronteras (se pinta una vez) ----
+  function pintarRegiones() {
+    cvR.width = st.rw; cvR.height = st.rh;
+    const alfa = Math.round(parseInt($("rg-alfa").value) * 2.55);
+    const tinte = $("cb-tinte").checked;
+    const img = cvR.getContext("2d").createImageData(st.rw, st.rh);
+    const px = img.data, ids = st.ids, W = st.rw, H = st.rh;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, id = ids[i];
+        if (!id) continue;
+        const r = st.reg.get(id);
+        if (!r) continue;
+        // frontera: el id difiere del vecino derecho o inferior
+        const bd = (x + 1 < W && ids[i + 1] !== id && ids[i + 1] !== undefined) ||
+                   (y + 1 < H && ids[i + W] !== id);
+        const o = i * 4;
+        if (bd) {
+          px[o] = r.rgb[0] * .35; px[o + 1] = r.rgb[1] * .35; px[o + 2] = r.rgb[2] * .35;
+          px[o + 3] = 235;
+        } else if (tinte) {
+          px[o] = r.rgb[0]; px[o + 1] = r.rgb[1]; px[o + 2] = r.rgb[2];
+          px[o + 3] = alfa;
+        }
+      }
+    }
+    cvR.getContext("2d").putImageData(img, 0, 0);
+  }
+
+  // ---- capa 2: selección + hover (se repinta al cambiar) ----
+  function pintarSel() {
+    cvS.width = st.rw; cvS.height = st.rh;
+    const ctx = cvS.getContext("2d");
+    if (!st.sel.size && !st.hover) return;
+    const img = ctx.createImageData(st.rw, st.rh);
+    const px = img.data, ids = st.ids, W = st.rw, H = st.rh;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x, id = ids[i];
+        if (!id) continue;
+        const sel = st.sel.has(id), hov = id === st.hover;
+        if (!sel && !hov) continue;
+        const r = st.reg.get(id);
+        if (!r) continue;
+        const bd = (x + 1 < W && ids[i + 1] !== id) || (y + 1 < H && ids[i + W] !== id) ||
+                   (x > 0 && ids[i - 1] !== id) || (y > 0 && ids[i - W] !== id);
+        const o = i * 4;
+        if (sel) {
+          if (bd) { px[o] = 255; px[o + 1] = 240; px[o + 2] = 160; px[o + 3] = 255; }
+          else {
+            px[o] = Math.min(255, r.rgb[0] * 1.25 + 30);
+            px[o + 1] = Math.min(255, r.rgb[1] * 1.25 + 30);
+            px[o + 2] = Math.min(255, r.rgb[2] * 1.25 + 30);
+            px[o + 3] = 150;
+          }
+        } else {                        // hover: velo claro suave
+          px[o] = 255; px[o + 1] = 255; px[o + 2] = 255; px[o + 3] = bd ? 200 : 55;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    rotularSel(ctx);
+  }
+
+  // rótulo de cada región seleccionada en su centroide (aproximado)
+  function rotularSel(ctx) {
+    if (!$("cb-rotulos").checked || !st.sel.size) return;
+    const ids = st.ids, W = st.rw, H = st.rh;
+    const acc = new Map();
+    for (const id of st.sel) acc.set(id, [0, 0, 0]);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const a = acc.get(ids[y * W + x]);
+        if (a) { a[0] += x; a[1] += y; a[2]++; }
+      }
+    }
+    const fs = Math.max(10, W / 90);
+    ctx.font = `600 ${fs}px system-ui, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const [id, a] of acc) {
+      if (!a[2]) continue;
+      const r = st.reg.get(id), x = a[0] / a[2], y = a[1] / a[2];
+      ctx.lineWidth = fs / 4; ctx.strokeStyle = "rgba(15,14,10,.85)";
+      ctx.strokeText(r.nombre, x, y);
+      ctx.fillStyle = "#f6f3ea"; ctx.fillText(r.nombre, x, y);
+    }
+  }
+
+  // ---- capa 3: asentamientos (puntos; capitales y ciudades con nombre) ----
+  const RANGO_R = [1.6, 2.6, 3.8, 5.2], RANGO_NOM = ["aldea", "pueblo", "ciudad", "capital"];
+  function pintarCiv() {
+    cvC.width = st.nx; cvC.height = st.ny;
+    cvC.hidden = !$("cb-asent").checked;
+    if (cvC.hidden) return;
+    const ctx = cvC.getContext("2d");
+    const esc = Math.max(1, st.nx / 1024);
+    for (const a of (st.capas.asentamientos || [])) {
+      const rr = (RANGO_R[a.rango] || 1.6) * esc;
+      ctx.beginPath(); ctx.arc(a.x, a.y, rr, 0, 6.2832);
+      ctx.fillStyle = a.rango >= 2 ? "#f4f0e6" : "#d8d2c2"; ctx.fill();
+      ctx.lineWidth = esc * (a.rango === 3 ? 1.6 : 1);
+      ctx.strokeStyle = a.rango === 3 ? "#b02a2a" : "#5a4632"; ctx.stroke();
+      if (a.rango >= 2) {
+        const fs = esc * (a.rango === 3 ? 9 : 7.5);
+        ctx.font = `${fs}px system-ui, sans-serif`; ctx.textBaseline = "middle";
+        ctx.lineWidth = esc * 2.2; ctx.strokeStyle = "rgba(20,18,14,.8)";
+        ctx.strokeText(a.nombre, a.x + rr + 2 * esc, a.y);
+        ctx.fillStyle = "#f6f3ea"; ctx.fillText(a.nombre, a.x + rr + 2 * esc, a.y);
+      }
+    }
+  }
+
+  // ---- panel: ficha de una región ----
+  function nombrePais(pid) {
+    const ls = (st.capas.paises && st.capas.paises.lista) || [];
+    const p = ls.find(x => x.id === pid);
+    return p ? p.nombre : null;
+  }
+  function fila(rot, val) {
+    return `<div class="fila-dato"><span>${rot}</span><b>${val}</b></div>`;
+  }
+  function ficha(id) {
+    const r = st.reg.get(id);
+    if (!r) { $("ficha").innerHTML = `<div class="vacio">pasa el cursor o haz clic sobre el mapa</div>`; return; }
+    const pct = (100 * r.area / st.totalCeldas).toFixed(1);
+    let h = `<div style="font-weight:650;font-size:15px;margin-bottom:6px">` +
+      `<i class="cuad" style="background:rgb(${r.rgb.join(",")})"></i>${r.nombre}</div>`;
+    h += fila("tipo", r.tipo === "mar" ? "cuenca marina" : "provincia");
+    if (r.tipo === "tierra") {
+      const pn = nombrePais(r.pais);
+      if (pn) h += fila("país", pn);
+    }
+    h += fila("superficie", `${pct} % del mundo`);
+    const asent = st.asentPorReg.get(id) || [];
+    if (asent.length) {
+      h += `<div class="fila-dato"><span>asentamientos</span><b>${asent.length}</b></div><ul>` +
+        asent.slice().sort((a, b) => b.rango - a.rango || b.poblacion - a.poblacion)
+          .map(a => `<li>${a.nombre} · ${RANGO_NOM[a.rango]} · ${a.poblacion.toLocaleString("es")} hab.</li>`)
+          .join("") + `</ul>`;
+    }
+    $("ficha").innerHTML = h;
+  }
+
+  // ---- panel: selección + árbol de todas las regiones ----
+  function pintarSeleccion() {
+    const caja = $("seleccion");
+    if (!st.sel.size) {
+      caja.innerHTML = `<div class="vacio">nada seleccionado</div>`;
+      $("resumen-sel").hidden = true;
+    } else {
+      caja.innerHTML = "";
+      let celdas = 0;
+      for (const id of st.sel) {
+        const r = st.reg.get(id);
+        if (!r) continue;
+        celdas += r.area;
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `<i class="cuad" style="background:rgb(${r.rgb.join(",")})"></i>` +
+          `${r.nombre}<button class="quitar" title="quitar">✕</button>`;
+        div.onclick = e => {
+          if (e.target.classList.contains("quitar")) alternar(id);
+          else ficha(id);
+        };
+        caja.appendChild(div);
+      }
+      $("resumen-sel").hidden = false;
+      $("resumen-sel").textContent = `${st.sel.size} región(es) · ` +
+        `${(100 * celdas / st.totalCeldas).toFixed(1)} % del mundo`;
+    }
+    // sincronizar el árbol
+    for (const el of document.querySelectorAll(".arbol .item")) {
+      el.classList.toggle("sel", st.sel.has(parseInt(el.dataset.id)));
+    }
+  }
+
+  function pintarArbol() {
+    const arbol = $("arbol");
+    arbol.innerHTML = "";
+    const sr = st.capas.subregiones;
+    const paises = (st.capas.paises && st.capas.paises.lista) || [];
+    const porPais = new Map();
+    for (const r of (sr.tierra || [])) {
+      if (!porPais.has(r.pais)) porPais.set(r.pais, []);
+      porPais.get(r.pais).push(r);
+    }
+    const item = r => {
+      const div = document.createElement("div");
+      div.className = "item"; div.dataset.id = r.id;
+      const pct = (100 * r.area / st.totalCeldas).toFixed(1);
+      div.innerHTML = `<i class="cuad" style="background:rgb(${r.rgb.join(",")})"></i>` +
+        `${r.nombre}<span class="area">${pct} %</span>`;
+      div.onclick = () => { alternar(r.id); ficha(r.id); };
+      return div;
+    };
+    for (const p of paises) {
+      const g = document.createElement("div");
+      g.className = "grupo";
+      g.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>${p.nombre}`;
+      arbol.appendChild(g);
+      for (const r of (porPais.get(p.id) || [])) arbol.appendChild(item(r));
+    }
+    if ((sr.mar || []).length) {
+      const g = document.createElement("div");
+      g.className = "grupo";
+      g.innerHTML = `<i class="cuad" style="background:#2d6fb0"></i>mar — cuencas`;
+      arbol.appendChild(g);
+      for (const r of sr.mar) arbol.appendChild(item(r));
+    }
+  }
+
+  function alternar(id) {
+    if (!st.reg.has(id)) return;
+    if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
+    pintarSel();
+    pintarSeleccion();
+  }
+
+  // ---- zoom / paneo / hover / clic ----
+  function aplicar() {
+    lienzo.style.transform = `translate(${st.tx}px,${st.ty}px) scale(${st.scale})`;
+  }
+  function acotar() {
+    const W = visor.clientWidth, H = visor.clientHeight;
+    const sw = W * st.scale, sh = H * st.scale;
+    st.tx = sw <= W ? (W - sw) / 2 : Math.min(0, Math.max(W - sw, st.tx));
+    st.ty = sh <= H ? (H - sh) / 2 : Math.min(0, Math.max(H - sh, st.ty));
+  }
+  function coord(e) {
+    const r = visor.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const W = visor.clientWidth, H = visor.clientHeight;
+    const wx = (mx - st.tx) / st.scale, wy = (my - st.ty) / st.scale;
+    return { mx, my, rx: wx * st.nx / W, ry: wy * st.ny / H };
+  }
+  visor.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = visor.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const wx = (mx - st.tx) / st.scale, wy = (my - st.ty) / st.scale;
+    const f = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+    const ns = Math.min(16, Math.max(1, st.scale * f));
+    st.tx = mx - wx * ns; st.ty = my - wy * ns; st.scale = ns;
+    acotar(); aplicar();
+  }, { passive: false });
+
+  let abajo = null, movio = false;
+  visor.addEventListener("mousedown", e => {
+    abajo = { x: e.clientX, y: e.clientY }; movio = false;
+  });
+  window.addEventListener("mouseup", e => {
+    if (abajo && !movio && st.ids) {          // clic sin arrastre = seleccionar
+      const c = coord(e), id = idEn(c.rx, c.ry);
+      if (id) { alternar(id); ficha(id); }
+    }
+    abajo = null; visor.classList.remove("agarrando");
+  });
+  visor.addEventListener("mousemove", e => {
+    if (abajo) {
+      if (Math.abs(e.clientX - abajo.x) + Math.abs(e.clientY - abajo.y) > 4) {
+        movio = true; visor.classList.add("agarrando");
+      }
+      if (movio) {
+        st.tx += e.movementX; st.ty += e.movementY;
+        acotar(); aplicar();
+      }
+      return;
+    }
+    if (!st.ids) return;
+    const c = coord(e), id = idEn(c.rx, c.ry);
+    if (id !== st.hover) { st.hover = id; pintarSel(); }
+    const r = st.reg.get(id);
+    if (r) {
+      tip.hidden = false;
+      tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
+      const pn = r.tipo === "tierra" ? nombrePais(r.pais) : null;
+      tip.innerHTML = `<b>${r.nombre}</b><br>` +
+        (r.tipo === "mar" ? "cuenca marina" : "provincia" + (pn ? ` · ${pn}` : ""));
+      ficha(id);
+    } else tip.hidden = true;
+  });
+  visor.addEventListener("mouseleave", () => {
+    tip.hidden = true;
+    if (st.hover) { st.hover = 0; pintarSel(); }
+  });
+
+  $("b-reset").onclick = () => { st.scale = 1; st.tx = 0; st.ty = 0; aplicar(); };
+  $("b-limpiar").onclick = () => { st.sel.clear(); pintarSel(); pintarSeleccion(); };
+  $("cb-tinte").onchange = pintarRegiones;
+  $("rg-alfa").oninput = pintarRegiones;
+  $("cb-asent").onchange = pintarCiv;
+  $("cb-rotulos").onchange = pintarSel;
+})();
+</script>
+</body>
+</html>

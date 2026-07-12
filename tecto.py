@@ -12,8 +12,10 @@ Tres capas de abstraccion:
   3. RENDER: elevacion = isostasia(C) - nivel del mar, tinte hipsometrico,
      bordes de placa marcados donde |div| o cizalla son altos.
 
-Todo toroidal (mapa periodico). Costo por paso: unas cuantas FFTs 48x48 y
-operaciones vectorizadas 256x256 -> corre cientos de pasos por segundo.
+Geometria ESFERICA (mapa equirrectangular): el eje X (longitud) es periodico
+y el eje Y (latitud) termina en los polos (NO envuelve; borde Neumann). Costo
+por paso: unas cuantas FFTs 48x48 y operaciones vectorizadas 256x256 -> corre
+cientos de pasos por segundo.
 """
 import json
 import shutil
@@ -104,56 +106,91 @@ MAR_AMPLITUD = 0.03     # amplitud de la variacion eustatica del nivel del mar:
 # --- diales de la capa climatica (solo render, ver clima.py) ---
 TEMPERATURA = 0.0       # -1 = bola de nieve .. 0 = templado (Tierra) .. +1 =
                         # invernadero; desplaza toda la curva termica del planeta
-HUMEDAD = 1.0           # 0.2 = arido .. 1 = normal .. 2 = muy humedo; escala la
-                        # evaporacion/lluvia (mas humedo = mas selva y rios)
+PRECIPITACIONES = 1.0   # 0.2 = arido .. 1 = normal .. 2 = muy humedo; escala la
+                        # evaporacion/lluvia (mas lluvia = mas selva y rios)
 
 # ---------------- utilidades ----------------
+# Geometria esferica sobre malla equirrectangular: X (longitud) envuelve con
+# np.roll; Y (latitud) NO envuelve — los polos son borde. `rolly` es el
+# desplazamiento en Y que replica la fila del borde (condicion Neumann), y
+# `rollg` elige el desplazamiento correcto segun el eje.
+
+def rolly(f, s, axis=0):
+    """np.roll SIN envolver a lo largo de `axis` (el eje de latitud): las filas
+    que saldrian por un polo se sustituyen por la fila del borde (replicada)."""
+    g = np.roll(f, s, axis)
+    if s == 0:
+        return g
+    dst = [slice(None)] * f.ndim
+    src = [slice(None)] * f.ndim
+    if s > 0:
+        dst[axis] = slice(0, s); src[axis] = slice(0, 1)
+    else:
+        dst[axis] = slice(s, None); src[axis] = slice(-1, None)
+    g[tuple(dst)] = f[tuple(src)]
+    return g
+
+def rollg(f, s, axis):
+    """Desplazamiento geo-consciente: periodico en X (ultimo eje = longitud),
+    con borde replicado en Y (penultimo eje = latitud)."""
+    return np.roll(f, s, axis) if axis == f.ndim - 1 else rolly(f, s, axis)
+
 def grad_periodic(f):
-    fy = (np.roll(f, -1, 0) - np.roll(f, 1, 0)) * 0.5
+    """Gradiente centrado: periodico en X, unilateral (borde replicado) en Y."""
+    fy = (rolly(f, -1) - rolly(f, 1)) * 0.5
     fx = (np.roll(f, -1, 1) - np.roll(f, 1, 1)) * 0.5
     return fx, fy
 
 def lap_periodic(f, axes=(0, 1)):
+    """Laplaciano de 5 puntos: periodico en X, Neumann (borde replicado) en Y.
+    Para arrays 3D (z,y,x) el penultimo eje es la latitud."""
     out = -2 * len(axes) * f
     for a in axes:
-        out += np.roll(f, 1, a) + np.roll(f, -1, a)
+        out += rollg(f, 1, a) + rollg(f, -1, a)
     return out
 
 def poisson_fft(rhs):
-    """Resuelve lap(phi) = rhs en malla periodica via FFT.
+    """Resuelve lap(phi) = rhs via FFT: periodico en X y con condicion Neumann
+    en los polos (extension PAR en Y: se refleja el dominio y se resuelve en el
+    doble de filas; la mitad superior es la solucion con flujo nulo en los
+    bordes de latitud).
 
     Amortigua los modos de escala mas grande: sin esto 1/k^2 hace que
     domine una sola celda de conveccion global; fisicamente las celdas
     miden ~la profundidad del manto, no todo el dominio.
     """
-    ky = np.fft.fftfreq(rhs.shape[0]) * 2 * np.pi
-    kx = np.fft.fftfreq(rhs.shape[1]) * 2 * np.pi
+    ny = rhs.shape[0]
+    rhs2 = np.concatenate([rhs, rhs[::-1]], axis=0)   # extension par en Y
+    ky = np.fft.fftfreq(rhs2.shape[0]) * 2 * np.pi
+    kx = np.fft.fftfreq(rhs2.shape[1]) * 2 * np.pi
     k2 = ky[:, None] ** 2 + kx[None, :] ** 2
     k2[0, 0] = 1.0
-    k0 = 2 * np.pi * 2.5 / rhs.shape[0]          # ~2.5 celdas por dominio
+    k0 = 2 * np.pi * 2.5 / ny                    # ~2.5 celdas por dominio
     damp = 1.0 - np.exp(-k2 / k0 ** 2)
-    phi = np.fft.ifft2(np.fft.fft2(rhs) * damp / -k2).real
-    return phi
+    phi = np.fft.ifft2(np.fft.fft2(rhs2) * damp / -k2).real
+    return phi[:ny]
 
 def advect(f, u, v, dt):
-    """Adveccion semi-lagrangiana periodica (backtrace bilineal)."""
+    """Adveccion semi-lagrangiana (backtrace bilineal): periodica en X,
+    recortada en Y (nada entra ni sale por los polos)."""
     ny, nx = f.shape
     yy, xx = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
     sx = (xx - u * dt) % nx
-    sy = (yy - v * dt) % ny
+    sy = np.clip(yy - v * dt, 0.0, ny - 1)
     x0 = np.floor(sx).astype(int); y0 = np.floor(sy).astype(int)
     fx = sx - x0; fy = sy - y0
-    x1 = (x0 + 1) % nx; y1 = (y0 + 1) % ny
+    x1 = (x0 + 1) % nx; y1 = np.minimum(y0 + 1, ny - 1)
     return (f[y0, x0] * (1 - fx) * (1 - fy) + f[y0, x1] * fx * (1 - fy)
             + f[y1, x0] * (1 - fx) * fy + f[y1, x1] * fx * fy)
 
 def upsample(f, ny, nx):
-    """Bilineal periodico de la malla del manto a la del mapa."""
+    """Bilineal (periodico en X, recortado en Y) de la malla del manto a la del
+    mapa."""
     y = np.arange(ny) * f.shape[0] / ny
     x = np.arange(nx) * f.shape[1] / nx
     y0 = np.floor(y).astype(int); x0 = np.floor(x).astype(int)
     fy = (y - y0)[:, None]; fx = (x - x0)[None, :]
-    y1 = (y0 + 1) % f.shape[0]; x1 = (x0 + 1) % f.shape[1]
+    y1 = np.minimum(y0 + 1, f.shape[0] - 1); x1 = (x0 + 1) % f.shape[1]
     return (f[np.ix_(y0, x0)] * (1 - fy) * (1 - fx) + f[np.ix_(y0, x1)] * (1 - fy) * fx
             + f[np.ix_(y1, x0)] * fy * (1 - fx) + f[np.ix_(y1, x1)] * fy * fx)
 
@@ -171,16 +208,17 @@ def _upsample_suave(f, ny, nx):
     y0 = np.floor(y).astype(int); x0 = np.floor(x).astype(int)
     fy = (y - y0)[:, None]; fx = (x - x0)[None, :]
     fy = fy * fy * (3.0 - 2.0 * fy); fx = fx * fx * (3.0 - 2.0 * fx)
-    y1 = (y0 + 1) % f.shape[0]; x1 = (x0 + 1) % f.shape[1]
+    y1 = np.minimum(y0 + 1, f.shape[0] - 1); x1 = (x0 + 1) % f.shape[1]
     return (f[np.ix_(y0, x0)] * (1 - fy) * (1 - fx) + f[np.ix_(y0, x1)] * (1 - fy) * fx
             + f[np.ix_(y1, x0)] * fy * (1 - fx) + f[np.ix_(y1, x1)] * fy * fx)
 
 def _upsample_bicubico(f, factor):
     """Bicubico periodico via PIL para los campos de detallar: continuo y sin
     los rombos/mesetas que bilineal o smoothstep dejan a grandes aumentos.
-    Rellena un margen toroidal, escala y recorta."""
+    Rellena un margen (periodico en X, replicado en Y), escala y recorta."""
     m = 4
-    g = np.pad(np.asarray(f, np.float32), m, mode="wrap")
+    g = np.pad(np.asarray(f, np.float32), ((m, m), (0, 0)), mode="edge")
+    g = np.pad(g, ((0, 0), (m, m)), mode="wrap")
     im = Image.fromarray(g, mode="F").resize(
         (g.shape[1] * factor, g.shape[0] * factor), Image.BICUBIC)
     a = np.asarray(im)
@@ -203,13 +241,14 @@ def _fbm(rng_d, ny, nx, esc0=8, persistencia=0.55):
     return out / np.float32(np.percentile(np.abs(out), 99.5) + 1e-9)
 
 def label_components(mask):
-    """Componentes conexas en malla periodica por propagacion de maximos.
+    """Componentes conexas por propagacion de maximos (periodico solo en X:
+    los polos no conectan filas opuestas).
 
     Puro numpy: cada celda toma el id maximo de sus vecinas hasta converger.
-    La propagacion a los 4 vecinos (periodicos) se hace por SLICING con max
-    in-place en vez de np.roll: mismo resultado bit a bit, pero sin el
-    overhead por-llamada de np.roll (normalize_axis, empty_like...), que
-    dominaba el perfil (~2.4x mas rapido en 256x256, el caso del render).
+    La propagacion a los 4 vecinos se hace por SLICING con max in-place en vez
+    de np.roll: mismo resultado bit a bit, pero sin el overhead por-llamada de
+    np.roll (normalize_axis, empty_like...), que dominaba el perfil (~2.4x mas
+    rapido en 256x256, el caso del render).
     """
     idx = np.arange(mask.size, dtype=np.int64).reshape(mask.shape)
     lab = np.where(mask, idx, -1)
@@ -217,9 +256,7 @@ def label_components(mask):
     for _ in range(2 * mask.shape[0]):
         nxt = lab.copy()
         np.maximum(nxt[1:], lab[:-1], out=nxt[1:])      # vecino de arriba
-        np.maximum(nxt[:1], lab[-1:], out=nxt[:1])      # ... con wrap toroidal
         np.maximum(nxt[:-1], lab[1:], out=nxt[:-1])     # vecino de abajo
-        np.maximum(nxt[-1:], lab[:1], out=nxt[-1:])
         np.maximum(nxt[:, 1:], lab[:, :-1], out=nxt[:, 1:])    # vecino izquierdo
         np.maximum(nxt[:, :1], lab[:, -1:], out=nxt[:, :1])
         np.maximum(nxt[:, :-1], lab[:, 1:], out=nxt[:, :-1])   # vecino derecho
@@ -252,8 +289,9 @@ class Mantle:
         self.plumes = []   # plumas activas: derivan lento y tienen vida finita
 
     def _blob(self, cy, cx, r):
-        """Gaussiana periodica centrada en (cy,cx)."""
-        dy = np.abs(np.arange(MY)[:, None] - cy); dy = np.minimum(dy, MY - dy)
+        """Gaussiana centrada en (cy,cx): periodica en X, recta en Y (los
+        polos no se tocan)."""
+        dy = np.abs(np.arange(MY)[:, None] - cy)
         dx = np.abs(np.arange(MX)[None, :] - cx); dx = np.minimum(dx, MX - dx)
         return np.exp(-(dy ** 2 + dx ** 2) / (2 * r ** 2))
 
@@ -270,7 +308,10 @@ class Mantle:
         alive = []
         for p in self.plumes:
             p["age"] += 1
-            p["y"] = (p["y"] + p["dy"]) % MY
+            p["y"] += p["dy"]
+            if p["y"] < 0.0 or p["y"] > MY - 1:   # rebota en el polo (no envuelve)
+                p["dy"] = -p["dy"]
+                p["y"] = min(max(p["y"], 0.0), float(MY - 1))
             p["x"] = (p["x"] + p["dx"]) % MX
             if p["age"] < p["life"]:
                 fade = min(p["age"] / 60, 1.0, (p["life"] - p["age"]) / 60)
@@ -397,7 +438,7 @@ class Crust:
             # siguen moviendo esa placa, hasta que sea consumida por completo
             pull = self.trench
             for sh in (1, 2, 3, 4):
-                pull = 0.2 * (pull + np.roll(pull, sh, 0) + np.roll(pull, -sh, 0)
+                pull = 0.2 * (pull + rolly(pull, sh) + rolly(pull, -sh)
                               + np.roll(pull, sh, 1) + np.roll(pull, -sh, 1))
             pull = np.clip(pull / max(pull.max(), 1e-3), 0, 1)
             tx, ty = grad_periodic(pull)
@@ -422,7 +463,7 @@ class Crust:
         for _ in range(HALO_PLACA):
             for ax in (0, 1):
                 for sh in (1, -1):
-                    vec = np.roll(lab_ext, sh, ax)
+                    vec = rollg(lab_ext, sh, ax)
                     lab_ext = np.where((lab_ext < 0) & (vec >= 0), vec, lab_ext)
         inv_ext = np.searchsorted(self.lab_ids, lab_ext.ravel())
         nlab = len(self.lab_ids)
@@ -447,7 +488,7 @@ class Crust:
             prev = terr
             for ax in (0, 1):
                 for sh in (1, -1):
-                    vec = np.roll(terr, sh, ax)
+                    vec = rollg(terr, sh, ax)
                     terr = np.where((terr < 0) & (vec >= 0), vec, terr)
             if np.array_equal(prev, terr):     # mapa sin continentes
                 break
@@ -479,7 +520,8 @@ class Crust:
         # rotacion rigida (polo de Euler): ademas de trasladarse, cada placa
         # gira segun el torque que el flujo ejerce sobre su huella; sin esto
         # las balsas solo se trasladan y la deriva se ve robotica. Se ajusta
-        # la rotacion por minimos cuadrados alrededor del centroide toroidal
+        # la rotacion por minimos cuadrados alrededor del centroide (media
+        # circular SOLO en X; en Y la media es lineal: los polos no envuelven)
         yy0, xx0 = np.meshgrid(np.arange(LGRID), np.arange(LGRID), indexing="ij")
 
         def _cmedia(q):
@@ -487,8 +529,9 @@ class Crust:
             s = np.bincount(inv_ext, np.sin(a), minlength=nlab)
             c = np.bincount(inv_ext, np.cos(a), minlength=nlab)
             return (np.arctan2(s, c) % (2 * np.pi)) * LGRID / (2 * np.pi)
-        cy, cx = _cmedia(yy0), _cmedia(xx0)
-        ry = (yy0.ravel() - cy[inv_ext] + LGRID / 2) % LGRID - LGRID / 2
+        cy = np.bincount(inv_ext, yy0.ravel().astype(float), minlength=nlab) / cnt
+        cx = _cmedia(xx0)
+        ry = yy0.ravel() - cy[inv_ext]
         rx = (xx0.ravel() - cx[inv_ext] + LGRID / 2) % LGRID - LGRID / 2
         r2 = np.bincount(inv_ext, ry ** 2 + rx ** 2, minlength=nlab) + 1e-9
         om = np.bincount(inv_ext, rx * (vs - mv[inv_ext]) - ry * (us - mu[inv_ext]),
@@ -520,9 +563,9 @@ class Crust:
         # suavizar la cuantizacion de la malla de balsas (bloques de 4 px que
         # de otro modo depositan crestas en escalera en los bordes de placa)
         for sh in (1, 2, 3):
-            u_raft = 0.2 * (u_raft + np.roll(u_raft, sh, 0) + np.roll(u_raft, -sh, 0)
+            u_raft = 0.2 * (u_raft + rolly(u_raft, sh) + rolly(u_raft, -sh)
                             + np.roll(u_raft, sh, 1) + np.roll(u_raft, -sh, 1))
-            v_raft = 0.2 * (v_raft + np.roll(v_raft, sh, 0) + np.roll(v_raft, -sh, 0)
+            v_raft = 0.2 * (v_raft + rolly(v_raft, sh) + rolly(v_raft, -sh)
                             + np.roll(v_raft, sh, 1) + np.roll(v_raft, -sh, 1))
         # peso: continente firme, pero un rift activo lo ablanda para
         # que las plumas nuevas aun puedan desgarrarlo
@@ -563,24 +606,24 @@ class Crust:
         self.open_mem *= np.clip(1.0 - conv * 20.0, 0.0, 1.0)   # la fosa la apaga
         opn = self.open_mem
         for sh in (1, 1, 2, 2):
-            opn = 0.2 * (opn + np.roll(opn, sh, 0) + np.roll(opn, -sh, 0)
+            opn = 0.2 * (opn + rolly(opn, sh) + rolly(opn, -sh)
                          + np.roll(opn, sh, 1) + np.roll(opn, -sh, 1))
         fondo = opn
         for sh in (1, 2, 3, 4):
-            fondo = 0.2 * (fondo + np.roll(fondo, sh, 0) + np.roll(fondo, -sh, 0)
+            fondo = 0.2 * (fondo + rolly(fondo, sh) + rolly(fondo, -sh)
                            + np.roll(fondo, sh, 1) + np.roll(fondo, -sh, 1))
         eje = np.zeros(opn.shape, bool)
         for ax in (0, 1):
             mx = opn
             for sh in (1, 2):
-                mx = np.maximum(mx, np.maximum(np.roll(opn, sh, ax),
-                                               np.roll(opn, -sh, ax)))
+                mx = np.maximum(mx, np.maximum(rollg(opn, sh, ax),
+                                               rollg(opn, -sh, ax)))
             eje |= opn >= mx - 1e-12
         # compuertas: la cresta necesita divergencia real (no ruido en zona
         # quieta) y debe sobresalir de su fondo local (no meseta plana)
         p98 = np.percentile(opn, 98) + 1e-9
         eje &= (opn > 0.15 * p98) & (opn > fondo)
-        eje = (eje | np.roll(eje, 1, 0) | np.roll(eje, -1, 0)
+        eje = (eje | rolly(eje, 1) | rolly(eje, -1)
                | np.roll(eje, 1, 1) | np.roll(eje, -1, 1))
         self.dorsal = eje * np.clip(opn / p98 * 1.5, 0, 1)
         # regla pluma-dorsal: una pluma que crea terreno DEBE ser parte de una
@@ -605,14 +648,14 @@ class Crust:
                 cents = []
                 for i in np.unique(labh[labh >= 0]):
                     ys, xs = np.nonzero(labh == i)
-                    ay = 2 * np.pi * ys / my; ax_ = 2 * np.pi * xs / mxh
-                    cy = (np.angle(np.exp(1j * ay).mean()) % (2 * np.pi)) * my / (2 * np.pi)
+                    ax_ = 2 * np.pi * xs / mxh
+                    cy = float(ys.mean())      # Y lineal: los polos no envuelven
                     cx = (np.angle(np.exp(1j * ax_).mean()) % (2 * np.pi)) * mxh / (2 * np.pi)
                     fuerza = float(hot[ys, xs].max())     # fuerza de la pluma
                     cents.append((cy * esc, cx * esc, fuerza))
                 r_sup, R = 9 * esc, 18 * esc
                 for cy, cx, fuerza in cents:
-                    dy = np.abs(yyN - cy); dy = np.minimum(dy, NY - dy)
+                    dy = np.abs(yyN - cy)
                     dx = np.abs(xxN - cx); dx = np.minimum(dx, NX - dx)
                     d2 = dy ** 2 + dx ** 2
                     dentro = d2 < R ** 2
@@ -641,7 +684,7 @@ class Crust:
         madura = np.clip(self.A / AGE_TAU - 1.0, 0, 1)   # >2*AGE_TAU: denso
         cerca = self.dorsal
         for sh in (1, 2, 3):
-            cerca = 0.2 * (cerca + np.roll(cerca, sh, 0) + np.roll(cerca, -sh, 0)
+            cerca = 0.2 * (cerca + rolly(cerca, sh) + rolly(cerca, -sh)
                            + np.roll(cerca, sh, 1) + np.roll(cerca, -sh, 1))
         lejos = np.clip(1 - 5.0 * cerca, 0, 1)           # nunca junto al eje
         subd_ign = np.clip(conv - 0.008, 0, None) * madura * lejos   # ignicion
@@ -667,7 +710,7 @@ class Crust:
         # (tipo Andes): la fosa difuminada, aplicada solo sobre continente
         arc = subd * (F < 0.4)
         for sh in (1, 2, 3):   # desplazamientos crecientes: blur sin peine
-            arc = 0.2 * (arc + np.roll(arc, sh, 0) + np.roll(arc, -sh, 0)
+            arc = 0.2 * (arc + rolly(arc, sh) + rolly(arc, -sh)
                          + np.roll(arc, sh, 1) + np.roll(arc, -sh, 1))
         C += 1.8 * arc * F * DT
         # cuenca de antepais: la corteza se flexiona hacia abajo frente al
@@ -677,7 +720,7 @@ class Crust:
         G = (conv + arc) * F
         basin = G
         for sh in (1, 2, 3, 4):   # desplazamientos crecientes = blur suave sin peine
-            basin = 0.2 * (basin + np.roll(basin, sh, 0) + np.roll(basin, -sh, 0)
+            basin = 0.2 * (basin + rolly(basin, sh) + rolly(basin, -sh)
                            + np.roll(basin, sh, 1) + np.roll(basin, -sh, 1))
         self.foreland = np.clip(basin - 1.5 * G, 0, None) * (F > 0.3)
         # divergencia: se abre rift -> corteza oceanica nueva (diluye F)
@@ -717,18 +760,18 @@ class Crust:
         # Es lo que dibujan el mapa (batimetria de la fosa) y el mapa de placas
         tb = self.trench
         for sh in (1, 1, 2, 2):
-            tb = 0.2 * (tb + np.roll(tb, sh, 0) + np.roll(tb, -sh, 0)
+            tb = 0.2 * (tb + rolly(tb, sh) + rolly(tb, -sh)
                         + np.roll(tb, sh, 1) + np.roll(tb, -sh, 1))
         ejf = np.zeros(tb.shape, bool)
         for ax in (0, 1):
             mxf = tb
             for sh in (1, 2):
-                mxf = np.maximum(mxf, np.maximum(np.roll(tb, sh, ax),
-                                                 np.roll(tb, -sh, ax)))
+                mxf = np.maximum(mxf, np.maximum(rollg(tb, sh, ax),
+                                                 rollg(tb, -sh, ax)))
             ejf |= tb >= mxf - 1e-12
         pf = np.percentile(tb, 98) + 1e-9
         ejf &= tb > 0.15 * pf
-        ejf = (ejf | np.roll(ejf, 1, 0) | np.roll(ejf, -1, 0)
+        ejf = (ejf | rolly(ejf, 1) | rolly(ejf, -1)
                | np.roll(ejf, 1, 1) | np.roll(ejf, -1, 1))
         self.fosa = ejf * np.clip(tb / pf * 1.5, 0, 1) * (F < 0.4)
         # --- volcanismo ---
@@ -757,7 +800,7 @@ class Crust:
         # lado como una cadena de islas que rompe la superficie
         iarc = self.trench
         for sh in (1, 2):
-            iarc = 0.2 * (iarc + np.roll(iarc, sh, 0) + np.roll(iarc, -sh, 0)
+            iarc = 0.2 * (iarc + rolly(iarc, sh) + rolly(iarc, -sh)
                           + np.roll(iarc, sh, 1) + np.roll(iarc, -sh, 1))
         halo = np.clip(1 - self.trench * 50, 0, 1)
         C += 2.6 * iarc * halo * (F < 0.4) * np.clip(1.18 - C, 0, 1) * DT
@@ -812,7 +855,7 @@ class Crust:
         # la pierden bajo la fosa de subduccion
         marg = self.F
         for sh in (1, 2, 3, 4):
-            marg = 0.2 * (marg + np.roll(marg, sh, 0) + np.roll(marg, -sh, 0)
+            marg = 0.2 * (marg + rolly(marg, sh) + rolly(marg, -sh)
                           + np.roll(marg, sh, 1) + np.roll(marg, -sh, 1))
         plataforma = np.clip(6.0 * (marg - 0.18), 0, 1) * ocean
         elev += np.clip(-0.025 - elev, 0, None) * plataforma
@@ -847,7 +890,7 @@ def render(elev, boundary, volcanoes=None):
     # bordes de placa en rojo oscuro translucido (suavizados para que se
     # lean como limites lineales y no como manchas)
     for _ in range(2):
-        boundary = 0.2 * (boundary + np.roll(boundary, 1, 0) + np.roll(boundary, -1, 0)
+        boundary = 0.2 * (boundary + rolly(boundary, 1) + rolly(boundary, -1)
                           + np.roll(boundary, 1, 1) + np.roll(boundary, -1, 1))
     b = np.clip(boundary / (np.percentile(boundary, 98) + 1e-9) - 0.6, 0, 1)[..., None]
     img = img * (1 - 0.45 * b) + np.array([180, 40, 30]) * 0.45 * b
@@ -861,9 +904,9 @@ def render(elev, boundary, volcanoes=None):
             m = vol
             for dy in range(-win, win + 1):
                 for dx in range(-win, win + 1):
-                    m = np.maximum(m, np.roll(np.roll(vol, dy, 0), dx, 1))
+                    m = np.maximum(m, np.roll(rolly(vol, dy), dx, 1))
             dots |= (vol >= m) & (vol > max(vmin, 0.35 * vol.max()))
-        dots = (dots | np.roll(dots, 1, 0) | np.roll(dots, -1, 0)
+        dots = (dots | rolly(dots, 1) | rolly(dots, -1)
                 | np.roll(dots, 1, 1) | np.roll(dots, -1, 1))
         img[dots] = (235, 45, 25)
     return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
@@ -900,11 +943,12 @@ def render_manto(T, plumes=(), n=None):
         if fade <= 0:
             continue
         cx, cy = p["x"] * esc, p["y"] * esc
-        for oy in (-n, 0, n):        # copias toroidales: anillos que cruzan borde
-            for ox in (-n, 0, n):
-                x, y = cx + ox, cy + oy
-                d.ellipse([x - r, y - r, x + r, y + r],
-                          outline=(255, 255, 255, int(80 + 150 * fade)), width=2)
+        # copias solo en X (longitud periodica): un anillo que cruza la orilla
+        # izquierda/derecha reaparece por la otra; en Y los polos no envuelven
+        for ox in (-n, 0, n):
+            x, y = cx + ox, cy
+            d.ellipse([x - r, y - r, x + r, y + r],
+                      outline=(255, 255, 255, int(80 + 150 * fade)), width=2)
     return im
 
 # ---------------- mapa tectonico (placas, flechas y simbologia) ----------------
@@ -934,7 +978,7 @@ def _linea_placa(campo):
     """Difumina y normaliza un campo de intensidad de limite (mismo criterio
     que los bordes rojos del mapa: 2 pasadas de blur + percentil 98)."""
     for _ in range(2):
-        campo = 0.2 * (campo + np.roll(campo, 1, 0) + np.roll(campo, -1, 0)
+        campo = 0.2 * (campo + rolly(campo, 1) + rolly(campo, -1)
                        + np.roll(campo, 1, 1) + np.roll(campo, -1, 1))
     return campo / (np.percentile(campo, 98) + 1e-9)
 
@@ -966,12 +1010,13 @@ def _compactar(lab):
 _DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
 def _vecinos4(m):
-    """OR de los 4 vecinos (arriba/abajo/izq/der) en el toro, por SLICING.
-    Identico a acumular np.roll(m, ±1) sobre los 4 dirs pero sin el overhead
-    por-llamada de np.roll: acelera los BFS y la dilatacion del cierre de red."""
+    """OR de los 4 vecinos (arriba/abajo/izq/der) por SLICING: periodico en X,
+    sin envolver en Y (los polos no conectan). Identico a acumular los
+    desplazamientos ±1 pero sin el overhead por-llamada de np.roll: acelera
+    los BFS y la dilatacion del cierre de red."""
     o = np.zeros_like(m)
-    o[1:] |= m[:-1]; o[:1] |= m[-1:]
-    o[:-1] |= m[1:]; o[-1:] |= m[:1]
+    o[1:] |= m[:-1]
+    o[:-1] |= m[1:]
     o[:, 1:] |= m[:, :-1]; o[:, :1] |= m[:, -1:]
     o[:, :-1] |= m[:, 1:]; o[:, -1:] |= m[:, :1]
     return o
@@ -982,7 +1027,7 @@ def _dilata(m, r=1):
     return m
 
 def _bfs_dist(seed, maxd=None, plano=False):
-    """Distancia de manzana (city-block) al conjunto `seed`, en el toro.
+    """Distancia de manzana (city-block) al conjunto `seed` (periodica en X).
     Con `maxd` se detiene ahi (lo no alcanzado queda en el centinela).
     Con `plano` la malla NO envuelve (para operar en ventanas recortadas)."""
     D = np.full(seed.shape, 1 << 30, np.int64)
@@ -996,8 +1041,8 @@ def _bfs_dist(seed, maxd=None, plano=False):
     return D
 
 def _bfs_en(mask, py, px):
-    """Distancia geodesica DENTRO de `mask` (4-conexa, toroidal) desde un
-    pixel. Para hallar los extremos de un fragmento de eje."""
+    """Distancia geodesica DENTRO de `mask` (4-conexa, periodica solo en X)
+    desde un pixel. Para hallar los extremos de un fragmento de eje."""
     D = np.full(mask.shape, 1 << 30, np.int64)
     D[py, px] = 0
     cur = np.zeros_like(mask); cur[py, px] = True
@@ -1022,10 +1067,10 @@ def _extremos(comp):
 
 def _tangente(comp, py, px, R=5):
     """Direccion saliente del fragmento en un extremo: opuesta al centroide
-    de los pixeles del fragmento cercanos al extremo (toroidal)."""
+    de los pixeles del fragmento cercanos al extremo (X periodico, Y plano)."""
     n = comp.shape[0]
     ys, xs = np.nonzero(comp)
-    dy = (ys - py + n // 2) % n - n // 2
+    dy = ys - py
     dx = (xs - px + n // 2) % n - n // 2
     sel = (np.abs(dy) <= R) & (np.abs(dx) <= R)
     my, mx = dy[sel].mean(), dx[sel].mean()
@@ -1053,12 +1098,17 @@ def _caminar(py, px, ty, tx, Dt, maxpaso, rumbo=1.5, inercia=0.7):
                 if not sy and not sx:
                     continue
                 nrm = 1.4142135 if sy and sx else 1.0
-                ny_, nx_ = (y + sy) % n, (x + sx) % n
+                ny_ = y + sy
+                if ny_ < 0 or ny_ >= n:          # no cruzar el polo
+                    continue
+                nx_ = (x + sx) % n
                 s = Dt[ny_, nx_] - rumbo * (sy * dy + sx * dx) / nrm
                 if (ny_, nx_) in path:
                     s += 4.0                     # no repisar el propio camino
                 if mejor is None or s < mejor[0]:
                     mejor = (s, ny_, nx_, sy / nrm, sx / nrm)
+        if mejor is None:                        # acorralado contra el polo
+            break
         _, y, x, sy, sx = mejor
         dy, dx = inercia * dy + (1 - inercia) * sy, inercia * dx + (1 - inercia) * sx
         nn = (dy * dy + dx * dx) ** 0.5 + 1e-9
@@ -1072,27 +1122,37 @@ def _masa(m, R=4):
     for dy in range(-R, R + 1):
         for dx in range(-R, R + 1):
             if dy * dy + dx * dx <= R * R:
-                acc += np.roll(np.roll(f, dy, 0), dx, 1)
+                acc += np.roll(rolly(f, dy), dx, 1)
     return acc
 
 def _zona(comp, margen):
-    """Ventana toroidal centrada en un fragmento: desplazamiento que lo
-    centra y recorte cuadrado que lo contiene con margen. Operar en la
-    ventana evita BFS de mapa completo por cada fragmento."""
+    """Ventana centrada en un fragmento: desplazamiento que lo centra
+    (periodico en X; en Y el centroide es lineal y el corrimiento rellena con
+    vacio, no envuelve) y recorte cuadrado que lo contiene con margen. Operar
+    en la ventana evita BFS de mapa completo por cada fragmento."""
     n = comp.shape[0]
     ys, xs = np.nonzero(comp)
-    cy = int((np.angle(np.exp(2j * np.pi * ys / n).mean()) % (2 * np.pi))
-             * n / (2 * np.pi))
+    cy = int(ys.mean())
     cx = int((np.angle(np.exp(2j * np.pi * xs / n).mean()) % (2 * np.pi))
              * n / (2 * np.pi))
     sy, sx = n // 2 - cy, n // 2 - cx
-    dy = np.abs((ys + sy) % n - n // 2).max()
+    dy = np.abs(ys + sy - n // 2).max()
     dx = np.abs((xs + sx) % n - n // 2).max()
     h = min(n // 2, int(max(dy, dx)) + margen)
     return sy, sx, slice(n // 2 - h, n // 2 + h)
 
 def _rec(m, sy, sx, sl):
-    return np.roll(np.roll(m, sy, 0), sx, 1)[sl, sl]
+    """Recorte de la ventana: X envuelve (np.roll); Y se desplaza SIN envolver
+    y rellena con vacio (no hay mapa al otro lado de los polos)."""
+    g = np.roll(m, sx, 1)
+    out = np.zeros_like(g)
+    if sy > 0:
+        out[sy:] = g[:-sy] if sy < g.shape[0] else 0
+    elif sy < 0:
+        out[:sy] = g[-sy:]
+    else:
+        out = g
+    return out[sl, sl]
 
 def _cabos(comp, acc):
     """Puntos de arranque de los puentes de un fragmento: TODAS las puntas de
@@ -1109,7 +1169,7 @@ def _cabos(comp, acc):
         reps.append((int(ys[k]), int(xs[k])))
     n = comp.shape[0]
     for (py, px) in _extremos(comp):
-        cerca = any(min(abs(py - y), n - abs(py - y))
+        cerca = any(abs(py - y)
                     + min(abs(px - x), n - abs(px - x)) <= 4
                     for (y, x) in reps)
         if not cerca:
@@ -1129,7 +1189,10 @@ def _puentes_de(comp, red, acc, maxpaso, rumbo=1.5, inercia=0.7):
     for (py, px) in _cabos(compz, accz):
         ty, tx = _tangente(compz, py, px)
         camino, _ = _caminar(py, px, ty, tx, Dt, maxpaso, rumbo, inercia)
-        out += [((a + yy - sy) % n, (a + xx - sx) % n) for yy, xx in camino]
+        # de vuelta a coords del mapa: X envuelve; Y fuera de rango (mas alla
+        # del polo) se descarta
+        out += [(a + yy - sy, (a + xx - sx) % n) for yy, xx in camino
+                if 0 <= a + yy - sy < n]
     return out
 
 def _cerrar_red(ejes, borde, maxpaso):
@@ -1173,7 +1236,7 @@ def _subdividir(L, cortes, ids=None):
     while (lab < 0).any():
         prog = False
         for dy, dx in _DIRS:
-            vec = np.roll(lab, dy, 0) if dx == 0 else np.roll(lab, dx, 1)
+            vec = rolly(lab, dy) if dx == 0 else np.roll(lab, dx, 1)
             take = (lab < 0) & (vec >= 0)
             if take.any():
                 lab[take] = vec[take]; prog = True
@@ -1221,7 +1284,7 @@ def _segmentar_placas(crust, boundary):
     fis = (np.clip(crust.dorsal, 0, 1) + np.clip(crust.rift / 0.008, 0, 1)
            + np.clip(_linea_placa(getattr(crust, "fosa", crust.trench)), 0, 1))
     for _ in range(2):
-        fis = 0.2 * (fis + np.roll(fis, 1, 0) + np.roll(fis, -1, 0)
+        fis = 0.2 * (fis + rolly(fis, 1) + rolly(fis, -1)
                      + np.roll(fis, 1, 1) + np.roll(fis, -1, 1))
     defo = sample_nearest(_linea_placa(boundary) + 3.0 * fis, m, m)
     # media movil exponencial de lo que ve el segmentador: la velocidad
@@ -1255,7 +1318,7 @@ def _segmentar_placas(crust, boundary):
     for _ in range(iters):
         D = np.empty((K, m, m))
         for k in range(K):
-            dy = np.abs(yy - cys[k]); dy = np.minimum(dy, m - dy)
+            dy = np.abs(yy - cys[k])              # Y lineal: no envuelve
             dx = np.abs(xx - cxs[k]); dx = np.minimum(dx, m - dx)
             D[k] = ((un - cu[k]) ** 2 + (vn - cv[k]) ** 2
                     + lam * (dy ** 2 + dx ** 2) / S ** 2)
@@ -1265,9 +1328,9 @@ def _segmentar_placas(crust, boundary):
             if not sel.any():
                 continue
             cu[k] = un[sel].mean(); cv[k] = vn[sel].mean()
-            # centroide toroidal via media circular
-            ay = 2 * np.pi * yy[sel] / m; ax_ = 2 * np.pi * xx[sel] / m
-            cys[k] = (np.angle(np.exp(1j * ay).mean()) % (2 * np.pi)) * m / (2 * np.pi)
+            # centroide: media circular SOLO en X; lineal en Y (sin polos)
+            ax_ = 2 * np.pi * xx[sel] / m
+            cys[k] = float(yy[sel].mean())
             cxs[k] = (np.angle(np.exp(1j * ax_).mean()) % (2 * np.pi)) * m / (2 * np.pi)
     _SEG_PREV.update(m=m, cys=cys, cxs=cxs, cu=cu, cv=cv)
     # separar componentes conexas de cada cluster y absorber esquirlas
@@ -1283,7 +1346,7 @@ def _segmentar_placas(crust, boundary):
     while (lab < 0).any():
         for ax in (0, 1):
             for sh in (1, -1):
-                vec = np.roll(lab, sh, ax)
+                vec = rollg(lab, sh, ax)
                 lab = np.where((lab < 0) & (vec >= 0), vec, lab)
     lab = _compactar(lab)
     # --- 2. fusion de vecinos coherentes (union-find) ---
@@ -1298,7 +1361,7 @@ def _segmentar_placas(crust, boundary):
         mv = np.array([vn[lab == i].mean() for i in range(nl)])
         sums, cnts = {}, {}
         for ax in (0, 1):
-            l2 = np.roll(lab, 1, ax)
+            l2 = rollg(lab, 1, ax)
             sel = lab != l2
             for i, j, dd in zip(lab[sel], l2[sel], defo[sel]):
                 key = (min(i, j), max(i, j))
@@ -1332,7 +1395,7 @@ def _segmentar_placas(crust, boundary):
         mejor[gana] = p[gana]
     borde = np.zeros((n, n), bool)
     for ax in (0, 1):
-        borde |= L != np.roll(L, 1, ax)
+        borde |= L != rollg(L, 1, ax)
     # --- 3. los ejes fisicos SON limites de placa: se imponen aqui ---
     # La velocidad no basta para separar los dos flancos de una dorsal joven o
     # de baja apertura, asi que la dorsal queda dentro de una placa. Se cierra
@@ -1358,7 +1421,7 @@ def _segmentar_placas(crust, boundary):
         # un arbol colgante y no separo nada -> reintento con paso recto
         borde = np.zeros((n, n), bool)
         for ax in (0, 1):
-            borde |= L != np.roll(L, 1, ax)
+            borde |= L != rollg(L, 1, ax)
         comps = label_components(ejes_d)
         Db = _bfs_dist(borde, maxd=5)
         acc = _masa(ejes_d)
@@ -1380,7 +1443,7 @@ def _segmentar_placas(crust, boundary):
             L = _subdividir(L, cortes | extra, ids=fallidas)
         borde = np.zeros((n, n), bool)
         for ax in (0, 1):
-            borde |= L != np.roll(L, 1, ax)
+            borde |= L != rollg(L, 1, ax)
     return L, borde
 
 def _colores_de_placas(L):
@@ -1434,7 +1497,7 @@ def render_placas(crust, boundary, elev):
     interior = tierra
     for ax in (0, 1):
         for sh in (1, -1):
-            interior = interior & np.roll(tierra, sh, ax)
+            interior = interior & rollg(tierra, sh, ax)
     img[tierra & ~interior] = (95, 95, 95)          # linea de costa
     img[elev > 0.20] = (115, 62, 25)                # cadenas montanosas
     # tipos de limite desde los MISMOS campos que usa la simulacion, pero
@@ -1455,7 +1518,7 @@ def render_placas(crust, boundary, elev):
     for ax in (0, 1):
         acc = cerca
         for sh in range(1, 7):
-            acc = acc | np.roll(cerca, sh, ax) | np.roll(cerca, -sh, ax)
+            acc = acc | rollg(cerca, sh, ax) | rollg(cerca, -sh, ax)
         cerca = acc
     img[borde & ~cerca] = (205, 60, 45)   # transformantes, suturas
     img[dorsal_m] = (240, 165, 25)        # dorsal: el eje es el limite
@@ -1485,20 +1548,20 @@ def _parametros_de(args):
     claves = ("tiempo", "cada", "ms", "semilla", "resolucion", "detalle",
               "velocidad", "mar", "continentes", "plumas", "erosion",
               "empuje", "momento", "rigidez", "deriva", "anos_paso",
-              "temperatura", "humedad")
+              "temperatura", "precipitaciones")
     p = {k: getattr(args, k) for k in claves}
     # los flags de clima son None por defecto (para distinguir "no dado" en
     # --detallar); en el config del mundo guardamos los defaults de modulo
     if p["temperatura"] is None:
         p["temperatura"] = TEMPERATURA
-    if p["humedad"] is None:
-        p["humedad"] = HUMEDAD
+    if p["precipitaciones"] is None:
+        p["precipitaciones"] = PRECIPITACIONES
     return p
 
 def _aplicar_parametros(p):
     global NX, NY, VEL_SCALE, SEA_LEVEL, CONT_UMBRAL, PLUME_EVERY
     global EROSION, RIDGE_PUSH, MOMENTUM, RIGID, DERIVA, ANOS_POR_PASO
-    global TEMPERATURA, HUMEDAD
+    global TEMPERATURA, PRECIPITACIONES
     NX = NY = int(p["resolucion"])
     VEL_SCALE, SEA_LEVEL = float(p["velocidad"]), float(p["mar"])
     CONT_UMBRAL = float(p["continentes"])
@@ -1510,7 +1573,9 @@ def _aplicar_parametros(p):
     ANOS_POR_PASO = float(p.get("anos_paso", ANOS_POR_PASO))
     # diales de clima: mundos guardados antes de la capa climatica no los traen
     TEMPERATURA = float(p.get("temperatura", TEMPERATURA))
-    HUMEDAD = float(p.get("humedad", HUMEDAD))
+    # los mundos viejos guardan el dial con la clave "humedad"
+    PRECIPITACIONES = float(
+        p.get("precipitaciones", p.get("humedad", PRECIPITACIONES)))
 
 def _crear_mundo_en(carpeta, params, nombre, crust=None):
     """Crea la estructura de un mundo (estado reanudable) en `carpeta`:
@@ -1616,7 +1681,7 @@ def _simular(mantle, crust, pasos, cada, carpeta=None, detalle=None,
                 # todo el mundo). Corre DESPUES de la fisica y no toca el rng
                 # global -> la continuacion de mundos sigue bit-exacta
                 campos = clima.simular_clima(elev, temperatura=TEMPERATURA,
-                                             humedad=HUMEDAD)
+                                             precipitaciones=PRECIPITACIONES)
                 frames_c.append(clima.render_clima(campos, elev))
                 # timeline por frame: tiempo geologico y valores intermedios
                 # (nivel del mar, nº de plumas, fraccion de tierra) que el
@@ -1715,7 +1780,8 @@ def reconstruir(ruta):
         # elev de este cuadro con los diales del mundo (.get para mundos viejos)
         campos = clima.simular_clima(
             elev, temperatura=float(p.get("temperatura", TEMPERATURA)),
-            humedad=float(p.get("humedad", HUMEDAD)))
+            precipitaciones=float(
+                p.get("precipitaciones", p.get("humedad", PRECIPITACIONES))))
         frames_c.append(clima.render_clima(campos, elev))
     _guardar_gifs(carpeta, frames_m, frames_p, frames_ma, frames_c, p["ms"])
     print(f"-> {carpeta}/mapa.gif, placas.gif, manto.gif, clima.gif y "
@@ -1812,7 +1878,8 @@ def extrapolar(mundo, desde_paso, pasos, salida, ms=None, detalle=None,
     return len(meta_frames)
 
 def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0,
-             temperatura=None, humedad=None):
+             temperatura=None, precipitaciones=None, sinuosidad=1.0,
+             semilla_civ=0, asentamientos=0, paises=0, tam_paises=0):
     """Detallado NO destructivo de UN solo cuadro. Igual que extrapolar, carga
     el checkpoint mas cercano <= `paso` y avanza en silencio hasta el estado
     EXACTO de ese cuadro; pero en vez de seguir la simulacion, super-muestrea
@@ -1838,11 +1905,11 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
     _aplicar_parametros(p)
     # el clima del detalle es un dial propio del cuadro: si se da, sobreescribe
     # el del mundo que acaba de fijar _aplicar_parametros; si no, se conserva
-    global TEMPERATURA, HUMEDAD
+    global TEMPERATURA, PRECIPITACIONES
     if temperatura is not None:
         TEMPERATURA = float(temperatura)
-    if humedad is not None:
-        HUMEDAD = float(humedad)
+    if precipitaciones is not None:
+        PRECIPITACIONES = float(precipitaciones)
     factor = min(max(int(factor), 2), 32)
     cps = sorted(int(f.stem) for f in (mundo / "frames").glob("*.npz"))
     if not cps:
@@ -1869,7 +1936,9 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
     # solo rellena las escalas que la malla original no resuelve. bicubico:
     # bilineal convierte cada pixel aislado (p.ej. un pozo de fondo viejo)
     # en un rombo evidente a estos aumentos
-    eu = _upsample_bicubico(crust.elevation(p["detalle"]), factor)
+    elev_orig = crust.elevation(p["detalle"])   # cuadro original (mapa pequeno):
+                                                # de aqui salen las corrientes
+    eu = _upsample_bicubico(elev_orig, factor)
     Fu = _upsample_bicubico(crust.F, factor)
     Du = _upsample_bicubico(np.abs(crust.D), factor)
     vh = _upsample_bicubico(crust.volcano_hot, factor)
@@ -1949,7 +2018,22 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
         elev_c = elev2[::kc, ::kc]
     print(f"clima del detalle (fisica a {elev_c.shape[1]}x{elev_c.shape[0]}, "
           f"render a {nx}x{ny})...")
-    campos = clima.simular_clima(elev_c, temperatura=TEMPERATURA, humedad=HUMEDAD)
+    campos = clima.simular_clima(elev_c, temperatura=TEMPERATURA,
+                                 precipitaciones=PRECIPITACIONES)
+    # Las corrientes NO se re-evaluan sobre la costa ruidosa del detalle (ahi
+    # los giros salen deformados): se recalculan sobre el cuadro ORIGINAL —la
+    # misma fisica que produjo el mapa pequeno de clima de la corrida, cuyos
+    # circuitos si estan bien formados— y solo se re-escalan (bicubico
+    # periodico) a la malla del detalle para renderizarlas con mas calidad.
+    print(f"corrientes del cuadro original ({NX}x{NY}), re-escaladas al detalle...")
+    cor = clima.simular_clima(elev_orig, temperatura=TEMPERATURA,
+                              precipitaciones=PRECIPITACIONES,
+                              solo_corrientes=True)
+    mar_cd = elev_c <= 0.0
+    for k in ("cu", "cv", "sst_anom", "psi"):
+        campos[k] = (clima._upsample_bicubico_a(cor[k], *elev_c.shape)
+                     * mar_cd)
+    del cor, elev_orig
     png_c = f"{salida}_clima.png"
     clima.render_clima_detalle(campos, elev2, elev_c,
                                temperatura=TEMPERATURA).save(png_c)
@@ -1966,13 +2050,14 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
         elev_h = clima._malla_bloques(elev2, nh, nh)
     precip_h = np.clip(clima._upsample_bicubico_a(campos["precip"], nh, nh), 0.0, 1.0)
     hielo_h = np.clip(clima._upsample_bicubico_a(campos["hielo"], nh, nh), 0.0, 1.0)
-    hidro = clima.hidrologia_fina(elev_h, precip_h, hielo_h)
+    hidro = clima.hidrologia_fina(elev_h, precip_h, hielo_h,
+                                  sinuosidad=float(sinuosidad))
     del precip_h, hielo_h
     if elev_h is not elev2:
         del elev_h
     print(f"hidrologia fina a {nh}x{nh} ({hidro['iters']} iteraciones de "
-          f"acumulacion, {int(hidro['rios'].sum())} celdas de rio) en "
-          f"{time.time()-th0:.1f}s")
+          f"acumulacion, {int(hidro['rios'].sum())} celdas de rio, "
+          f"{int(hidro['lagos'].sum())} de lago) en {time.time()-th0:.1f}s")
     tr0 = time.time()
     png_hd = f"{salida}_climahd.png"
     clima.render_clima_hd(campos, elev2, elev_c, hidro,
@@ -1984,16 +2069,22 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
     rd, rk = clima.exportar_capas(salida, campos, elev2, elev_c, hidro, nx, ny,
                                   (res_datos[1], res_datos[0]),
                                   (res_koppen[1], res_koppen[0]),
-                                  temperatura=TEMPERATURA)
+                                  temperatura=TEMPERATURA,
+                                  civ_dials={"semilla": int(semilla_civ),
+                                             "asentamientos": int(asentamientos),
+                                             "paises": int(paises),
+                                             "tam": int(tam_paises)})
     print(f"capas (koppen/cuencas/datos/datos2/capas.json a "
           f"{res_datos[0]}x{res_datos[1]}) en {time.time()-te0:.1f}s")
     del hidro, campos, elev2
     meta = {"mundo": str(mundo), "paso": int(paso), "checkpoint": int(cp),
             "ma": round(paso * ANOS_POR_PASO, 3), "factor": int(factor),
             "semilla_detalle": int(semilla), "casquetes": float(casquetes),
-            "relieve": float(relieve), "resolucion": [int(nx), int(ny)],
+            "relieve": float(relieve), "sinuosidad": float(sinuosidad),
+            "resolucion": [int(nx), int(ny)],
             # diales de clima efectivos de este cuadro (los que se usaron)
-            "temperatura": float(TEMPERATURA), "humedad": float(HUMEDAD),
+            "temperatura": float(TEMPERATURA),
+            "precipitaciones": float(PRECIPITACIONES),
             # el PNG climatico va ahora a plena resolucion (== resolucion); la
             # fisica se calculo sobre la malla capada (resolucion_fisica_clima)
             "resolucion_clima": [int(nx), int(ny)],
@@ -2003,6 +2094,11 @@ def detallar(mundo, paso, factor, salida, semilla=0, casquetes=0.18, relieve=1.0
             "climahd": True,
             "res_hidro": [int(nh), int(nh)],
             "res_datos": [int(rd[0]), int(rd[1])],
+            # diales de civilizacion efectivos (0 = automatico)
+            "civilizacion": {"semilla": int(semilla_civ),
+                             "asentamientos": int(asentamientos),
+                             "paises": int(paises),
+                             "tam_paises": int(tam_paises)},
             "creado": datetime.now().isoformat(timespec="seconds")}
     Path(f"{salida}.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -2076,10 +2172,12 @@ def main():
                         "nieve) .. 0 (templado, Tierra) .. +1 (invernadero); "
                         "solo afecta al mapa de clima, no a la tectonica; en "
                         "--detallar sobreescribe la del mundo")
-    g.add_argument("--humedad", type=float, default=None, metavar="H",
-                   help="clima: humedad global, 0.2 (arido) .. 1 (normal) .. 2 "
-                        "(muy humedo); escala la lluvia, los rios y la selva; "
-                        "en --detallar sobreescribe la del mundo")
+    g.add_argument("--precipitaciones", "--humedad", dest="precipitaciones",
+                   type=float, default=None, metavar="P",
+                   help="clima: precipitaciones globales, 0.2 (arido) .. 1 "
+                        "(normal) .. 2 (muy humedo); escala la lluvia, los "
+                        "rios y la selva; en --detallar sobreescribe la del "
+                        "mundo (--humedad es un alias retrocompatible)")
     m = p.add_argument_group("mundos", "almacenamiento por frame para "
                              "reconstruir o retomar simulaciones")
     m.add_argument("--datos", action="store_true",
@@ -2126,6 +2224,26 @@ def main():
                         "(0 = sin hielo, ~0.45 = edad de hielo)")
     d.add_argument("--relieve", type=float, default=1.0, metavar="R",
                    help="con --detallar: amplitud del ruido de detalle")
+    d.add_argument("--sinuosidad", type=float, default=1.0, metavar="S",
+                   help="con --detallar: cuanto serpentean los rios y cuantas "
+                        "cuencas endorreicas/lagos siembra el drenaje "
+                        "(0 = rios rectos por pendiente pura, 1 = normal, "
+                        "3 = muy serpenteante)")
+    d.add_argument("--semilla-civ", "--semilla_civ", type=int, default=0,
+                   dest="semilla_civ", metavar="S",
+                   help="con --detallar: semilla de la civilizacion; cambiarla "
+                        "da otros asentamientos/paises sobre la MISMA geografia")
+    d.add_argument("--asentamientos", type=int, default=0, metavar="N",
+                   help="con --detallar: numero objetivo de asentamientos "
+                        "(0 = automatico segun la fraccion de tierra)")
+    d.add_argument("--paises", type=int, default=0, metavar="N",
+                   help="con --detallar: numero objetivo de paises "
+                        "(0 = automatico)")
+    d.add_argument("--tam-paises", "--tam_paises", type=int, default=0,
+                   dest="tam_paises", metavar="T",
+                   help="con --detallar: tamano de los paises (0 = automatico, "
+                        "1 = grandes/imperios que se reparten todo el suelo, "
+                        "2 = chicos/reinos que dejan tierras libres)")
     args = p.parse_args()
 
     if args.reconstruir:
@@ -2142,7 +2260,12 @@ def main():
         return detallar(args.detallar, args.desde_paso, args.factor,
                         args.salida, semilla=args.semilla_detalle,
                         casquetes=args.casquetes, relieve=args.relieve,
-                        temperatura=args.temperatura, humedad=args.humedad)
+                        temperatura=args.temperatura,
+                        precipitaciones=args.precipitaciones,
+                        sinuosidad=args.sinuosidad,
+                        semilla_civ=args.semilla_civ,
+                        asentamientos=args.asentamientos, paises=args.paises,
+                        tam_paises=args.tam_paises)
     if args.tiempo < 1 or args.cada < 1 or args.resolucion < 32:
         p.error("tiempo y cada deben ser >= 1, resolucion >= 32")
     rng = np.random.default_rng(args.semilla)

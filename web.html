@@ -261,7 +261,7 @@
       <div class="pista" style="margin-bottom:12px">Detalla el cuadro pausado en
         el reproductor: un PNG gigante con geografía menor por ruido (islas,
         mares interiores, casquetes polares). No toca la corrida ni su evolución.
-        El clima del detalle usa los diales de temperatura y humedad de abajo.</div>
+        El clima del detalle usa los diales de temperatura (°C) y precipitaciones (%) de abajo.</div>
 
       <div class="control">
         <label for="det-factor">Aumento</label>
@@ -285,24 +285,89 @@
       </div>
 
       <div class="control">
-        <label>Relieve <output id="v-det-relieve">1.0</output></label>
-        <input type="range" id="det-relieve" min="0.2" max="3" step="0.1" value="1">
+        <label>Relieve <output id="v-det-relieve">1.2</output></label>
+        <input type="range" id="det-relieve" min="0.2" max="3" step="0.1" value="1.2">
         <div class="pista">exageración del relieve menor por ruido</div>
       </div>
 
       <div class="control">
-        <label>Temperatura global <output id="v-det-temp">0</output></label>
-        <input type="range" id="det-temp" min="-1" max="1" step="0.05" value="0">
-        <div class="pista">frío ↔ cálido · −1 bola de nieve · +1 invernadero</div>
+        <label>Sinuosidad <output id="v-det-sinu">1.0</output></label>
+        <input type="range" id="det-sinu" min="0" max="3" step="0.1" value="1">
+        <div class="pista">cuánto serpentean los ríos; siembra lagos y
+          cuencas endorreicas (0 = ríos rectos por pendiente pura)</div>
       </div>
 
       <div class="control">
-        <label>Humedad global <output id="v-det-hum">1.00</output></label>
-        <input type="range" id="det-hum" min="0.2" max="2" step="0.05" value="1">
-        <div class="pista">árido ↔ húmedo · evaporación y lluvia del planeta</div>
+        <label>Temperatura media global (°C) <output id="v-det-temp">14</output></label>
+        <input type="range" id="det-temp" min="8" max="30" step="0.5" value="14">
+        <div class="pista">glacial ~8 °C · actual ~14 °C · invernadero ~30 °C</div>
+      </div>
+
+      <div class="control">
+        <label>Precipitaciones (% de las actuales) <output id="v-det-prec">100</output></label>
+        <input type="range" id="det-prec" min="40" max="200" step="5" value="100">
+        <div class="pista">árido 40 % · actual 100 % · muy húmedo 200 %</div>
       </div>
 
       <button class="primario" id="b-detalle">Detallar este cuadro 🔍</button>
+    </details>
+
+    <details class="seccion" id="sec-civilizar" style="margin-top:18px" hidden>
+      <summary>Detallar con civilización</summary>
+      <div class="pista" style="margin-bottom:12px">Igual que «Detallar cuadro»
+        (usa sus mismos diales de casquetes, relieve, temperatura y
+        precipitaciones) pero además puebla el mapa: asentamientos humanos,
+        caminos, rutas comerciales y países derivados del Köppen y de las
+        cuencas y ríos. El resultado incluye un mapa político renderizado y las
+        capas interactivas del visor.</div>
+
+      <div class="control">
+        <label for="civ-factor">Aumento</label>
+        <select id="civ-factor">
+          <option value="4">4×</option>
+          <option value="8" selected>8×</option>
+          <option value="16">16×</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label for="civ-semilla">Ruido geográfico</label>
+        <input type="number" id="civ-semilla" min="0" value="0">
+        <div class="pista">misma semilla de ruido = misma geografía menor</div>
+      </div>
+
+      <div class="control">
+        <label for="civ-semciv">Semilla de civilización</label>
+        <input type="number" id="civ-semciv" min="0" value="0">
+        <div class="pista">cambiarla da otros asentamientos, nombres y países
+          sobre la misma geografía</div>
+      </div>
+
+      <div class="control">
+        <label>Asentamientos <output id="v-civ-asent">auto</output></label>
+        <input type="range" id="civ-asent" min="0" max="200" step="5" value="0">
+        <div class="pista">0 = automático según la fracción de tierra</div>
+      </div>
+
+      <div class="control">
+        <label>Países <output id="v-civ-paises">auto</output></label>
+        <input type="range" id="civ-paises" min="0" max="48" step="1" value="0">
+        <div class="pista">0 = automático (~1 país por cada 7 asentamientos);
+          para muchos países sube también los asentamientos</div>
+      </div>
+
+      <div class="control">
+        <label for="civ-tam">Tamaño de países</label>
+        <select id="civ-tam">
+          <option value="0" selected>automático</option>
+          <option value="1">grandes (imperios: se reparten todo el suelo)</option>
+          <option value="2">chicos (reinos con tierras libres entre medio)</option>
+        </select>
+        <div class="pista">grandes = pocos países que abarcan todo; chicos =
+          cada país solo domina el territorio cercano a su capital</div>
+      </div>
+
+      <button class="primario" id="b-civilizar">Detallar con civilización 🏰</button>
     </details>
 
     <section style="margin-top:18px">
@@ -389,6 +454,7 @@
       <span><i class="cuad" style="background:rgb(214,228,240)"></i> banquisa</span>
       <span><i class="flecha" style="color:rgb(230,80,60)">→</i> corriente cálida</span>
       <span><i class="flecha" style="color:rgb(90,150,235)">→</i> corriente fría</span>
+      <span><i class="flecha" style="color:rgb(230,80,60)">⟳</i> giro oceánico (circuito)</span>
     </div>
     <div id="enlaces"></div>
     <div id="detalles" hidden>

@@ -60,15 +60,22 @@ ALGORITMO = ("velocidad", "mar", "continentes", "plumas",
 
 # diales del detallado de UN cuadro (tecto.py --detallar): mismos rangos que
 # el CLI; el factor ademas se acota para que resolucion*factor <= 4096 px. Los
-# diales de clima (temperatura/humedad) viven aqui: se eligen al detallar un
+# diales de clima (temperatura/precipitaciones) viven aqui: se eligen al detallar un
 # cuadro y sobreescriben los del mundo, sin tocar la generacion
 DETALLE = {
     "factor":      (2, 16, int, 8),
     "semilla":     (0, 2**31 - 1, int, 0),
     "casquetes":   (0.0, 0.45, float, 0.18),
-    "relieve":     (0.2, 3.0, float, 1.0),
+    "relieve":     (0.2, 3.0, float, 1.2),
+    "sinuosidad":  (0.0, 3.0, float, 1.0),
     "temperatura": (-1.0, 1.0, float, 0.0),
-    "humedad":     (0.2, 2.0, float, 1.0),
+    "precipitaciones": (0.2, 2.0, float, 1.0),
+    # diales de civilizacion (0 = automatico): ver civ.py
+    "semilla_civ":   (0, 2**31 - 1, int, 0),
+    "asentamientos": (0, 200, int, 0),
+    "paises":        (0, 48, int, 0),
+    # tamano de los paises: 0 auto, 1 grandes (imperios), 2 chicos (reinos)
+    "tam_paises":    (0, 2, int, 0),
 }
 
 jobs = {}
@@ -122,11 +129,16 @@ def _detalles(sello):
         # artefactos de "clima HD" (aditivos): se exponen solo si existen, de
         # modo que los detalles viejos siguen mostrandose como antes
         for clave, suf in (("climahd", "_climahd.png"), ("koppen", "_koppen.png"),
-                           ("cuencas", "_cuencas.png"), ("datos", "_datos.png"),
+                           ("cuencas", "_cuencas.png"), ("paises", "_paises.png"),
+                           ("civ", "_civ.png"), ("regiones", "_regiones.png"),
+                           ("datos", "_datos.png"),
                            ("datos2", "_datos2.png"), ("capas", "_capas.json")):
             if (SALIDAS / sello / "detalles" / f"{fj.stem}{suf}").exists():
                 meta[clave] = f"/salidas/{sello}/detalles/{fj.stem}{suf}"
         lista.append(meta)
+    # ordenar por timestamp de creacion, el mas reciente primero; los que no
+    # traigan `creado` (detalles viejos) quedan al final
+    lista.sort(key=lambda m: m.get("creado") or "", reverse=True)
     return lista
 
 
@@ -246,8 +258,13 @@ def correr_detalle(job_id, origen, paso, pd):
            "--desde-paso", str(int(paso)), "--factor", str(pd["factor"]),
            "--semilla-detalle", str(pd["semilla"]),
            "--casquetes", str(pd["casquetes"]), "--relieve", str(pd["relieve"]),
+           "--sinuosidad", str(pd["sinuosidad"]),
            "--temperatura", str(pd["temperatura"]),
-           "--humedad", str(pd["humedad"]),
+           "--precipitaciones", str(pd["precipitaciones"]),
+           "--semilla-civ", str(pd["semilla_civ"]),
+           "--asentamientos", str(pd["asentamientos"]),
+           "--paises", str(pd["paises"]),
+           "--tam-paises", str(pd["tam_paises"]),
            "-o", str(carpeta / nombre)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -265,7 +282,8 @@ def correr_detalle(job_id, origen, paso, pd):
         for ext in (".png", ".json"):
             (carpeta / f"{nombre}{ext}").unlink(missing_ok=True)
         for suf in ("_clima.png", "_climahd.png", "_koppen.png",
-                    "_cuencas.png", "_datos.png", "_datos2.png", "_capas.json"):
+                    "_cuencas.png", "_paises.png", "_civ.png", "_regiones.png",
+                    "_datos.png", "_datos2.png", "_capas.json"):
             (carpeta / f"{nombre}{suf}").unlink(missing_ok=True)
     with lock:
         procs.pop(job_id, None)
@@ -326,6 +344,16 @@ class Manejador(BaseHTTPRequestHandler):
         if url.path == "/":
             return self._archivo(BASE / "web.html", "text/html; charset=utf-8",
                                  cache=False)
+        # pagina de subregiones: mapa interactivo con seleccion de provincias y
+        # cuencas marinas de UN detalle (query: ?sello=...&d=<stem del detalle>)
+        if url.path == "/regiones":
+            return self._archivo(BASE / "regiones.html",
+                                 "text/html; charset=utf-8", cache=False)
+        # juego de conquista por turnos (estilo Age of History) sobre las
+        # provincias de UN detalle (misma query que /regiones)
+        if url.path == "/juego":
+            return self._archivo(BASE / "juego.html",
+                                 "text/html; charset=utf-8", cache=False)
         # modulo del detallado: allowlist estricta (sin traversal), solo estos
         # dos archivos; sin cache, igual que la pagina, para ver los cambios al
         # recargar
@@ -358,7 +386,8 @@ class Manejador(BaseHTTPRequestHandler):
             elif re.fullmatch(r"mapa_cuadros/(mapa|placas|manto|clima)_[0-9]{4}\.png", rel):
                 ctype = "image/png"
             elif re.fullmatch(r"detalles/d[0-9]{6}_f[0-9]+_[0-9a-f]{6}"
-                              r"(?:_clima|_climahd|_koppen|_cuencas|_datos|_datos2)?"
+                              r"(?:_clima|_climahd|_koppen|_cuencas|_paises|_civ"
+                              r"|_regiones|_datos|_datos2)?"
                               r"\.png", rel):
                 ctype = "image/png"      # cuadros detallados (un frame gigante)
             elif re.fullmatch(r"detalles/d[0-9]{6}_f[0-9]+_[0-9a-f]{6}_capas\.json", rel):
