@@ -86,36 +86,52 @@ pero comparten la familia cromática de su país.
 
 ### 2.3 Cuencas marinas — `_cuencas_marinas(mar, elev, seed, n_obj=0)`
 
-1. **Profundidad** = `clip(-elev, 0, 1)` en el mar, suavizada 3×3 dos veces
-   (X envuelve, los polos no) para que las semillas no caigan en poros.
-2. **Fragmentación costera** `frag`: fracción de celdas de mar cuya distancia
-   a la tierra más cercana (`d_tierra`, BFS 8-vecinal reutilizando
-   `_dist_a_mar` invertida — 0 en la costa, creciendo mar adentro) es ≤ 1.5,
-   es decir litoral inmediato. Un mar salpicado de islas/penínsulas/estrechos
-   da `frag` alto; un océano abierto y compacto da `frag` bajo.
-3. **Semillas** en los fondos más profundos, greedy con separación mínima
-   `rmin ≈ 0.55·nx/√n` (mismo patrón que el sembrado de asentamientos).
-   Número objetivo `n` en automático: `clip(round(mar_frac·40·(1+1.8·frag)),
-   4, tope)`, con `tope = clip(round(30+34·frag), 30, 64)` — mares más
-   fragmentados piden más cuencas (hasta 64) para que ninguna abrace un
-   archipiélago entero. Con `n_obj` explícito se usa tal cual, acotado a
-   `[2, 64]` (sin ajuste por `frag`).
-4. **Dijkstra multi-fuente** con coste que **encarece lo somero** de forma
-   cuadrática (`0.25 + 6·(1+elev)²`) y además **encarece la cercanía a
-   tierra** con `(3+6·frag)·exp(-d_tierra/3)`: las aguas costeras y los
-   estrechos salen caros, así las fronteras entre cuencas se pegan a las
-   **crestas del fondo marino** y cortan por los pasos angostos entre tierras
-   en vez de rodearlas enteras.
-5. Los **mares interiores aislados** sin semilla ni conexión se etiquetan como
-   una región propia cada uno (BFS de componentes conexas). Los charcos
-   diminutos (`area < 8`) se nombran «Lago …», el resto «Mar interior de …».
+El mar se clasifica en dos familias mediante un **cierre costero** morfológico:
 
-Nombre de las cuencas abiertas: `_PREF_MAR` («Mar de», «Golfo de», «Cuenca de»,
-«Bahía de», «Fosa de», «Estrecho de»). Color: tonos fríos (HSV `h≈0.50`) bien
-espaciados alrededor del azul-cian. La lista se ordena por área descendente
-(las cuencas grandes primero).
+1. **Cierre costero**: la tierra se engorda `rcierre = max(2, nx/64)` celdas
+   (`_dilatar`, 8-vecindad; X envuelve, los polos no). Los estrechos angostos
+   (tipo Gibraltar o Bósforo, ancho ≤ ~2·rcierre) quedan sellados por los
+   segmentos costeros que casi se tocan. El mar restante (`mar & ~tapón`) se
+   etiqueta en **bolsas** conexas: cada bolsa es un océano o un mar cerrado.
+   Las celdas de la franja costera y del propio estrecho se reparten luego por
+   cercanía POR MAR (`_rellenar_huecos`), con lo que el límite del mar cerrado
+   cae exactamente en el estrecho que lo cierra.
+2. **Mares cerrados**: toda bolsa con área `< max(40, 0.12·mar_total)` es UNA
+   región propia (Mediterráneo, Negro, Caribe) que nunca se mezcla con aguas
+   de afuera. Nombre según área: ≥ 25 «Mar de …», 8–24 «Golfo de …», < 8
+   «Bahía de …».
+3. **Océano abierto**: las bolsas grandes se subdividen por **Dijkstra
+   multi-fuente** sembrado en los fondos más profundos (suavizados 3×3 ×2),
+   con `n_bas` proporcional al área de la bolsa sobre un objetivo global de
+   `clip(round(mar_frac·14), 3, 12)` cuencas (pocas y grandes). El coste es
+   **casi plano en mar abierto** (`0.25 + (1+5·cerca)·somero² + 1.2·cerca`,
+   con `cerca = exp(-d_tierra/6)` y `somero` suavizado): lejos de toda costa
+   las fronteras salen suaves (casi Voronoi) y solo se pegan a umbrales y
+   estrechos donde hay tierra o dorsales someras cerca. Nombre: «Océano …» si
+   la cuenca supera el 25 % del mar; si no, `_PREF_OCEANO` («Mar de»,
+   «Cuenca de», «Fosa de»).
+4. Los **charcos aislados sin núcleo** (enteramente bajo el tapón costero) se
+   etiquetan como región propia cada uno: `area < 8` «Lago …», el resto
+   «Mar interior de …».
 
-### 2.4 Ensamblado en `generar()`
+Con `n_obj` explícito, el objetivo global de cuencas abiertas se usa tal cual,
+acotado a `[2, 64]`. Color: tonos fríos (HSV `h≈0.50`) bien espaciados
+alrededor del azul-cian. La lista se ordena por área descendente.
+
+### 2.4 Islas y archipiélagos vacíos — `_islas_vacias(...)`
+
+Los continentes que quedaron **sin ninguna provincia** (islas sin
+asentamientos) también son territorio con nombre: las islas separadas solo por
+un brazo de mar angosto (≤ ~4 celdas; `_dilatar(vacía, 2)`) se agrupan en un
+**archipiélago**, y cada grupo con área ≥ 2 se convierte en 1–4 subregiones
+(`clip(area // 45, 1, 4)`, semillas por muestreo del punto más lejano,
+Dijkstra multi-fuente con el mismo `costo_f` de las fronteras). Entran en
+`lista_prov` con `pais = -1` y `asent = -1` (tierra neutral en el juego).
+Prefijos: «Isla de …» / «Archipiélago de …» (una sola parte), «Tierras de …» /
+«Islas …» (varias). Color: tonos tierra (HSV `h≈0.09–0.17`), ajenos a la
+paleta de países.
+
+### 2.5 Ensamblado en `generar()`
 
 Sección 6, al final, después de que ya existen `idmap` (países), `costo_f` y los
 asentamientos con su campo `pais`:
@@ -123,11 +139,12 @@ asentamientos con su campo `pais`:
 ```python
 submap, lista_prov = _provincias(idmap, costo_f, asent, rng)
 # ... color de provincia derivado del color del país ...
+_islas_vacias(tierra, cont, n_cont, submap, costo_f, seed, lista_prov)
 marmap, lista_mar = _cuencas_marinas(mar, campo["elev"], seed)
 ```
 
-Si no hubo asentamientos (mundo sin sitios habitables) se devuelve igualmente
-`subregiones` con la tierra vacía y las cuencas marinas calculadas.
+Si no hubo asentamientos (mundo sin sitios habitables) se devuelven igualmente
+las islas vacías (con coste plano) y las cuencas marinas calculadas.
 
 ---
 

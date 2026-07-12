@@ -71,6 +71,18 @@ def _rolly(f, s, axis=0):
     return g
 
 
+def _dilatar(mask, r):
+    """Dilatacion morfologica booleana de `r` pasos con 8-vecindad (X envuelve,
+    los polos no): engorda la mascara ~r celdas en todas direcciones."""
+    out = mask
+    for _ in range(int(r)):
+        d = out.copy()
+        for di, dj in _OFF8:
+            d |= np.roll(_rolly(out, di), dj, 1)
+        out = d
+    return out
+
+
 def _dist_esf(i0, j0, i1, j1, ny, nx):
     """Distancia euclidea en la malla esferica: envuelve SOLO en X (longitud);
     en Y (latitud) la distancia es lineal (no hay atajo por los polos)."""
@@ -446,88 +458,182 @@ def _provincias(idmap, costo_f, asent, rng):
     return sub, lista
 
 
+def _islas_vacias(tierra, cont, n_cont, submap, costo_f, seed, lista_prov):
+    """Subregiones para las islas VACIAS: los continentes que quedaron sin
+    ninguna provincia (islas sin asentamientos) tambien son territorio con
+    nombre. Las islas separadas solo por un brazo de mar angosto se agrupan en
+    un ARCHIPIELAGO; cada grupo con area suficiente se convierte en una o
+    varias subregiones propias (pais -1 = tierra neutral). Modifica `submap`
+    in place y anexa a `lista_prov`."""
+    ny, nx = tierra.shape
+    if n_cont == 0:
+        return
+    con_prov = np.zeros(n_cont, bool)
+    sel = (cont >= 0) & (submap >= 0)
+    if sel.any():
+        con_prov[np.unique(cont[sel])] = True
+    vacia = tierra & (cont >= 0) & ~con_prov[np.maximum(cont, 0)]
+    if not vacia.any():
+        return
+    # agrupar islas cercanas (mar de por medio <= ~4 celdas) en archipielagos
+    glab, ng = _bfs_continentes(_dilatar(vacia, 2))
+    rng = np.random.default_rng((seed & 0x7FFFFFFF) ^ 0x151A)
+    for g in range(ng):
+        celdas_g = vacia & (glab == g)
+        area = int(np.count_nonzero(celdas_g))
+        if area < 2:                          # islote suelto: sin region
+            continue
+        n_islas = len(np.unique(cont[celdas_g]))
+        n_sub = int(np.clip(area // 45, 1, 4))
+        # semillas por muestreo del punto mas lejano (determinista)
+        ys, xs = np.nonzero(celdas_g)
+        pts = list(zip(ys.tolist(), xs.tolist()))
+        fs = [pts[0]]
+        while len(fs) < n_sub:
+            fs.append(max(pts, key=lambda p: min(
+                _dist_esf(p[0], p[1], q[0], q[1], ny, nx) for q in fs)))
+        cost_g = np.where(celdas_g, costo_f, np.inf).astype(np.float32)
+        asig, _ = _dijkstra_multi(cost_g, fs, ny, nx)
+        asig = np.where(celdas_g, asig, -1).astype(np.int32)
+        _rellenar_huecos(asig, celdas_g)
+        partes = [loc for loc in range(len(fs))
+                  if bool(np.any(asig == loc))]
+        for loc in partes:
+            m = asig == loc
+            sid = len(lista_prov)
+            if n_islas > 1:
+                pref = "Archipiélago de" if len(partes) == 1 else "Islas"
+            else:
+                pref = "Isla de" if len(partes) == 1 else "Tierras de"
+            # tonos tierra (ocre-verdoso) bien espaciados, ajenos a los paises
+            h = 0.09 + 0.08 * ((sid * 0.61803398875) % 1.0)
+            lista_prov.append({"id": sid, "pais": -1, "asent": -1,
+                               "area": int(np.count_nonzero(m)),
+                               "nombre": f"{pref} {_nombre(rng, None)}",
+                               "rgb": _hsv(h, 0.42, 0.78)})
+            submap[m] = sid
+
+
+_PREF_OCEANO = ["Mar de", "Cuenca de", "Fosa de"]
+
+
 def _cuencas_marinas(mar, elev, seed, n_obj=0):
-    """Regiones del mar por CUENCAS batimetricas pequenas: semillas en los
-    fondos mas profundos (greedy con separacion minima) y Dijkstra multi-fuente
-    con un coste que encarece lo somero, asi las fronteras caen solas sobre las
-    dorsales y umbrales submarinos. Los mares interiores aislados sin semilla
-    se etiquetan como regiones propias. Devuelve (marmap int32, lista)."""
+    """Regiones del mar en dos familias.
+
+    MARES CERRADOS: la costa se "cierra" engordando la tierra unas celdas, de
+    modo que los estrechos angostos (tipo Gibraltar o Bosforo) quedan sellados
+    por los pequenos segmentos costeros que casi se tocan; cada bolsa de mar
+    que asi se separa del oceano abierto es un mar con nombre propio
+    (Mediterraneo, Negro, Caribe) y NUNCA se mezcla con aguas de afuera. Las
+    celdas de la franja costera y del propio estrecho se reparten despues por
+    cercania POR MAR, con lo que el limite del mar cerrado cae exactamente en
+    el estrecho que lo cierra.
+
+    OCEANO ABIERTO: cada bolsa grande se subdivide en cuencas GRANDES por
+    Dijkstra multi-fuente sembrado en los fondos mas profundos, con un coste
+    casi plano en mar abierto (fronteras suaves, casi Voronoi) que solo se
+    encarece cerca de tierra o sobre dorsales someras: cuencas mas grandes y
+    de bordes menos irregulares donde no hay tierra cerca.
+
+    Los charcos aislados sin nucleo (lagos, mares interiores diminutos) son
+    una region cada uno. Devuelve (marmap int32, lista)."""
     ny, nx = mar.shape
+    marmap = np.full((ny, nx), -1, np.int32)
+    mar_total = int(mar.sum())
+    if mar_total == 0:
+        return marmap, []
+    tierra = ~mar
+
+    # ---- 1. cierre costero: tapon de tierra engordada y bolsas de mar ----
+    rcierre = max(2, int(round(nx / 64.0)))
+    tapon = _dilatar(tierra, rcierre)
+    nucleo = mar & ~tapon                     # mar lejos de la costa engordada
+    lab, ncomp = _bfs_continentes(nucleo)     # cada bolsa = oceano o mar cerrado
+    comp = np.where(nucleo, lab, -1).astype(np.int32)
+    _rellenar_huecos(comp, mar)               # franja costera/estrechos por cercania
+
+    # ---- 2. campos para sembrar y costear el oceano abierto ----
     prof = np.where(mar, np.clip(-elev, 0.0, 1.0), 0.0).astype(np.float32)
-    # suavizado 3x3 (x2; X envuelve, los polos no) para que las semillas no caigan en poros
-    s = prof
-    for _ in range(2):
-        acc = np.zeros_like(s)
+    somero = np.where(mar, np.clip(1.0 + elev, 0.0, 1.0), 1.0).astype(np.float32)
+    s = prof; ss = somero
+    for _ in range(2):                        # blur 3x3 x2 (X envuelve, polos no)
+        acc = np.zeros_like(s); acs = np.zeros_like(ss)
         for di, dj in ((0, 0),) + _OFF8:
             acc += np.roll(_rolly(s, di), dj, 1)
-        s = acc / 9.0
-    mar_frac = float(mar.sum()) / float(ny * nx)
-    # distancia (celdas) de cada celda de mar a la tierra mas cercana: se
-    # reutiliza _dist_a_mar invirtiendo el sentido (pasandole "mar" en vez de
-    # "tierra") para obtener, sin BFS nuevo, 0 en la costa y creciendo mar
-    # adentro (X envuelve, los polos no se tocan).
+            acs += np.roll(_rolly(ss, di), dj, 1)
+        s = acc / 9.0; ss = acs / 9.0
+    # distancia de cada celda de mar a la tierra mas cercana (reutiliza
+    # _dist_a_mar con el sentido invertido; X envuelve, los polos no)
     d_tierra = _dist_a_mar(mar)
-    # fragmentacion costera: fraccion del mar que es litoral inmediato
-    # (perimetro/area). Mares muy salpicados de islas/penínsulas/estrechos dan
-    # un valor alto; un oceano abierto y compacto da un valor bajo.
-    n_mar = float(mar.sum())
-    frag = float(np.count_nonzero(mar & (d_tierra <= 1.5))) / max(n_mar, 1.0)
-    if n_obj > 0:
-        n = int(np.clip(n_obj, 2, 64))
-    else:
-        # tope y objetivo crecen con la fragmentacion: mas obstaculos ->
-        # cuencas mas chicas y numerosas, para que la vecindad entre cuencas
-        # refleje la geografia real (estrechos, no oceanos que abrazan islas)
-        tope = int(np.clip(round(30.0 + 34.0 * frag), 30, 64))
-        n = int(np.clip(round(mar_frac * 40.0 * (1.0 + 1.8 * frag)), 4, tope))
-    rmin = max(4.0, 0.55 * nx / np.sqrt(max(n, 1)))
+    cerca = np.exp(-d_tierra / np.float32(6.0)).astype(np.float32)
+    # coste plano (0.25) en mar abierto; lo somero y la cercania a costa solo
+    # pesan junto a tierra -> fronteras casi rectas lejos de toda costa y
+    # pegadas a umbrales/estrechos cerca de ella
+    costo = (np.float32(0.25)
+             + (np.float32(1.0) + np.float32(5.0) * cerca) * ss * ss
+             + np.float32(1.2) * cerca).astype(np.float32)
+
     rng = np.random.default_rng((seed & 0x7FFFFFFF) ^ 0xA9E1)
     sj = np.where(mar, s + rng.random(s.shape, dtype=np.float32) * 1e-4, -1.0)
-    orden = np.argsort(sj.ravel())[::-1]
-    fuentes = []
-    for idx in orden.tolist():
-        if sj.flat[idx] <= 0.0:
-            break
-        i, j = divmod(idx, nx)
-        ok = True
-        for (oi, oj) in fuentes:
-            di = abs(i - oi)
-            dj = abs(j - oj); dj = min(dj, nx - dj)
-            if di * di + dj * dj < rmin * rmin:
-                ok = False
+
+    mar_frac = mar_total / float(ny * nx)
+    n_total = int(np.clip(n_obj, 2, 64)) if n_obj > 0 else \
+        int(np.clip(round(mar_frac * 14.0), 3, 12))
+    # una bolsa mas chica que esto no se subdivide: es UN mar cerrado
+    umbral_oceano = max(40.0, 0.12 * mar_total)
+
+    def siembra(mask_c, n, rmin):
+        """Semillas en los fondos mas profundos de la bolsa, bien separadas."""
+        cand = np.where(mask_c, sj, -1.0)
+        orden = np.argsort(cand.ravel())[::-1]
+        fs = []
+        for idx in orden.tolist():
+            if cand.flat[idx] <= 0.0:
                 break
-        if ok:
-            fuentes.append((i, j))
-        if len(fuentes) >= n:
-            break
-    marmap = np.full((ny, nx), -1, np.int32)
-    if fuentes:
-        # coste: barato en lo hondo, caro en lo somero (cuadratico) -> las
-        # fronteras entre cuencas se pegan a las crestas del fondo marino.
-        # Ademas se encarece la cercania a tierra (aguas costeras/estrechos)
-        # con una exponencial decreciente en d_tierra: asi el Dijkstra evita
-        # "abrazar" continentes enteros y las fronteras cortan por los pasos
-        # angostos entre islas/penínsulas en vez de rodearlas. El peso crece
-        # con la fragmentacion costera (mares mas salpicados -> estrechos mas
-        # caros, cuencas mas chicas).
-        somero = np.clip(1.0 + elev, 0.0, 1.0)
-        peso_costa = np.float32(3.0 + 6.0 * frag)
-        costa_cara = peso_costa * np.exp(-d_tierra / np.float32(3.0))
-        cost = np.where(mar, np.float32(0.25) + np.float32(6.0) * somero * somero
-                        + costa_cara, np.inf).astype(np.float32)
-        asig_m, _ = _dijkstra_multi(cost, fuentes, ny, nx)
-        marmap = np.where(mar, asig_m, -1).astype(np.int32)
-        _rellenar_huecos(marmap, mar)
-    # mares interiores aislados (sin semilla ni conexion): una region cada uno
+            i, j = divmod(idx, nx)
+            if all(_dist_esf(i, j, oi, oj, ny, nx) >= rmin for oi, oj in fs):
+                fs.append((i, j))
+            if len(fs) >= n:
+                break
+        return fs
+
+    tipos = []                                 # tipo de cada id emitido
+    areas_comp = np.bincount(comp[comp >= 0], minlength=max(ncomp, 1))
+    for c in np.argsort(areas_comp)[::-1].tolist():
+        area_c = int(areas_comp[c])
+        if area_c == 0:
+            continue
+        mask_c = comp == c
+        fs = []
+        if area_c >= umbral_oceano:
+            n_bas = max(1, int(round(n_total * area_c / float(mar_total))))
+            if n_bas > 1:
+                fs = siembra(mask_c, n_bas,
+                             max(6.0, 0.8 * np.sqrt(area_c / float(n_bas))))
+        if len(fs) >= 2:
+            cost_c = np.where(mask_c, costo, np.inf).astype(np.float32)
+            asig, _ = _dijkstra_multi(cost_c, fs, ny, nx)
+            asig = np.where(mask_c, asig, -1).astype(np.int32)
+            _rellenar_huecos(asig, mask_c)
+            for loc in range(len(fs)):
+                celdas = asig == loc
+                if not celdas.any():
+                    continue
+                marmap[celdas] = len(tipos)
+                tipos.append("abierto")
+        else:
+            marmap[mask_c] = len(tipos)
+            tipos.append("cerrado")
+
+    # ---- 3. charcos sin nucleo (aislados bajo el tapon): region propia ----
     resto = mar & (marmap < 0)
     if resto.any():
-        nid = len(fuentes)
         ys, xs = np.nonzero(resto)
         for i, j in zip(ys.tolist(), xs.tolist()):
             if marmap[i, j] >= 0:
                 continue
             pila = deque([(i, j)])
-            marmap[i, j] = nid
+            marmap[i, j] = len(tipos)
             while pila:
                 ci, cj = pila.pop()
                 for di, dj in _OFF8:
@@ -536,20 +642,25 @@ def _cuencas_marinas(mar, elev, seed, n_obj=0):
                         continue
                     nj = (cj + dj) % nx
                     if resto[ni, nj] and marmap[ni, nj] < 0:
-                        marmap[ni, nj] = nid
+                        marmap[ni, nj] = marmap[i, j]
                         pila.append((ni, nj))
-            nid += 1
+            tipos.append("interior")
+
+    # ---- 4. nombres y colores ----
     lista = []
-    n_tot = int(marmap.max()) + 1 if marmap.max() >= 0 else 0
-    for k in range(n_tot):
+    for k, tipo in enumerate(tipos):
         area = int(np.count_nonzero(marmap == k))
         if area == 0:
             continue
         rr = np.random.default_rng(((seed & 0xFFFF) << 10) ^ (0xB0CA + k * 40503))
-        interior = k >= len(fuentes)
-        # los charcos interiores diminutos son lagos, no mares con cuenca
-        pref = ("Lago" if area < 8 else "Mar interior de") if interior else \
-            _PREF_MAR[int(rr.integers(len(_PREF_MAR)))]
+        if tipo == "abierto":
+            pref = "Océano" if area >= 0.25 * mar_total else \
+                _PREF_OCEANO[int(rr.integers(len(_PREF_OCEANO)))]
+        elif tipo == "cerrado":
+            pref = "Mar de" if area >= 25 else \
+                ("Golfo de" if area >= 8 else "Bahía de")
+        else:
+            pref = "Lago" if area < 8 else "Mar interior de"
         # tonos frios bien espaciados alrededor del azul-cian
         h = 0.50 + 0.13 * (((k * 0.61803398875) % 1.0) - 0.5)
         lista.append({"id": k, "nombre": f"{pref} {_nombre(rr, None)}",
@@ -594,13 +705,18 @@ def generar(campo, seed, n_asent=0, n_paises=0, tam_paises=0):
         rmin = float(min(rmin, max(2.0, 0.7 * np.sqrt(area_por))))
     sitios = sembrar_asentamientos(H, tierra, seed, n_obj, rmin)
     if not sitios:
+        # sin asentamientos no hay paises, pero las islas/masas de tierra
+        # siguen mereciendo subregion (coste plano: solo importa la forma)
+        submap0 = np.full((ny, nx), -1, np.int32)
+        lista_t0 = []
+        costo0 = np.where(tierra, np.float32(1.0), np.inf).astype(np.float32)
+        _islas_vacias(tierra, cont, n_cont, submap0, costo0, seed, lista_t0)
         marmap0, lista_m0 = _cuencas_marinas(mar, campo["elev"], seed)
         return {"asentamientos": [], "caminos": [], "rutas": [],
                 "paises": {"lista": [], "idmap": np.full((ny, nx), -1, np.int32),
                            "tierra_total": int(np.count_nonzero(tierra))},
                 "subregiones": {
-                    "tierra": {"lista": [],
-                               "idmap": np.full((ny, nx), -1, np.int32)},
+                    "tierra": {"lista": lista_t0, "idmap": submap0},
                     "mar": {"lista": lista_m0, "idmap": marmap0}}}
 
     asent = []
@@ -879,6 +995,8 @@ def generar(campo, seed, n_asent=0, n_paises=0, tam_paises=0):
         base = rgb_pais[r["pais"]] if r["pais"] < len(rgb_pais) else [150, 150, 150]
         f = 0.72 + 0.56 * ((k * 0.61803398875) % 1.0)
         r["rgb"] = [int(min(255, round(c * f))) for c in base]
+    # islas y archipielagos sin asentamientos: tambien son subregiones
+    _islas_vacias(tierra, cont, n_cont, submap, costo_f, seed, lista_prov)
     marmap, lista_mar = _cuencas_marinas(mar, campo["elev"], seed)
 
     return {

@@ -94,6 +94,8 @@
   <h1>subregiones<small id="sub-titulo"></small></h1>
   <a href="/">← volver al simulador</a>
   <a href="#" id="a-juego">🎮 jugar conquista</a>
+  <a href="#" id="a-fantasia">🗺️ mapa fantasía</a>
+  <a href="#" id="a-batalla">⚔️ battlemaps</a>
 </header>
 <main>
   <section>
@@ -148,6 +150,8 @@
   const RUTA = `/salidas/${sello}/detalles/${stem}`;
   $("sub-titulo").textContent = `${sello} · ${stem}`;
   $("a-juego").href = `/juego?sello=${sello}&d=${stem}`;
+  $("a-fantasia").href = `/fantasia?sello=${sello}&d=${stem}`;
+  $("a-batalla").href = `/batalla?sello=${sello}&d=${stem}`;
 
   // ---- estado ----
   const st = {
@@ -426,6 +430,16 @@
       g.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>${p.nombre}`;
       arbol.appendChild(g);
       for (const r of (porPais.get(p.id) || [])) arbol.appendChild(item(r));
+    }
+    // islas y archipiélagos sin país (pais -1): grupo propio
+    const libres = [...porPais.entries()].filter(([pid]) => pid < 0 || !paises.some(p => p.id === pid))
+      .flatMap(([, rs]) => rs);
+    if (libres.length) {
+      const g = document.createElement("div");
+      g.className = "grupo";
+      g.innerHTML = `<i class="cuad" style="background:#8a7a52"></i>islas y tierras sin país`;
+      arbol.appendChild(g);
+      for (const r of libres) arbol.appendChild(item(r));
     }
     if ((sr.mar || []).length) {
       const g = document.createElement("div");

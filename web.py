@@ -354,6 +354,16 @@ class Manejador(BaseHTTPRequestHandler):
         if url.path == "/juego":
             return self._archivo(BASE / "juego.html",
                                  "text/html; charset=utf-8", cache=False)
+        # mapa de fantasia: render estilizado (pergamino) de UN detalle
+        # (misma query que /regiones)
+        if url.path == "/fantasia":
+            return self._archivo(BASE / "fantasia.html",
+                                 "text/html; charset=utf-8", cache=False)
+        # generador de battlemaps: escenas de encuentro 20x20 desde un punto
+        # del detalle (misma query que /regiones)
+        if url.path == "/batalla":
+            return self._archivo(BASE / "batalla.html",
+                                 "text/html; charset=utf-8", cache=False)
         # modulo del detallado: allowlist estricta (sin traversal), solo estos
         # dos archivos; sin cache, igual que la pagina, para ver los cambios al
         # recargar
