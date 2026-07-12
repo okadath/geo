@@ -743,6 +743,71 @@
         ? 2 + Math.round(p.pob / 60000)
         : 4 + Math.round(p.pob / 40000) + (p.capital ? 8 : 0);
     }
+    conectarComponentes();
+  }
+
+  // garantiza que el grafo de movimiento (st.vecinos, tierra y mar juntos)
+  // sea UNA sola componente conexa: sin esto, una isla cuya costa quedó por
+  // debajo del umbral de contacto (o una cuenca aislada) sería inalcanzable
+  // e inconquistable. Detecta las componentes con BFS y, mientras haya más
+  // de una, enlaza el par de provincias más cercano (distancia entre
+  // centroides, envolviendo en x porque el mundo es cilíndrico) entre la
+  // componente más chica y el resto. El enlace es un vecino normal (cuesta
+  // PA_MOV); si une tierra con mar, la tierra queda marcada como costera.
+  function conectarComponentes() {
+    const compDe = new Map();                    // id -> nº de componente
+    let nComp = 0;
+    for (const id of st.prov.keys()) {
+      if (compDe.has(id)) continue;
+      const cola = [id];
+      compDe.set(id, nComp);
+      while (cola.length) {
+        const a = cola.pop();
+        for (const b of (st.vecinos.get(a) || []))
+          if (st.prov.has(b) && !compDe.has(b)) { compDe.set(b, nComp); cola.push(b); }
+      }
+      nComp++;
+    }
+    if (nComp <= 1) return;
+    const dist2 = (a, b) => {                    // envuelve solo en x
+      let dx = Math.abs(a.cx - b.cx);
+      dx = Math.min(dx, st.nx - dx);
+      const dy = a.cy - b.cy;
+      return dx * dx + dy * dy;
+    };
+    let enlaces = 0;
+    while (true) {
+      const grupos = new Map();                  // comp -> [provincias]
+      for (const [id, c] of compDe) {
+        if (!grupos.has(c)) grupos.set(c, []);
+        grupos.get(c).push(st.prov.get(id));
+      }
+      if (grupos.size <= 1) break;
+      // la componente más chica se une al par más cercano del resto
+      let chica = null;
+      for (const [c, ps] of grupos)
+        if (!chica || ps.length < chica.ps.length) chica = { c, ps };
+      let mejor = null;
+      for (const a of chica.ps) for (const [c, ps] of grupos) {
+        if (c === chica.c) continue;
+        for (const b of ps) {
+          const d = dist2(a, b);
+          if (!mejor || d < mejor.d) mejor = { a, b, d };
+        }
+      }
+      if (!mejor) break;
+      const { a, b } = mejor;
+      if (!st.vecinos.has(a.id)) st.vecinos.set(a.id, new Set());
+      if (!st.vecinos.has(b.id)) st.vecinos.set(b.id, new Set());
+      st.vecinos.get(a.id).add(b.id); st.vecinos.get(b.id).add(a.id);
+      if (a.mar !== b.mar) (a.mar ? b : a).costera = true;
+      const de = compDe.get(b.id);               // absorbe la componente chica
+      for (const [id, c] of compDe) if (c === chica.c) compDe.set(id, de);
+      enlaces++;
+    }
+    if (enlaces)
+      console.info(`conectarComponentes: ${nComp} componentes; ` +
+                   `${enlaces} enlace(s) sintético(s) añadidos`);
   }
 
   // ================= economía =================
@@ -1430,53 +1495,85 @@
     comprobarVictoria();
   };
 
-  // flecha origen → destino sobre el mapa (con copias envueltas por el
-  // borde, porque el mundo es periódico en x)
+  // flechas sobre el mapa (con copias envueltas por el borde, porque el
+  // mundo es periódico en x). Dos modos:
+  // - con orden pendiente: UNA flecha opaca origen→destino con la cantidad.
+  // - sin orden pero con provincia seleccionada: abanico SEMITRANSPARENTE
+  //   con una flecha hacia CADA destino posible (verde mover, roja atacar,
+  //   discontinua si es travesía naval), para ver de un vistazo a dónde
+  //   pueden ir las tropas.
   function pintarFlecha() {
     cvF.width = st.nx; cvF.height = st.ny;
-    const o = st.orden;
-    if (!o) { sincronizarEspejos(); return; }
-    const A = st.prov.get(o.origen), D = st.prov.get(o.destino);
-    let x1 = A.cx, y1 = A.cy, x2 = D.cx, y2 = D.cy;
-    const dx = x2 - x1;                          // camino más corto (solo x envuelve)
-    if (dx > st.nx / 2) x2 -= st.nx;
-    else if (dx < -st.nx / 2) x2 += st.nx;
     const ctx = cvF.getContext("2d");
     const esc = Math.max(1, st.nx / 1024);
-    const color = o.ataque ? "#ff6a50" : "#5ee6a0";
-    const dib = off => {
-      const ax = x1 + off, bx = x2 + off;
-      const ang = Math.atan2(y2 - y1, bx - ax);
-      const cab = 7 * esc;                       // punta de la flecha
-      const fx = bx - Math.cos(ang) * cab * 0.8;
-      const fy = y2 - Math.sin(ang) * cab * 0.8;
-      ctx.strokeStyle = color; ctx.fillStyle = color;
-      ctx.lineWidth = 2.2 * esc; ctx.lineCap = "round";
-      ctx.setLineDash(o.naval ? [5 * esc, 4 * esc] : []);
-      ctx.beginPath(); ctx.moveTo(ax, y1); ctx.lineTo(fx, fy); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(bx, y2);
-      ctx.lineTo(bx - Math.cos(ang - 0.45) * cab, y2 - Math.sin(ang - 0.45) * cab);
-      ctx.lineTo(bx - Math.cos(ang + 0.45) * cab, y2 - Math.sin(ang + 0.45) * cab);
-      ctx.closePath(); ctx.fill();
-      // cantidad elegida sobre el punto medio de la flecha
-      const mx = (ax + bx) / 2, my = (y1 + y2) / 2;
-      const t = String(o.n), fs = 10 * esc;
-      ctx.font = `700 ${fs}px system-ui, sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      const w = ctx.measureText(t).width + 8 * esc, h = fs + 5 * esc;
-      ctx.fillStyle = "rgba(10,13,19,.92)";
-      ctx.beginPath();
-      ctx.roundRect(mx - w / 2, my - h / 2, w, h, 3 * esc);
-      ctx.fill();
-      ctx.strokeStyle = color; ctx.lineWidth = esc; ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.fillText(t, mx, my);
+
+    // una flecha A→D; alfa < 1 la hace semitransparente y retrae los
+    // extremos para no tapar las pastillas de tropas. texto: rótulo opcional
+    // sobre el punto medio (la cantidad de la orden).
+    const flechaEntre = (A, D, color, naval, alfa, texto) => {
+      let x1 = A.cx, y1 = A.cy, x2 = D.cx, y2 = D.cy;
+      const dx = x2 - x1;                        // camino más corto (solo x envuelve)
+      if (dx > st.nx / 2) x2 -= st.nx;
+      else if (dx < -st.nx / 2) x2 += st.nx;
+      const dib = off => {
+        let ax = x1 + off, ay = y1, bx = x2 + off, by = y2;
+        const ang = Math.atan2(by - ay, bx - ax);
+        if (alfa < 1) {                          // retrae extremos del abanico
+          const r = 9 * esc, largo = Math.hypot(bx - ax, by - ay);
+          const rec = Math.min(r, largo * 0.28);
+          ax += Math.cos(ang) * rec; ay += Math.sin(ang) * rec;
+          bx -= Math.cos(ang) * rec * 0.7; by -= Math.sin(ang) * rec * 0.7;
+        }
+        const cab = 7 * esc;                     // punta de la flecha
+        const fx = bx - Math.cos(ang) * cab * 0.8;
+        const fy = by - Math.sin(ang) * cab * 0.8;
+        ctx.globalAlpha = alfa;
+        ctx.strokeStyle = color; ctx.fillStyle = color;
+        ctx.lineWidth = 2.2 * esc; ctx.lineCap = "round";
+        ctx.setLineDash(naval ? [5 * esc, 4 * esc] : []);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(fx, fy); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx - Math.cos(ang - 0.45) * cab, by - Math.sin(ang - 0.45) * cab);
+        ctx.lineTo(bx - Math.cos(ang + 0.45) * cab, by - Math.sin(ang + 0.45) * cab);
+        ctx.closePath(); ctx.fill();
+        if (texto != null) {                     // rótulo en el punto medio
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          const t = String(texto), fs = 10 * esc;
+          ctx.font = `700 ${fs}px system-ui, sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          const w = ctx.measureText(t).width + 8 * esc, h = fs + 5 * esc;
+          ctx.fillStyle = "rgba(10,13,19,.92)";
+          ctx.beginPath();
+          ctx.roundRect(mx - w / 2, my - h / 2, w, h, 3 * esc);
+          ctx.fill();
+          ctx.strokeStyle = color; ctx.lineWidth = esc; ctx.stroke();
+          ctx.fillStyle = color;
+          ctx.fillText(t, mx, my);
+        }
+        ctx.globalAlpha = 1;
+      };
+      dib(0);
+      if (Math.min(x1, x2) < 0) dib(st.nx);      // copia envuelta
+      else if (Math.max(x1, x2) > st.nx) dib(-st.nx);
     };
-    dib(0);
-    if (Math.min(x1, x2) < 0) dib(st.nx);        // copia envuelta
-    else if (Math.max(x1, x2) > st.nx) dib(-st.nx);
+
+    const o = st.orden;
+    if (o) {                                     // orden pendiente: flecha única
+      const A = st.prov.get(o.origen), D = st.prov.get(o.destino);
+      flechaEntre(A, D, o.ataque ? "#ff6a50" : "#5ee6a0", o.naval, 1, o.n);
+    } else if (st.sel) {                         // abanico de destinos posibles
+      const A = st.prov.get(st.sel);
+      for (const id of objetivos(st.sel)) {
+        const D = st.prov.get(id);
+        if (!D) continue;
+        const naval = !(st.vecinos.get(st.sel) || new Set()).has(id);
+        const ataque = D.dueno !== st.jugador &&
+                       !(D.dueno === NEUTRAL && D.ejercito <= 0);
+        flechaEntre(A, D, ataque ? "#ff6a50" : "#5ee6a0", naval, 0.42, null);
+      }
+    }
     sincronizarEspejos();
   }
 
@@ -1627,7 +1724,8 @@
     yo.puntos = puntosMaxDe(st.jugador);         // se renuevan tus puntos 🏃
     registrarHistoria();                          // un punto por país vivo, cada turno global
     registrarReplayDiff();                        // snapshot diferencial de dueños para el replay
-    pintarDuenos(); pintarSel(); pintarRotulos(); pintarBarra(); pintarFicha();
+    pintarDuenos(); pintarSel(); pintarRotulos(); pintarFlecha();
+    pintarBarra(); pintarFicha();
     comprobarVictoria();
   };
 
@@ -2219,17 +2317,17 @@
     cancelarOrden();                             // clic en el mapa: descarta la orden
     const p = st.prov.get(id);
     if (!p) {                                    // mar o nada: deseleccionar
-      st.sel = 0; pintarSel(); pintarFicha();
+      st.sel = 0; pintarSel(); pintarFlecha(); pintarFicha();
       return;
     }
     if (st.sel === id) {                         // clic en la ya seleccionada:
-      st.sel = 0; pintarSel(); pintarFicha();    // deseleccionar
+      st.sel = 0; pintarSel(); pintarFlecha(); pintarFicha();  // deseleccionar
       return;
     }
     // si hay una provincia propia seleccionada y el clic es un objetivo: orden
     if (st.sel && ordenar(id)) return;
     st.sel = id;
-    pintarSel(); pintarFicha();
+    pintarSel(); pintarFlecha(); pintarFicha();
   }
 })();
 </script>

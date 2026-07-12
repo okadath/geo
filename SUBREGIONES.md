@@ -20,8 +20,9 @@ capa añade el siguiente nivel de detalle político:
 - **Provincias** (tierra): cada país se subdivide en subregiones, una por cada
   asentamiento suyo. Son el equivalente a condados/comarcas/prefecturas.
 - **Cuencas marinas** (mar): el mar se reparte en cuencas pequeñas cuyas
-  fronteras caen sobre las dorsales y umbrales submarinos, más los mares
-  interiores aislados y los lagos.
+  fronteras caen sobre las dorsales y umbrales submarinos, más los **mares
+  cerrados** (bolsas selladas por estrechos angostos), las **aguas costeras**
+  alrededor de las islas, los mares interiores aislados y los lagos.
 
 Todo es **determinista** (misma semilla → mismo resultado) y se calcula sobre
 los mismos campos que el resto de la civilización, sin tocar el generador
@@ -86,7 +87,7 @@ pero comparten la familia cromática de su país.
 
 ### 2.3 Cuencas marinas — `_cuencas_marinas(mar, elev, seed, n_obj=0)`
 
-El mar se clasifica en dos familias mediante un **cierre costero** morfológico:
+El mar se clasifica en tres familias mediante un **cierre costero** morfológico:
 
 1. **Cierre costero**: la tierra se engorda `rcierre = max(2, nx/64)` celdas
    (`_dilatar`, 8-vecindad; X envuelve, los polos no). Los estrechos angostos
@@ -100,17 +101,27 @@ El mar se clasifica en dos familias mediante un **cierre costero** morfológico:
    región propia (Mediterráneo, Negro, Caribe) que nunca se mezcla con aguas
    de afuera. Nombre según área: ≥ 25 «Mar de …», 8–24 «Golfo de …», < 8
    «Bahía de …».
-3. **Océano abierto**: las bolsas grandes se subdividen por **Dijkstra
-   multi-fuente** sembrado en los fondos más profundos (suavizados 3×3 ×2),
-   con `n_bas` proporcional al área de la bolsa sobre un objetivo global de
-   `clip(round(mar_frac·14), 3, 12)` cuencas (pocas y grandes). El coste es
-   **casi plano en mar abierto** (`0.25 + (1+5·cerca)·somero² + 1.2·cerca`,
-   con `cerca = exp(-d_tierra/6)` y `somero` suavizado): lejos de toda costa
-   las fronteras salen suaves (casi Voronoi) y solo se pegan a umbrales y
-   estrechos donde hay tierra o dorsales someras cerca. Nombre: «Océano …» si
-   la cuenca supera el 25 % del mar; si no, `_PREF_OCEANO` («Mar de»,
-   «Cuenca de», «Fosa de»).
-4. Los **charcos aislados sin núcleo** (enteramente bajo el tapón costero) se
+3. **Aguas costeras de islas** (paso 2b): las masas de tierra chicas
+   (área ≤ `max(4, 0.05·tierra_total)`) reciben, en la medida de lo posible,
+   un **cinturón de mar propio** a su alrededor, de radio `rcierre`; las
+   islas separadas por un brazo angosto (≤ ~4 celdas) comparten cinturón como
+   **archipiélago**. Solo se talla sobre bolsas de océano abierto — nunca
+   fragmenta un mar cerrado ni los charcos interiores — y se descarta si le
+   quedan < 3 celdas. Nombre: «Aguas de …» (≥ 8 celdas) o «Bajíos de …».
+4. **Océano abierto**: lo que queda de cada bolsa grande se subdivide por
+   **Dijkstra multi-fuente** sembrado en los fondos más profundos (suavizados
+   3×3 ×2), con `n_bas` proporcional al área de la bolsa sobre un objetivo
+   global de `clip(round(mar_frac·40·(1+1.8·frag)), 4, tope)` cuencas, con
+   `frag` = fracción del mar que es litoral inmediato (`d_tierra ≤ 1.5`) y
+   `tope = clip(round(30+34·frag), 30, 64)`: mares muy salpicados de islas →
+   cuencas más chicas y numerosas. El coste es **casi plano en mar abierto**
+   (`0.25 + (1+5·cerca)·somero² + 1.2·cerca`, con `cerca = exp(-d_tierra/6)`
+   y `somero` suavizado): lejos de toda costa las fronteras salen suaves
+   (casi Voronoi) y solo se pegan a umbrales y estrechos donde hay tierra o
+   dorsales someras cerca. Separación mínima entre semillas
+   `max(4, 0.8·√(area/n_bas))`. Nombre: «Océano …» si la cuenca supera el
+   25 % del mar; si no, `_PREF_OCEANO` («Mar de», «Cuenca de», «Fosa de»).
+5. Los **charcos aislados sin núcleo** (enteramente bajo el tapón costero) se
    etiquetan como región propia cada uno: `area < 8` «Lago …», el resto
    «Mar interior de …».
 

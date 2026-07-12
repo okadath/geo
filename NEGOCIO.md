@@ -183,6 +183,85 @@ juego y generador: el generador es el núcleo común que paga dos veces.
 
 ---
 
+## 8. Plan de precios concreto (estado actual: ya con `/fantasia` y `/batalla`)
+
+> **Actualización.** Las secciones 1–7 se escribieron cuando las dos barreras
+> de entrada al mercado creativo eran (1) no tener render estilo fantasía y
+> (2) no tener battlemaps. **Ambas ya existen** (`/fantasia` y `/batalla`).
+> Esto adelanta el producto vendible de "el juego" a "la herramienta creativa",
+> que hoy está lista antes.
+
+### 8.1 Qué sección vender
+
+| Sección | ¿Vendible hoy? | Por qué |
+|---|---|---|
+| `/batalla` | **Sí, la primera** | Es el nicho con el dinero (Czepeku ~$80k/mes). Un DM necesita mapas nuevos cada semana; el generador los hace infinitos y coherentes con un mundo. |
+| `/fantasia` | **Sí, como complemento** | Compite con Wonderdraft/Inkarnate con geología real. Sola es más débil (Azgaar es gratis); junto a `/batalla` forma un paquete único: "del planeta al encuentro". |
+| `/juego` | Después, en Steam | Necesita 6–12 meses de pulido (tutorial, balance, IA). No va primero. |
+| Generador científico | No directamente | Es el motor y el marketing (GIFs virales de tectónica), no el producto. Nadie paga por un atlas. |
+
+La combinación **no existe en el mercado**: Dungeondraft hace battlemaps
+desconectados de todo; Azgaar hace mundos sin battlemaps ni tectónica. Aquí se
+genera el planeta, su historia geológica, sus reinos, y se baja hasta "las
+ruinas junto al río que sí corre cuesta abajo". Ese es el pitch.
+
+### 8.2 Mecanismos de cobro (glosario)
+
+- **Pago único**: se paga una vez, se usa para siempre. Simple, sin
+  infraestructura, pero cobras una sola vez por persona. Estándar para
+  *herramientas* (Wonderdraft $29.99, **Dungeondraft $19.99** — el comparable
+  directo).
+- **Suscripción**: cobro mensual. Solo se justifica con **valor recurrente**:
+  contenido nuevo cada mes (Patreon/Czepeku) o un servicio alojado en servidor
+  (Inkarnate). Cobrar suscripción por algo que no cambia = cancelaciones y
+  malas reseñas.
+- **Freemium**: versión gratis limitada; se paga por desbloquear. Sirve de demo
+  permanente y motor de boca a boca.
+- **Donación/Patreon puro** (modelo Azgaar): techo bajo (~$5k/mes el mejor
+  caso), sin fricción.
+
+**Restricción técnica que decide el mecanismo:** hoy todo corre en el navegador
+del cliente en un HTML autocontenido. No se puede "cerrar con llave" una función
+dentro de la página (el código fuente es legible). Quedan dos mecanismos
+honestos sin reescribir nada: **(a)** vender la *descarga* de la app (itch.io
+cobra por descargar; empaquetar con Tauri son ~2–4 semanas), o **(b)** montar un
+servidor que haga el render HD (eso sí es "cerrable", pero es infraestructura y
+meses). **Empezar por (a).**
+
+### 8.3 Estrategia en orden
+
+1. **Ahora — itch.io, freemium + pago único $12–15.** Web gratis: `/batalla`
+   exporta a 70 px/casilla con marca de agua discreta, `/fantasia` a calidad
+   1×. Pago (descarga de la app empaquetada): export HD (140 px, calidad 4×),
+   todos los diales y semillas, y **licencia de uso comercial** (los DMs que
+   publican módulos la necesitan y la valoran). $12–15: por debajo de
+   Dungeondraft siendo desconocido; itch.io retiene ~10% (Steam 30%).
+2. **A los 2–3 meses, con tracción — Patreon $5/mes por contenido, no por la
+   herramienta.** El nivel de $5 entrega 3–4 **mundos curados/mes**: semilla +
+   mapa fantasía rotulado + pack de 8–10 battlemaps de ese mundo + página de
+   lore. Ahí sí hay valor recurrente real (modelo Czepeku, produciendo en horas
+   lo que ellos pintan en semanas). La herramienta sigue siendo pago único: no
+   mezclar.
+3. **Más adelante — `/juego` en Steam, pago único $6–10**, con página "Coming
+   Soon" abierta meses antes (los wishlists predicen todo). Los mundos del
+   Patreon se vuelven escenarios del juego: el mismo motor cobra tres veces.
+
+**Qué NO hacer:** suscripción por la herramienta (sin servidor ni valor
+recurrente que la justifique), vender mapas sueltos a $2 (el generador abarata
+el mapa individual — ver §2 y §7), y multijugador (ver §3).
+
+### 8.4 Expectativa honesta
+
+El escenario base del nicho: de cientos a pocos miles de dólares el primer año.
+El bueno ($1–3k/mes sostenidos vía Patreon) llega con publicación constante de
+mundos y marketing en r/battlemaps, r/worldbuilding y TikTok (los GIFs de
+tectónica generándose son ideales). El paso con mejor relación
+esfuerzo/aprendizaje es el **1**: empaquetar y subir a itch.io cuesta semanas,
+no meses, y confirma con dinero real si hay demanda antes de invertir en el
+resto.
+
+---
+
 ## Fuentes
 
 - [games-stats: Age of History II](https://games-stats.com/steam/game/age-of-civilizations-ii/)

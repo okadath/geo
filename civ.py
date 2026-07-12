@@ -529,11 +529,17 @@ def _cuencas_marinas(mar, elev, seed, n_obj=0):
     cercania POR MAR, con lo que el limite del mar cerrado cae exactamente en
     el estrecho que lo cierra.
 
-    OCEANO ABIERTO: cada bolsa grande se subdivide en cuencas GRANDES por
-    Dijkstra multi-fuente sembrado en los fondos mas profundos, con un coste
-    casi plano en mar abierto (fronteras suaves, casi Voronoi) que solo se
-    encarece cerca de tierra o sobre dorsales someras: cuencas mas grandes y
-    de bordes menos irregulares donde no hay tierra cerca.
+    OCEANO ABIERTO: cada bolsa grande se subdivide en cuencas por Dijkstra
+    multi-fuente sembrado en los fondos mas profundos, con un coste casi plano
+    en mar abierto (fronteras suaves, casi Voronoi) que solo se encarece cerca
+    de tierra o sobre dorsales someras. El numero de cuencas crece con la
+    fraccion de mar y con la fragmentacion costera (mares salpicados de islas
+    -> cuencas mas chicas y numerosas).
+
+    AGUAS COSTERAS: las islas chicas reciben, en la medida de lo posible, un
+    cinturon de mar propio a su alrededor (las islas cercanas comparten uno,
+    como archipielago); solo se talla sobre oceano abierto, nunca dentro de un
+    mar cerrado.
 
     Los charcos aislados sin nucleo (lagos, mares interiores diminutos) son
     una region cada uno. Devuelve (marmap int32, lista)."""
@@ -577,8 +583,15 @@ def _cuencas_marinas(mar, elev, seed, n_obj=0):
     sj = np.where(mar, s + rng.random(s.shape, dtype=np.float32) * 1e-4, -1.0)
 
     mar_frac = mar_total / float(ny * nx)
-    n_total = int(np.clip(n_obj, 2, 64)) if n_obj > 0 else \
-        int(np.clip(round(mar_frac * 14.0), 3, 12))
+    # fragmentacion costera: fraccion del mar que es litoral inmediato
+    # (perimetro/area). Mares muy salpicados de islas dan un valor alto; un
+    # oceano abierto y compacto, bajo. Mas fragmentacion -> mas cuencas.
+    frag = float(np.count_nonzero(mar & (d_tierra <= 1.5))) / max(float(mar_total), 1.0)
+    if n_obj > 0:
+        n_total = int(np.clip(n_obj, 2, 64))
+    else:
+        tope = int(np.clip(round(30.0 + 34.0 * frag), 30, 64))
+        n_total = int(np.clip(round(mar_frac * 40.0 * (1.0 + 1.8 * frag)), 4, tope))
     # una bolsa mas chica que esto no se subdivide: es UN mar cerrado
     umbral_oceano = max(40.0, 0.12 * mar_total)
 
@@ -599,17 +612,40 @@ def _cuencas_marinas(mar, elev, seed, n_obj=0):
 
     tipos = []                                 # tipo de cada id emitido
     areas_comp = np.bincount(comp[comp >= 0], minlength=max(ncomp, 1))
+
+    # ---- 2b. aguas costeras: cinturon de mar alrededor de las islas ----
+    # las masas de tierra chicas reciben una franja de mar propia; las islas
+    # separadas por un brazo angosto comparten cinturon (archipielago). Solo
+    # se talla sobre bolsas de oceano abierto: un mar cerrado no se fragmenta.
+    labt, nlabt = _bfs_continentes(tierra)
+    if nlabt > 0:
+        areas_t = np.bincount(labt[tierra], minlength=nlabt)
+        umbral_isla = max(4.0, 0.05 * float(tierra.sum()))
+        chica = areas_t <= umbral_isla
+        isla = tierra & chica[np.maximum(labt, 0)]
+        if isla.any():
+            abierta = areas_comp.astype(np.float32) >= umbral_oceano
+            glab, ng = _bfs_continentes(_dilatar(isla, 2))
+            for g in range(ng):
+                cint = _dilatar(isla & (glab == g), rcierre) & mar
+                cint &= (comp >= 0) & abierta[np.maximum(comp, 0)]
+                cint &= marmap < 0            # sin pisar cinturones previos
+                if int(np.count_nonzero(cint)) < 3:
+                    continue
+                marmap[cint] = len(tipos)
+                tipos.append("costero")
+
     for c in np.argsort(areas_comp)[::-1].tolist():
-        area_c = int(areas_comp[c])
+        mask_c = (comp == c) & (marmap < 0)   # lo que no se llevo un cinturon
+        area_c = int(np.count_nonzero(mask_c))
         if area_c == 0:
             continue
-        mask_c = comp == c
         fs = []
         if area_c >= umbral_oceano:
             n_bas = max(1, int(round(n_total * area_c / float(mar_total))))
             if n_bas > 1:
                 fs = siembra(mask_c, n_bas,
-                             max(6.0, 0.8 * np.sqrt(area_c / float(n_bas))))
+                             max(4.0, 0.8 * np.sqrt(area_c / float(n_bas))))
         if len(fs) >= 2:
             cost_c = np.where(mask_c, costo, np.inf).astype(np.float32)
             asig, _ = _dijkstra_multi(cost_c, fs, ny, nx)
@@ -659,6 +695,8 @@ def _cuencas_marinas(mar, elev, seed, n_obj=0):
         elif tipo == "cerrado":
             pref = "Mar de" if area >= 25 else \
                 ("Golfo de" if area >= 8 else "Bahía de")
+        elif tipo == "costero":
+            pref = "Aguas de" if area >= 8 else "Bajíos de"
         else:
             pref = "Lago" if area < 8 else "Mar interior de"
         # tonos frios bien espaciados alrededor del azul-cian

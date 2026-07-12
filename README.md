@@ -309,6 +309,27 @@ Además del JSON se rinde `{nombre}_civ.png`: el **mapa político** ya compuesto
 (clima HD + tinte de países + caminos, rutas y asentamientos rotulados), que el
 visor enlaza como «mapa político».
 
+## Páginas interactivas sobre un detalle
+
+Cada cuadro detallado **con civilización** habilita cuatro páginas más del
+servidor local, todas autocontenidas (HTML + JS en un archivo, sin
+dependencias) y con la misma query `?sello=…&d=<stem>`:
+
+- **`/regiones`** — visor de **subregiones**: provincias de cada país y
+  regiones marinas, con selección múltiple, fichas, tooltips y árbol por país.
+  Doc: [`SUBREGIONES.md`](SUBREGIONES.md).
+- **`/juego`** — **juego de conquista por turnos** (estilo Age of History)
+  sobre esas provincias: economía, ejércitos, mar transitable, desembarcos,
+  diplomacia e IA. Doc: [`JUEGO.md`](JUEGO.md).
+- **`/fantasia`** — **mapa de fantasía**: redibujado estilo pergamino (glifos
+  de montaña, waterlines, rótulos caligráficos) con niveles de calidad,
+  re-render nítido por sector al hacer zoom y export de PNG completo o del
+  sector visible. Doc: [`FANTASIA.md`](FANTASIA.md).
+- **`/batalla`** — **battlemaps de encuentro**: elige un punto del mundo y
+  genera un mapa táctico con rejilla coherente con ese lugar (14 temas con
+  subtipos, título narrativo, export PNG para VTT/impresión).
+  Doc: [`BATALLA.md`](BATALLA.md).
+
 ## Diales interesantes (constantes al inicio de `tecto.py`)
 
 - `k0` en `poisson_fft` — número de celdas de convección ⇒ número de placas.
@@ -333,3 +354,10 @@ que funcionaron. Es el punto de entrada para retomar o extender el proyecto
 mapa pequeño y re-escaladas al detalle, el dial de **sinuosidad** (meandros) y
 los **lagos extendidos / cuencas endorreicas** de la hidrología fina, con su
 matemática, sus diales y las trampas ya resueltas.
+
+Además: [`SUBREGIONES.md`](SUBREGIONES.md) (provincias y cuencas marinas +
+página `/regiones`), [`JUEGO.md`](JUEGO.md) (juego de conquista `/juego`),
+[`FANTASIA.md`](FANTASIA.md) (mapa de fantasía `/fantasia`),
+[`BATALLA.md`](BATALLA.md) (battlemaps `/batalla`),
+[`ARQUITECTURA_C4.md`](ARQUITECTURA_C4.md) (vistas C4 del sistema) y
+[`NEGOCIO.md`](NEGOCIO.md) (posibles líneas de producto).
