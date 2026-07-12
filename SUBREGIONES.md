@@ -107,7 +107,15 @@ El mar se clasifica en tres familias mediante un **cierre costero** morfológico
    islas separadas por un brazo angosto (≤ ~4 celdas) comparten cinturón como
    **archipiélago**. Solo se talla sobre bolsas de océano abierto — nunca
    fragmenta un mar cerrado ni los charcos interiores — y se descarta si le
-   quedan < 3 celdas. Nombre: «Aguas de …» (≥ 8 celdas) o «Bajíos de …».
+   quedan < 3 celdas. El cinturón **no se deja como un solo anillo**: se
+   subdivide en `k = clip(area_cint // 40, 2, 4)` **secciones de costa** (los
+   cinturones minúsculos de < 6 celdas quedan enteros). Las `k` semillas se
+   siembran por muestreo del punto más lejano (distancia esférica que envuelve
+   en X) dentro del cinturón del grupo y se reparten por Dijkstra multi-fuente
+   acotado al cinturón (coste `inf` fuera), de modo que cada sección es un arco
+   contiguo del anillo alrededor del archipiélago. Cada sección es una región
+   `tipo="costero"` propia. Nombre: «Aguas de …» (≥ 8 celdas) o «Bajíos de …»
+   (el generador de nombres es por-id, así que cada sección recibe uno distinto).
 4. **Océano abierto**: lo que queda de cada bolsa grande se subdivide por
    **Dijkstra multi-fuente** sembrado en los fondos más profundos (suavizados
    3×3 ×2), con `n_bas` proporcional al área de la bolsa sobre un objetivo
@@ -173,6 +181,17 @@ su subregión:
 - La costa se decide con `elev2` (la elevación **fina** del render), no con la
   malla gruesa de civilización, así el raster respeta el litoral real del mapa
   y la página puede hacer **hit-testing por píxel**.
+- **Relleno de huecos**: como la costa fina (`tierra_k`) y los idmaps gruesos
+  (`ncw ≤ 200`) no coinciden píxel a píxel, en los bordes/costas quedan bandas
+  de píxeles con `id = 0`. Tras construir `comb` se rellenan esos huecos con el
+  id de la subregión más cercana **del tipo correcto** (píxel de tierra → id de
+  provincia `1..Nt`; píxel de mar → id de región marina `> Nt`) mediante
+  dilataciones iterativas de 1 px multi-fuente (vectorizado en numpy; X
+  envuelve, los polos no). Un relleno residual final llena, sin distinguir
+  tipo, cualquier `0` exótico (un tipo sin ninguna región en el mapa junto a
+  otro que sí). Resultado: todo píxel del raster tiene id (queda `0` solo si de
+  verdad no existe ninguna región en el mapa). Se mantiene el invariante §6: el
+  raster solo contiene ids presentes en las listas (más el `0` residual).
 
 Esto permite que el navegador identifique la región bajo el cursor leyendo un
 solo píxel del PNG (sin polígonos ni geometría vectorial).

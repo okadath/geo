@@ -138,6 +138,43 @@ def _componentes_principales(ids):
     return roots.reshape(H, W)
 
 
+def _rellenar_huecos(ids, max_iter=16):
+    """Rellena los pixeles SIN clasificar (id=0) del raster asignando a cada uno
+    el id del pixel clasificado mas cercano. Es una dilatacion multi-fuente de
+    1 px por iteracion (frentes de BFS que avanzan a la vez desde todas las
+    provincias), asi cada hueco acaba con el id de la region a menor distancia.
+
+    Los huecos son bandas finas que el rasterizado deja en bordes/costas; con
+    unas pocas iteraciones (tope `max_iter`) se cierran. Rellenar ANTES de
+    calcular adyacencias hace que estas sean por contigüidad real de pixeles y
+    elimina las brechas de <=3 px que antes se saltaban (adyacencias espurias).
+
+    Envuelve SOLO en x (el mundo es esferico en longitud); el eje y son los
+    polos: bordes que NUNCA se envuelven. Determinista: ante empate entre varios
+    vecinos no-cero se toma el id menor."""
+    out = ids.copy()
+    centinela = np.iinfo(out.dtype).max if np.issubdtype(out.dtype, np.integer) \
+        else np.iinfo(np.int64).max
+    for _ in range(max_iter):
+        ceros = out == 0
+        if not ceros.any():
+            break
+        # candidatos desde los 4 vecinos inmediatos
+        izq = np.roll(out, 1, axis=1)       # izquierda: envuelve en x
+        der = np.roll(out, -1, axis=1)      # derecha:   envuelve en x
+        arr = np.zeros_like(out)            # arriba: NO envuelve en y (polo)
+        arr[1:, :] = out[:-1, :]
+        aba = np.zeros_like(out)            # abajo:  NO envuelve en y (polo)
+        aba[:-1, :] = out[1:, :]
+        vecs = np.stack([izq, der, arr, aba])
+        # id menor entre los vecinos no-cero (los ceros se ignoran con centinela)
+        vpos = np.where(vecs == 0, centinela, vecs)
+        vmin = vpos.min(axis=0)
+        nuevos = ceros & (vmin != centinela)
+        out[nuevos] = vmin[nuevos]
+    return out
+
+
 def _cargar_mapa(sello, stem):
     """Construye (o recupera de cache) el mapa estatico del detalle: provincias,
     paises, adyacencias, centroides, poblacion y guarniciones iniciales."""
@@ -157,6 +194,12 @@ def _cargar_mapa(sello, stem):
     arr = np.asarray(im, dtype=np.uint32)          # (H, W, 3)
     ids = arr[:, :, 0] | (arr[:, :, 1] << 8)       # id de provincia por pixel
     H, W = ids.shape
+
+    # rellena las bandas finas sin clasificar (id=0) que deja el rasterizado en
+    # bordes/costas ANTES de calcular componentes y adyacencias: asi la
+    # contigüidad es real y no hay que «saltar» huecos (que creaba vecindades
+    # terrestres espurias entre provincias separadas por un estrecho/brecha).
+    ids = _rellenar_huecos(ids)
 
     prov = {}          # id -> datos estaticos de la provincia (tierra o mar)
     paises = []        # [{id, nombre, rgb}]
@@ -202,21 +245,12 @@ def _cargar_mapa(sello, stem):
     id2root[vid_s[ultimo]] = vroot_s[ultimo]
     principal = nz & (roots == id2root[ids])       # pixel en la componente principal
 
-    # vecino a derecha/abajo saltando bandas cortas de id=0 (SALTO=3), para no
-    # perder costas separadas del mar por un borde sin clasificar
-    def prim_no_cero_x(k):
-        return np.roll(ids, -k, axis=1)
-
-    def prim_no_cero_y(k):
-        out = np.zeros_like(ids)
-        if k < H:
-            out[:H - k, :] = ids[k:, :]
-        return out
-
-    r1, r2, r3 = prim_no_cero_x(1), prim_no_cero_x(2), prim_no_cero_x(3)
-    der = np.where(r1 != 0, r1, np.where(r2 != 0, r2, np.where(r3 != 0, r3, 0)))
-    d1, d2, d3 = prim_no_cero_y(1), prim_no_cero_y(2), prim_no_cero_y(3)
-    aba = np.where(d1 != 0, d1, np.where(d2 != 0, d2, np.where(d3 != 0, d3, 0)))
+    # adyacencia ESTRICTA por vecino inmediato (equivale a SALTO=1) sobre el
+    # raster ya relleno: contigüidad genuina de pixeles, sin brechas. La derecha
+    # envuelve en x (mundo esferico en longitud); abajo NO envuelve en y (polos).
+    der = np.roll(ids, -1, axis=1)
+    aba = np.zeros_like(ids)
+    aba[:H - 1, :] = ids[1:, :]
 
     m_der = principal & (der != 0) & (der != ids)
     m_aba = principal & (aba != 0) & (aba != ids)
@@ -319,27 +353,40 @@ def _cargar_mapa(sello, stem):
 
 
 def _conectar_componentes(mapa):
-    """Garantiza que el grafo de movimiento (vecinos: tierra y mar juntos) sea
-    UNA sola componente conexa. Sin esto, una isla cuya costa quedo bajo el
-    umbral de contacto (o una cuenca aislada) seria inalcanzable/inconquistable.
-    Enlaza el par de provincias mas cercano (distancia entre centroides,
-    envolviendo solo en x) hasta unir todo."""
-    prov, vecinos = mapa["prov"], mapa["vecinos"]
+    """Garantiza que el grafo de MOVIMIENTO (vecinos terrestres UNION enlaces
+    navales) sea UNA sola componente conexa. Sin esto, una isla cuya costa quedo
+    bajo el umbral de contacto (o una cuenca aislada) seria inalcanzable e
+    inconquistable.
+
+    Los enlaces forzados NO se agregan como vecinos TERRESTRES: eso seria
+    teletransporte por tierra entre provincias que no se tocan. Se agregan a
+    «navales», de modo que cruzarlos exige puerto y paga el costo naval
+    (PA_NAVAL), coherente con atravesar el mar. Se prefiere el par mas cercano
+    (distancia entre centroides, envolviendo solo en x) en el que al menos una
+    provincia sea mar o costera, y se marca costera=True a la(s) de tierra para
+    que puedan levantar puerto."""
+    prov, vecinos, navales = mapa["prov"], mapa["vecinos"], mapa["navales"]
     nx = mapa["nx"]
-    comp_de = {}
-    ncomp = 0
-    for pid in prov:
-        if pid in comp_de:
-            continue
-        cola = [pid]
-        comp_de[pid] = ncomp
-        while cola:
-            a = cola.pop()
-            for b in vecinos.get(a, ()):
-                if b in prov and b not in comp_de:
-                    comp_de[b] = ncomp
-                    cola.append(b)
-        ncomp += 1
+
+    def calc_componentes():
+        comp = {}
+        n = 0
+        for pid in prov:
+            if pid in comp:
+                continue
+            cola = [pid]
+            comp[pid] = n
+            while cola:
+                a = cola.pop()
+                # el grafo de movimiento incluye tierra (vecinos) Y mar (navales)
+                for b in set(vecinos.get(a, ())) | set(navales.get(a, ())):
+                    if b in prov and b not in comp:
+                        comp[b] = n
+                        cola.append(b)
+            n += 1
+        return comp, n
+
+    comp_de, ncomp = calc_componentes()
     if ncomp <= 1:
         return
 
@@ -357,7 +404,8 @@ def _conectar_componentes(mapa):
             break
         chica_c = min(grupos, key=lambda c: len(grupos[c]))
         chica = grupos[chica_c]
-        mejor = None
+        mejor = None          # par mas cercano sin restriccion (respaldo)
+        mejor_mar = None      # par mas cercano con contacto potencial de mar
         for a in chica:
             for c, ps in grupos.items():
                 if c == chica_c:
@@ -366,13 +414,21 @@ def _conectar_componentes(mapa):
                     d = dist2(a, b)
                     if mejor is None or d < mejor[2]:
                         mejor = (a, b, d)
-        if not mejor:
+                    if a["mar"] or b["mar"] or a["costera"] or b["costera"]:
+                        if mejor_mar is None or d < mejor_mar[2]:
+                            mejor_mar = (a, b, d)
+        elegido = mejor_mar or mejor
+        if not elegido:
             break
-        a, b, _ = mejor
-        vecinos.setdefault(a["id"], set()).add(b["id"])
-        vecinos.setdefault(b["id"], set()).add(a["id"])
-        if a["mar"] != b["mar"]:
-            (b if a["mar"] else a)["costera"] = True
+        a, b, _ = elegido
+        # enlace NAVAL (no terrestre): exige puerto y paga costo naval
+        navales.setdefault(a["id"], set()).add(b["id"])
+        navales.setdefault(b["id"], set()).add(a["id"])
+        # la(s) provincia(s) de tierra del enlace deben poder tener puerto
+        if not a["mar"]:
+            a["costera"] = True
+        if not b["mar"]:
+            b["costera"] = True
         destino = comp_de[b["id"]]
         for pid, c in list(comp_de.items()):
             if c == chica_c:

@@ -630,10 +630,39 @@ def _cuencas_marinas(mar, elev, seed, n_obj=0):
                 cint = _dilatar(isla & (glab == g), rcierre) & mar
                 cint &= (comp >= 0) & abierta[np.maximum(comp, 0)]
                 cint &= marmap < 0            # sin pisar cinturones previos
-                if int(np.count_nonzero(cint)) < 3:
+                area_cint = int(np.count_nonzero(cint))
+                if area_cint < 3:
                     continue
-                marmap[cint] = len(tipos)
-                tipos.append("costero")
+                # el cinturon NO se deja como un solo anillo: se divide en 2-4
+                # secciones de costa. k crece con el area del cinturon; los
+                # cinturones minusculos (<6 celdas) quedan enteros.
+                k = 1 if area_cint < 6 else int(np.clip(area_cint // 40, 2, 4))
+                if k <= 1:
+                    marmap[cint] = len(tipos)
+                    tipos.append("costero")
+                    continue
+                # k semillas bien separadas dentro del cinturon por muestreo
+                # del punto mas lejano (distancia esferica que envuelve en X);
+                # determinista al partir del primer pixel del cinturon.
+                ys, xs = np.nonzero(cint)
+                pts = list(zip(ys.tolist(), xs.tolist()))
+                fs = [pts[0]]
+                while len(fs) < k:
+                    fs.append(max(pts, key=lambda p: min(
+                        _dist_esf(p[0], p[1], q[0], q[1], ny, nx) for q in fs)))
+                # reparto por Dijkstra multi-fuente ACOTADO al cinturon (coste
+                # inf fuera): cada seccion queda como un arco contiguo del
+                # anillo, repartido alrededor del grupo/archipielago.
+                cost_c = np.where(cint, costo, np.inf).astype(np.float32)
+                asig, _ = _dijkstra_multi(cost_c, fs, ny, nx)
+                asig = np.where(cint, asig, -1).astype(np.int32)
+                _rellenar_huecos(asig, cint)
+                for loc in range(len(fs)):
+                    celdas = asig == loc
+                    if not celdas.any():
+                        continue
+                    marmap[celdas] = len(tipos)
+                    tipos.append("costero")
 
     for c in np.argsort(areas_comp)[::-1].tolist():
         mask_c = (comp == c) & (marmap < 0)   # lo que no se llevo un cinturon

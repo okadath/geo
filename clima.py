@@ -1918,6 +1918,46 @@ def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
         comb = np.where(tierra_k,
                         np.where(it_k >= 0, it_k + 1, 0),
                         np.where(im_k >= 0, im_k + 1 + nt, 0)).astype(np.int32)
+        # --- relleno de huecos (id=0) del raster ---
+        # la costa se decide con elev2 fina (tierra_k) pero los idmaps vienen de
+        # la malla gruesa de civilizacion, asi que en bordes/costas quedan
+        # bandas de pixeles con id=0 (la costa fina dice tierra donde la malla
+        # gruesa no tiene provincia, o viceversa). Se rellena cada hueco con el
+        # id de la subregion mas cercana DEL TIPO CORRECTO por dilatacion
+        # iterativa de 1px multi-fuente (tierra <- provincias 1..nt; mar <-
+        # regiones marinas nt+1..). El mundo envuelve solo en X (rolly no
+        # envuelve en Y). Las bandas son finas: bastan pocas iteraciones, con
+        # un tope de seguridad y corte por convergencia.
+        _off8 = ((0, 1), (0, -1), (1, 0), (-1, 0),
+                 (1, 1), (1, -1), (-1, 1), (-1, -1))
+        tope = int(max(nky, nkx))
+
+        def _propaga(comb, objetivo, es_valido):
+            # rellena los huecos (comb==0) que caen en `objetivo` tomando solo
+            # ids de vecinos que cumplen `es_valido` (tipo correcto).
+            for _ in range(tope):
+                hueco = objetivo & (comb == 0)
+                if not hueco.any():
+                    break
+                nuevo = comb.copy()
+                avanzo = False
+                for dy, dx in _off8:
+                    vec = np.roll(rolly(comb, dy), dx, 1)
+                    toma = hueco & (nuevo == 0) & es_valido(vec)
+                    if toma.any():
+                        nuevo[toma] = vec[toma]
+                        avanzo = True
+                comb = nuevo
+                if not avanzo:                # nada mas alcanzable de ese tipo
+                    break
+            return comb
+
+        comb = _propaga(comb, tierra_k,
+                        lambda v: (v >= 1) & (v <= nt))          # huecos tierra
+        comb = _propaga(comb, ~tierra_k, lambda v: v > nt)       # huecos mar
+        # residual exotico: cualquier 0 restante (tipo sin ninguna region en el
+        # mapa junto a un tipo que si) se llena con el vecino con id, sin tipo.
+        comb = _propaga(comb, comb >= 0, lambda v: v > 0)
         rid = np.zeros((nky, nkx, 3), np.uint8)
         rid[..., 0] = (comb & 255).astype(np.uint8)
         rid[..., 1] = ((comb >> 8) & 255).astype(np.uint8)
