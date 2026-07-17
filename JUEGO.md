@@ -30,9 +30,10 @@ front además carga `_regiones.png` (hit-test del ratón y pintado) y el clima H
 de fondo por el allowlist estático de siempre.
 
 **Antitrampas por diseño:** la niebla de guerra se calcula en el servidor y el
-estado que llega al navegador ya viene censurado — las tropas no vistas llegan
-como `null` y el oro/puntos de los rivales ni siquiera se envían. El azar de
-las batallas y los turnos de la IA se resuelven del lado servidor.
+estado que llega al navegador ya viene censurado — las tropas **y la población**
+no vistas llegan como `null` y el oro/puntos de los rivales ni siquiera se
+envían. El azar de las batallas y los turnos de la IA se resuelven del lado
+servidor. Las coropletas de población y militares pintan la niebla en gris.
 
 ## De dónde salen los datos
 
@@ -97,6 +98,18 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
   el mar no queda guarnición: la flota se mueve entera, y al vaciarse la
   celda vuelve a ser aguas libres. Atacar tierra desde el mar cuenta como
   desembarco (`×0.72`). Si un país es eliminado, sus flotas se dispersan.
+- **Mares compartidos (países EN PAZ):** cada cuenca marina guarda una LISTA
+  de flotas que coexisten — `prov["flotas"] = [{p, n, m}]` — mientras los
+  países estén en paz. Entrar a un mar donde solo hay flotas en paz (o mar
+  libre) **no es hostil**: la flota entra y coexiste, sin batalla ni conquista.
+  Los campos `dueno`/`ejército` de la celda son la **flota mayoritaria** (para
+  el render y las pastillas: se muestra la mayoritaria + un globo con el número
+  de flotas). Si dos países que comparten agua **entran en guerra**, sus flotas
+  **chocan en el acto** (regla «combate al declarar», no «coexisten hasta que
+  uno ataque»: así el combate sigue siendo siempre celda→celda y no hace falta
+  un ataque «en la misma celda»). Compatibilidad: las partidas viejas (con un
+  único dueño por cuenca) se migran al cargar (`_migrar_mar`) sintetizando su
+  lista de una sola flota.
 - **Desembarcos navales con puerto:** entre dos costas de la **misma cuenca
   marina** aunque no sean vecinas terrestres, con penalización de fuerza
   (`×0.72`) y costo de 2 🏃 (salto directo, sin cruzar celda a celda).
@@ -110,9 +123,34 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
   sus tropas y el defensor queda mermado.
 
 ### Diplomacia
-- Panel con todos los países (provincias, fuerza ⚔, estado guerra/paz).
-- **Declarar guerra** o **pedir la paz**. La IA acepta la paz según cómo vaya la
-  guerra (rechaza si te está ganando claro).
+- **Vista «diplomacia» + lista unificadas:** al activar la vista se despliega un
+  **panel acoplado** (izquierda) con todos los países (provincias, fuerza ⚔,
+  estado guerra/pacto/paz respecto a ti). El botón «diplomacia» de la barra es
+  ahora sinónimo de activar/desactivar esa vista (ya no abre un overlay aparte).
+  La lista se **ordena por estado y tamaño**: primero los países **en guerra**
+  contigo, luego los que tienen **pacto de no agresión**, y al final los **en
+  paz** — dentro de cada grupo, los más grandes (por provincias) primero; tú
+  encabezas la lista. La fuerza ⚔ mostrada es **solo lo visible** y lleva `+?`
+  si el país tiene provincias fuera de tu vista. Al hacer **clic/hover** sobre
+  un país de la lista (o sobre su territorio en el mapa) su **ficha** muestra el
+  estado de ESE país: contra quién está en guerra, con quién tiene tratados de
+  no agresión y cuántos turnos quedan, y con quién está en paz. En esta vista el
+  clic en el **territorio** inspecciona el país, pero el clic en la **pastilla
+  de tropas** selecciona esa región concreta (su ficha de provincia). **No
+  existe un sistema de alianzas** en el motor (solo guerra/paz/tratados): la
+  ficha lo indica explícitamente.
+- **Acciones en la ficha del país** (no en el listado), cuando estás en juego:
+  - **🕊 solicitar la paz** (si estás en guerra con él): cuesta `PA_PAZ = 2` 🏃.
+    La IA acepta con probabilidad `0.15 + 0.6·(1−agresión)`, `+0.40` si va
+    perdiendo (fuerza < la tuya): la pragmática corta pérdidas, la belicosa es
+    cabezona. Si acepta, la paz **impone un tratado de no agresión forzoso** de
+    1–3 turnos (`_dur_tratado`, más corto cuanto más agresivo el par).
+  - **🤝 solicitar tratado de no agresión** (si estáis en paz y sin tratado):
+    cuesta `PA_TRATADO = 2` 🏃. La IA acepta con probabilidad `0.25 + 0.6·(1−
+    agresión)`; usa la misma duración 1–3 turnos.
+  - Los puntos se **cobran aunque la IA rechace** (el esfuerzo diplomático se
+    gasta igual; evita spamear ofertas). Los botones muestran el costo y se
+    desactivan sin puntos; el resultado (acepta/rechaza) se anota en el log.
 
 ### IA (por país, cada turno)
 1. Cobra su ingreso y renueva sus puntos de acción.
@@ -133,7 +171,10 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
 - **Arrastrar:** paneo.
 - **Clic** en provincia propia: seleccionar; clic en la ya seleccionada:
   deseleccionar; clic en objetivo resaltado: abre la orden con flecha y slider
-  de tropas. **Esc** o clic fuera: cancelar la orden.
+  de tropas. **Esc** o clic fuera: cancelar la orden. El **clic (y el hover)
+  resuelve primero la pastilla de tropas bajo el cursor** y luego el píxel, así
+  una pastilla dibujada sobre otra provincia selecciona su provincia y no la de
+  debajo.
 - **Guardado automático en el servidor:** la partida se persiste tras cada
   acción en `salidas/<sello>/partidas/<stem>.json` (un guardado por detalle).
   Al volver a abrir el juego con el mismo detalle, la pantalla de inicio ofrece
@@ -151,6 +192,7 @@ BONO_DEFENSA = 1.2    # ventaja del defensor
 PENA_NAVAL = 0.72     # penalización al desembarcar
 PA_MOV, PA_NAVAL = 1, 2   # puntos de acción por orden
 PA_REC, PA_EDIF = 1, 2    # (mover/naval, reclutar, construir)
+PA_PAZ, PA_TRATADO = 2, 2 # solicitar paz / tratado (se cobran aunque rechacen)
 ```
 
 Otros números tocables en el código: dinero inicial de cada país (`dinero: 120`

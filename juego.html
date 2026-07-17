@@ -100,6 +100,8 @@
   #orden .botones .ok { background: var(--acento); color: #08211f;
                         border: 0; font-weight: 700; flex: 1; }
   #orden .costo-pa { color: var(--oro); font-size: 12px; }
+  #orden .bajas { color: var(--tenue); font-size: 12px; margin-top: 5px; }
+  #orden .bajas b { color: var(--rojo); }
   #b-turno {
     margin-left: auto; align-self: flex-end;
     background: var(--acento); color: #08211f; border: 0; font-weight: 700;
@@ -163,16 +165,54 @@
   .lista-p .item:hover { background: rgba(63,184,175,.12); }
   .lista-p .item .dato { margin-left: auto; color: var(--tenue); font-size: 12.5px;
                          font-variant-numeric: tabular-nums; }
-  #dip-lista .item { cursor: default; }
+  #dip-lista .item { cursor: pointer; }
   #dip-lista .estado { font-size: 12px; padding: 1px 8px; border-radius: 20px;
                        border: 1px solid var(--borde); }
   #dip-lista .estado.guerra { color: #ff9c8a; border-color: #a04434; }
+  #dip-lista .estado.pacto { color: #9db8e8; border-color: #46609c; }
   #dip-lista .estado.paz { color: var(--verde); }
+
+  /* ---- panel acoplado de diplomacia (vista diplomacia) ---- */
+  #dip-dock {
+    position: absolute; left: 12px; top: 12px; z-index: 7; width: 264px;
+    max-height: 52%; display: flex; flex-direction: column;
+    background: rgba(13, 17, 26, .95); border: 1px solid var(--borde);
+    border-radius: 12px; overflow: hidden;
+  }
+  #dip-dock .dip-cab { padding: 8px 12px; border-bottom: 1px solid var(--borde); }
+  #dip-dock .dip-tit { font-weight: 650; font-size: 13px; }
+  #dip-dock .dip-key { display: flex; flex-wrap: wrap; gap: 2px 8px;
+                       font-size: 11px; color: var(--tenue); margin-top: 5px; }
+  #dip-dock .dip-key .cuad { width: 10px; height: 10px; margin: 0 3px 0 0; }
+  #dip-dock .dip-hint { color: var(--tenue); font-size: 11px; margin-top: 3px; }
+  /* la lista se queda con la altura sobrante del dock y SCROLLEA por dentro,
+     para que nunca crezca tanto que tape la ficha del país (abajo) */
+  #dip-dock #dip-lista { overflow-y: auto; padding: 4px 6px;
+                         flex: 1 1 auto; min-height: 0; }
+  #dip-dock .item.sel { background: rgba(63,184,175,.18);
+                        outline: 1px solid var(--acento); }
   .cerrar { float: right; background: none; border: 0; color: var(--tenue);
             font-size: 18px; padding: 0 4px; }
   #dificultad { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; }
   #dificultad button.activo { border-color: var(--acento);
                               background: rgba(63,184,175,.14); }
+
+  /* ---- pantalla de inicio como PANEL LATERAL (deja ver el mapa al lado) ---- */
+  #velo-inicio {
+    inset: 0 auto 0 0;              /* franja anclada a la izquierda */
+    width: min(430px, 94vw);
+    background: none;               /* sin velo oscuro: el mapa queda visible */
+    align-items: stretch; justify-content: stretch;
+  }
+  #velo-inicio .caja {
+    width: 100%; max-width: none; max-height: none; height: 100%;
+    border-radius: 0; border-width: 0 1px 0 0;
+    background: rgba(20, 26, 36, .97);
+    box-shadow: 6px 0 26px rgba(0,0,0,.55);
+  }
+  /* item de país marcado por el hover del mapa (mapa -> lista) */
+  .lista-p .item.hl { background: rgba(63,184,175,.22);
+                      outline: 1px solid var(--acento); }
 
   /* ---- ajustes de partida (pantalla de inicio) ---- */
   #ajustes-toggle { color: var(--tenue); font-size: 13px; cursor: pointer;
@@ -185,11 +225,17 @@
   #ajustes-cuerpo input[type="number"] { width: 66px; background: var(--fondo);
                           color: var(--texto); border: 1px solid var(--borde);
                           border-radius: 6px; padding: 3px 6px; font: inherit; }
+  #ajustes-cuerpo select { background: var(--fondo); color: var(--texto);
+                          border: 1px solid var(--borde); border-radius: 6px;
+                          padding: 3px 6px; font: inherit; font-size: 12px; }
 
-  /* ---- selector de vista del mapa ---- */
-  #ui-vista { background: var(--panel); color: var(--texto);
-              border: 1px solid var(--borde); border-radius: 8px;
-              padding: 5px 8px; font: inherit; font-size: 13px; }
+  /* ---- botones de vista del mapa ---- */
+  #ui-vistas { display: inline-flex; gap: 4px; }
+  #ui-vistas .vista.activo { border-color: var(--acento);
+                             background: rgba(63,184,175,.16); }
+  /* vistas no politicas: fondo plano neutro, sin la geografia fisica debajo */
+  #cinta.plano .mapa { background: #141a24; }
+  #cinta.plano .mapa > img { visibility: hidden; }
 
   /* ---- leyenda flotante de coropletas ---- */
   #leyenda {
@@ -203,19 +249,35 @@
                     font-variant-numeric: tabular-nums; }
   #leyenda .cat { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 
-  /* ---- lista de guerras activas (panel de diplomacia) ---- */
-  #guerras-lista .item { cursor: default; font-size: 13px; }
 
   /* ---- gráficos de la partida ---- */
   .caja.ancha { max-width: 820px; }
   #velo-graf { z-index: 11; }
-  .graf-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px;
-                  margin: 2px 0 10px; }
-  .graf-leyenda .it { display: flex; align-items: center; gap: 5px; color: var(--texto); }
+  /* selector de métrica (una sola visible) */
+  .graf-tabs { display: flex; gap: 6px; margin: 6px 0 0; }
+  .graf-tabs .gtab { flex: 1; font-size: 13px; }
+  .graf-tabs .gtab.activo { border-color: var(--acento); color: var(--acento); }
+  /* selector de periodo: botones rápidos + dos sliders desde/hasta */
+  .graf-periodo { display: flex; flex-wrap: wrap; align-items: center;
+                  gap: 6px 12px; margin-top: 10px; font-size: 12px; }
+  .graf-periodo .etq { color: var(--tenue); }
+  .graf-periodo .gper { padding: 3px 9px; font-size: 12px; }
+  .graf-periodo .gper.activo { border-color: var(--acento); color: var(--acento); }
+  .graf-rango { display: flex; flex-direction: column; gap: 2px;
+                flex: 1 1 240px; min-width: 210px; }
+  .graf-rango label { display: flex; align-items: center; gap: 6px; color: var(--tenue); }
+  .graf-rango input[type="range"] { flex: 1; accent-color: var(--acento); min-width: 0; }
+  .graf-leyenda { display: flex; flex-wrap: wrap; gap: 4px 6px; font-size: 12px;
+                  margin: 12px 0 2px; max-height: 92px; overflow-y: auto; }
+  .graf-leyenda .it { display: flex; align-items: center; gap: 5px; color: var(--texto);
+                      cursor: pointer; padding: 2px 6px; border-radius: 6px;
+                      border: 1px solid transparent; }
+  .graf-leyenda .it:hover { border-color: var(--borde); }
+  .graf-leyenda .it.fijo { border-color: var(--acento); background: rgba(63,184,175,.12); }
+  .graf-leyenda .it.tenue { opacity: .4; }
   .graf-bloque { margin-top: 12px; }
-  .graf-titulo { font-size: 12.5px; color: var(--tenue); margin-bottom: 4px; }
   .graf-bloque canvas {
-    width: 100%; height: 150px; display: block; background: var(--fondo);
+    width: 100%; height: 220px; display: block; background: var(--fondo);
     border: 1px solid var(--borde); border-radius: 8px; cursor: crosshair;
   }
 
@@ -246,13 +308,12 @@
   <span title="puntos de acción: se gastan al mover, atacar, reclutar y construir">
     🏃 <span id="ui-pa">0</span></span>
   <span>🏛 <span id="ui-provincias">0</span> prov.</span>
-  <select id="ui-vista" title="modo de vista del mapa">
-    <option value="paises">🗺 países</option>
-    <option value="poblacion">👥 población</option>
-    <option value="militares">⚔ militares</option>
-    <option value="diplomacia">🤝 diplomacia</option>
-  </select>
-  <button type="button" id="b-dip">diplomacia</button>
+  <span id="ui-vistas" title="modo de vista del mapa">
+    <button type="button" class="vista activo" data-vista="paises">🗺 países</button>
+    <button type="button" class="vista" data-vista="poblacion">👥 población</button>
+    <button type="button" class="vista" data-vista="militares">⚔ militares</button>
+    <button type="button" class="vista" data-vista="diplomacia">🤝 diplomacia</button>
+  </span>
   <button type="button" id="b-graf" title="evolución de población, militares y economía">📈 gráficos</button>
   <button type="button" id="b-replay" title="repasa la partida turno a turno" disabled>▶ replay</button>
   <button type="button" id="b-reset">⟲ zoom</button>
@@ -317,6 +378,7 @@
         <span>quedan <b id="orden-quedan">0</b></span>
       </div>
       <div class="costo-pa" id="orden-costo"></div>
+      <div class="bajas" id="orden-bajas" hidden></div>
       <div class="botones">
         <button type="button" class="ok" id="orden-ok">✔ confirmar</button>
         <button type="button" id="orden-no">✕ cancelar</button>
@@ -351,6 +413,12 @@
       </div>
       <div id="ajustes-toggle">⚙ ajustes ▾</div>
       <div id="ajustes-cuerpo" hidden>
+        <label>niebla de guerra
+          <select id="aj-vision" title="cuánto del mapa ves; en modo total u oculto las torres no sirven">
+            <option value="total">total — todo visible</option>
+            <option value="parcial" selected>parcial — propias + vecinas (+ torres)</option>
+            <option value="oculta">oculta — mínima (sin torres)</option>
+          </select></label>
         <label>% daño por bastión
           <input type="number" id="aj-bastion" min="0" max="200" step="5" value="50"></label>
         <label>% daño por conquista marina
@@ -362,14 +430,16 @@
     </div>
   </div>
 
-  <div class="velo" id="velo-dip" hidden>
-    <div class="caja">
-      <button type="button" class="cerrar" id="b-dip-cerrar">✕</button>
-      <h2>diplomacia</h2>
-      <button type="button" id="b-guerras" style="margin:0 0 10px">⚔ guerras activas</button>
-      <div class="lista-p" id="guerras-lista" hidden></div>
-      <div class="lista-p" id="dip-lista"></div>
+  <!-- panel ACOPLADO de diplomacia: aparece con la vista «diplomacia» y lleva
+       la lista de países; clic/hover en uno muestra SU estado en la ficha -->
+  <div id="dip-dock" hidden>
+    <div class="dip-cab">
+      <span class="dip-tit">🤝 diplomacia</span>
+      <span class="dip-key" id="dip-key"></span>
+      <div class="dip-hint" id="dip-ref">relaciones respecto a ti</div>
+      <div class="dip-hint">clic en un país para verlo y negociar</div>
     </div>
+    <div class="lista-p" id="dip-lista"></div>
   </div>
 
   <div class="velo" id="velo-fin" hidden>
@@ -388,19 +458,25 @@
     <div class="caja ancha">
       <button type="button" class="cerrar" id="b-graf-cerrar">✕</button>
       <h2>📈 evolución de la partida</h2>
+      <div class="graf-tabs" id="graf-tabs">
+        <button type="button" class="gtab activo" data-metrica="pob">👥 población</button>
+        <button type="button" class="gtab" data-metrica="mil">⚔ militares</button>
+        <button type="button" class="gtab" data-metrica="oro">🪙 economía</button>
+      </div>
+      <div class="graf-bloque">
+        <canvas id="cv-graf"></canvas>
+      </div>
+      <div class="graf-periodo">
+        <span class="etq">periodo:</span>
+        <button type="button" class="gper" data-ult="20">últimos 20</button>
+        <button type="button" class="gper" data-ult="50">últimos 50</button>
+        <button type="button" class="gper activo" data-ult="0">todo</button>
+        <div class="graf-rango">
+          <label>desde <input type="range" id="graf-r0" min="0" max="0" value="0"></label>
+          <label>hasta <input type="range" id="graf-r1" min="0" max="0" value="0"></label>
+        </div>
+      </div>
       <div class="graf-leyenda" id="graf-leyenda"></div>
-      <div class="graf-bloque">
-        <div class="graf-titulo">👥 población</div>
-        <canvas id="cv-graf-pob"></canvas>
-      </div>
-      <div class="graf-bloque">
-        <div class="graf-titulo">⚔ militares</div>
-        <canvas id="cv-graf-mil"></canvas>
-      </div>
-      <div class="graf-bloque">
-        <div class="graf-titulo">🪙 economía (ingreso por turno)</div>
-        <canvas id="cv-graf-eco"></canvas>
-      </div>
     </div>
   </div>
 </div>
@@ -435,23 +511,29 @@
     vecinos: new Map(),     // id -> Set(ids adyacentes) — del servidor
     navales: new Map(),     // id -> Set(ids alcanzables por mar) — del servidor
     guerras: new Set(),     // "a|b" con a<b — del servidor
+    tratados: {},           // "a|b" -> turnos de no agresion restantes — del servidor
     precios: null,          // etiquetas de costos (tropa, edificios, PA) — del servidor
     turno: 1,
     jugador: 0,             // pid del jugador
     sel: 0,                 // provincia propia seleccionada
     orden: null,            // orden pendiente {origen, destino, naval, costo, n, max, ataque}
     hover: 0,
+    pastillas: [],          // rects de las pastillas de tropas (hit-test del ratón)
+    paisHover: null,        // pid de país a resaltar entero (fase inicio); null = ninguno
     // inicio | jugando | fin | espectador | replay — "espectador" y "replay"
     // son modos locales de presentación; "jugando"/"fin" los fija el servidor
     fase: "inicio",
     difKey: "normal",
-    ajustes: { bastion: 50, naval: 7, recup: 0.6 },
+    ajustes: { bastion: 50, naval: 7, recup: 0.6, vision: "parcial" },
     vista: "paises",        // paises|poblacion|militares|diplomacia
+    paisInfo: null,         // pid a inspeccionar en la vista diplomacia (clic)
     logMin: false, logNuevos: 0,
     destello: 0,
     ocupado: false,         // hay una petición al servidor en vuelo
     historia: [],           // series por turno {turno, datos} — del servidor
     replay: [],             // diffs de dueños por turno — del servidor
+    // estado del overlay de gráficos (solo presentación)
+    graf: { metrica: "pob", i0: 0, i1: 0, ult: 0, fijo: null, hover: null },
   };
   const NEUTRAL = -1;
 
@@ -463,11 +545,31 @@
 
   const parGuerra = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`;
   const enGuerra = (a, b) => st.guerras.has(parGuerra(a, b));
+  // turnos restantes del tratado de no agresion entre dos países (0 = ninguno)
+  const tratadoTurnos = (a, b) => st.tratados[parGuerra(a, b)] || 0;
   const fmt = n => Math.round(n).toLocaleString("es");
   // niebla de guerra: la calcula el SERVIDOR; si no ves la provincia, sus
   // tropas llegan como null y aquí se muestran como "?"
   const veTropas = p => p.dueno === st.jugador || p.visible;
   const tropasTxt = p => p.ejercito == null ? "?" : String(p.ejercito);
+  // ---- flotas del mar (coexistencia de países EN PAZ en la misma cuenca) ----
+  // el servidor manda p.flotas = [{p:pais, n:tropas, m:movida}] cuando la celda
+  // es visible; dueno/ejercito de la celda son la flota MAYORITARIA
+  const miFlota = p => (p.mar && p.flotas) ? p.flotas.find(f => f.p === st.jugador) : null;
+  const miFlotaN = p => { const f = miFlota(p); return f ? f.n : 0; };
+  // ¿hay una flota ENEMIGA (país en guerra conmigo) en esta cuenca?
+  const flotaEnemiga = p => !!(p.mar && p.flotas &&
+      p.flotas.some(f => f.p !== st.jugador && enGuerra(st.jugador, f.p)));
+  // ¿puedo dar órdenes desde esta celda? tierra propia o cuenca con flota mía
+  const esMio = p => p ? (p.mar ? miFlotaN(p) > 0 : p.dueno === st.jugador) : false;
+  // tropas propias disponibles en la celda / si ya actuó mi fuerza este turno
+  const misTropas = p => p.mar ? miFlotaN(p) : p.ejercito;
+  const yaMovi = p => p.mar ? (miFlota(p) ? !!miFlota(p).m : false) : p.movida;
+  // ¿el destino es un ataque (tierra enemiga/neutral con tropas, o flota enemiga
+  // en el mar) o un movimiento (tierra propia, o entrar a un mar en paz)?
+  const esAtaque = D => D.mar ? flotaEnemiga(D)
+      : (D.dueno !== st.jugador &&
+         !(D.dueno === NEUTRAL && D.ejercito != null && D.ejercito <= 0));
 
   // ================= API =================
   async function apiGet(ruta) {
@@ -524,8 +626,9 @@
     st.precios = mapa.precios;
     for (const p of mapa.paises)
       st.paises.set(p.id, { id: p.id, nombre: p.nombre, rgb: p.rgb,
-                            vivo: true, provs: p.provs, ej: p.ej,
-                            dinero: 0, puntos: 0, puntosMax: 0, ingreso: 0 });
+                            vivo: true, provs: p.provs, provsVis: p.provs,
+                            ej: p.ej, dinero: 0, puntos: 0, puntosMax: 0,
+                            ingreso: 0 });
     st.paises.set(NEUTRAL, { id: NEUTRAL, nombre: "tierras neutrales",
                              rgb: [110, 112, 118], vivo: true,
                              provs: 0, ej: 0, dinero: 0, puntos: 0 });
@@ -535,7 +638,8 @@
                           costera: !!p.costera, cx: p.cx, cy: p.cy,
                           dueno: p.pais, pob: 0, ejercito: 0, movida: false,
                           bastion: false, torre: false, puerto: false,
-                          visible: true, ingreso: null, reclutable: null });
+                          visible: true, ingreso: null, reclutable: null,
+                          flotas: p.mar ? [] : null });
     for (const [k, arr] of Object.entries(mapa.vecinos))
       st.vecinos.set(parseInt(k), new Set(arr));
     for (const [k, arr] of Object.entries(mapa.navales))
@@ -583,12 +687,14 @@
     st.difKey = est.difKey || st.difKey;
     if (est.ajustes) st.ajustes = est.ajustes;
     st.guerras = new Set(est.guerras || []);
+    st.tratados = est.tratados || {};
     st.historia = Array.isArray(est.historia) ? est.historia : st.historia;
     st.replay = Array.isArray(est.replay) ? est.replay : st.replay;
     for (const e of est.paises || []) {
       const p = st.paises.get(e.id);
       if (!p) continue;
       p.vivo = e.vivo; p.provs = e.provs; p.ej = e.ej;
+      if (e.provsVis != null) p.provsVis = e.provsVis;
       if (e.dinero != null) {              // solo llega para el jugador
         p.dinero = e.dinero; p.puntos = e.puntos;
         p.puntosMax = e.puntosMax; p.ingreso = e.ingreso;
@@ -601,6 +707,7 @@
       p.movida = e.movida; p.bastion = e.bastion; p.torre = e.torre;
       p.puerto = e.puerto; p.visible = e.visible;
       p.ingreso = e.ingreso; p.reclutable = e.reclutable;
+      if (p.mar) p.flotas = e.flotas || null;   // flotas coexistiendo (o niebla)
     }
     // eventos del servidor -> log (y aviso si involucra al jugador)
     const yo = st.paises.get(st.jugador);
@@ -634,7 +741,7 @@
   function repintar() {
     pintarDuenos(); pintarSel(); pintarRotulos(); pintarFlecha();
     pintarBarra(); pintarFicha();
-    if (!$("velo-dip").hidden) pintarDiplomacia();
+    if (st.vista === "diplomacia") pintarDiplomacia();
   }
 
   // ================= capas de pintura =================
@@ -681,10 +788,16 @@
     const info = new Map();                       // id -> {rgb, a, dueno}
     const vista = override ? "paises" : st.vista;  // el replay siempre pinta el mapa político
     if (vista === "poblacion") {
-      const vals = [...st.prov.values()].filter(p => !p.mar).map(p => p.pob);
+      // la poblacion fuera de vision llega como null (niebla): gris neutro
+      const vals = [...st.prov.values()].filter(p => !p.mar && p.pob != null)
+                                        .map(p => p.pob);
       const max = Math.max(1, ...vals), min = Math.min(0, ...vals);
       for (const [id, p] of st.prov) {
         if (p.mar) { info.set(id, { rgb: [45, 68, 92], a: 55, dueno: duenoDe(p) }); continue; }
+        if (p.pob == null) {
+          info.set(id, { rgb: [110, 112, 118], a: 130, dueno: duenoDe(p) });
+          continue;
+        }
         const t = max > min ? Math.sqrt((p.pob - min) / (max - min)) : 0;
         info.set(id, { rgb: escalaColor(t, TONO_POB), a: 195, dueno: duenoDe(p) });
       }
@@ -705,15 +818,20 @@
         info.set(id, { rgb: escalaColor(t, TONO_MIL), a: 195, dueno: duenoDe(p) });
       }
     } else if (vista === "diplomacia") {
+      // colorea las relaciones respecto al PAÍS SELECCIONADO (st.paisInfo) o,
+      // si no hay ninguno, respecto a MÍ: su territorio, sus enemigos en guerra,
+      // sus socios de tratado de no agresión y el resto (paz / neutral)
+      const ref = refDiplomacia();
       for (const [id, p] of st.prov) {
         const d = duenoDe(p);
         if (p.mar && d === NEUTRAL) {
           info.set(id, { rgb: [45, 68, 92], a: 55, dueno: d }); continue;
         }
         let rgb;
-        if (d === st.jugador) rgb = [80, 190, 140];         // aliado (tú)
-        else if (d !== NEUTRAL && enGuerra(st.jugador, d)) rgb = [212, 72, 56];
-        else rgb = [128, 130, 138];                                // neutral
+        if (d === ref) rgb = [80, 190, 140];                       // el país de referencia
+        else if (d !== NEUTRAL && enGuerra(ref, d)) rgb = [212, 72, 56];   // en guerra con él
+        else if (d !== NEUTRAL && tratadoTurnos(ref, d) > 0) rgb = [86, 132, 214]; // no agresión
+        else rgb = [128, 130, 138];                                // paz / neutral
         info.set(id, { rgb, a: d === NEUTRAL ? 95 : (p.mar ? 120 : 155), dueno: d });
       }
     } else {                                        // "paises" (por defecto)
@@ -761,7 +879,7 @@
       const esMil = st.vista === "militares";
       const vals = esMil
         ? [...st.prov.values()].filter(p => p.ejercito != null).map(p => p.ejercito)
-        : [...st.prov.values()].filter(p => !p.mar).map(p => p.pob);
+        : [...st.prov.values()].filter(p => !p.mar && p.pob != null).map(p => p.pob);
       const min = vals.length ? Math.min(...vals) : 0;
       const max = vals.length ? Math.max(...vals) : 1;
       const base = esMil ? TONO_MIL : TONO_POB;
@@ -770,15 +888,10 @@
         `<div>${esMil ? "⚔ militares por región" : "👥 población por región"}</div>` +
         `<div class="grad" style="background:linear-gradient(90deg, rgb(${c1.join(",")}), rgb(${c2.join(",")}))"></div>` +
         `<div class="rango"><span>${fmt(min)}</span><span>${fmt(max)}</span></div>` +
-        (esMil ? `<div class="rango" style="margin-top:4px">gris = niebla de guerra</div>` : "");
-      el.hidden = false;
-    } else if (st.vista === "diplomacia") {
-      el.innerHTML = `<div>🤝 diplomacia</div>` +
-        `<div class="cat"><i class="cuad" style="background:rgb(80,190,140)"></i>aliado (tú)</div>` +
-        `<div class="cat"><i class="cuad" style="background:rgb(128,130,138)"></i>neutral</div>` +
-        `<div class="cat"><i class="cuad" style="background:rgb(212,72,56)"></i>en guerra</div>`;
+        `<div class="rango" style="margin-top:4px">gris = niebla de guerra</div>`;
       el.hidden = false;
     } else {
+      // en la vista diplomacia la leyenda de color vive en el panel acoplado
       el.hidden = true;
     }
   }
@@ -788,23 +901,50 @@
   function objetivos(id) {
     if (st.fase !== "jugando" || !st.precios) return new Set();
     const p = st.prov.get(id);
-    if (!p || p.dueno !== st.jugador || p.ejercito == null ||
-        p.ejercito < (p.mar ? 1 : 2) || p.movida)
+    // celda propia con fuerza libre: tierra propia con guarnición, o cuenca
+    // marina con flota mía (aunque coexista en paz con otro país)
+    if (!esMio(p) || misTropas(p) == null ||
+        yaMovi(p) || misTropas(p) < (p.mar ? 1 : 2))
       return new Set();
     const pa = st.paises.get(st.jugador).puntos;
     const c = st.precios.pa;
     if (pa < c.mov) return new Set();            // sin puntos no hay órdenes
+    // no se puede atacar a una TIERRA con tratado de no agresión vigente; entrar
+    // en paz a un mar compartido nunca está bloqueado
+    const bloqueado = v => {
+      const o = st.prov.get(v);
+      if (!o || o.mar) return false;
+      return o.dueno !== st.jugador && o.dueno !== NEUTRAL &&
+             !enGuerra(st.jugador, o.dueno) && tratadoTurnos(st.jugador, o.dueno) > 0;
+    };
     const objs = new Set();
-    for (const v of (st.vecinos.get(id) || [])) objs.add(v);
-    if (p.puerto && pa >= c.naval)               // cruzar el mar exige puerto
-      for (const v of (st.navales.get(id) || [])) objs.add(v);
+    for (const v of (st.vecinos.get(id) || [])) {
+      if (bloqueado(v)) continue;
+      const o = st.prov.get(v);
+      // EMBARCAR (salir de tierra a una cuenca marina vecina) exige puerto en
+      // el origen; el desembarco (desde el mar) no
+      if (o && o.mar && !p.mar && !p.puerto) continue;
+      objs.add(v);
+    }
+    // saltos navales: desde tierra exigen puerto; desde el mar son un salto
+    // normal a otra cuenca
+    if ((p.mar || p.puerto) && pa >= c.naval)
+      for (const v of (st.navales.get(id) || [])) if (!bloqueado(v)) objs.add(v);
     return objs;
   }
 
   function pintarSel() {
     cvS.width = st.rw; cvS.height = st.rh;
     const objs = st.sel ? objetivos(st.sel) : new Set();
-    if (!st.sel && !st.hover && !st.destello) { sincronizarEspejos(); return; }
+    // conjunto de provincias del país resaltado (hover de país entero); se
+    // calcula una sola vez para no consultar el mapa píxel a píxel
+    let setPais = null;
+    if (st.paisHover != null) {
+      setPais = new Set();
+      for (const [pid, pp] of st.prov)
+        if (pp.dueno === st.paisHover) setPais.add(pid);
+    }
+    if (!st.sel && !st.hover && !st.destello && !setPais) { sincronizarEspejos(); return; }
     const ctx = cvS.getContext("2d");
     const img = ctx.createImageData(st.rw, st.rh);
     const px = img.data, ids = st.ids, W = st.rw, H = st.rh;
@@ -814,7 +954,8 @@
         if (!id) continue;
         const esSel = id === st.sel, esObj = objs.has(id), esHov = id === st.hover;
         const esDestello = id === st.destello;
-        if (!esSel && !esObj && !esHov && !esDestello) continue;
+        const esPais = setPais ? setPais.has(id) : false;
+        if (!esSel && !esObj && !esHov && !esDestello && !esPais) continue;
         const bd = (x + 1 < W && ids[i + 1] !== id) || (y + 1 < H && ids[i + W] !== id) ||
                    (x > 0 && ids[i - 1] !== id) || (y > 0 && ids[i - W] !== id);
         const o = i * 4;
@@ -826,7 +967,9 @@
           if (bd) { px[o] = 255; px[o + 1] = 240; px[o + 2] = 150; px[o + 3] = 255; }
           else { px[o] = 255; px[o + 1] = 235; px[o + 2] = 140; px[o + 3] = 60; }
         } else if (esObj) {
-          const prop = st.prov.get(id) && st.prov.get(id).dueno === st.jugador;
+          // verde = movimiento (tierra propia o entrar en paz al mar); rojo = ataque
+          const D = st.prov.get(id);
+          const prop = D && !esAtaque(D);
           if (bd) {
             px[o] = prop ? 120 : 255; px[o + 1] = prop ? 230 : 110;
             px[o + 2] = prop ? 160 : 90; px[o + 3] = 235;
@@ -834,6 +977,11 @@
             px[o] = prop ? 120 : 255; px[o + 1] = prop ? 230 : 110;
             px[o + 2] = prop ? 160 : 90; px[o + 3] = 48;
           }
+        } else if (esPais) {
+          // resalte del país entero (hover en la lista o en el mapa, fase inicio):
+          // borde dorado marcado y relleno cálido tenue sobre todas sus provincias
+          if (bd) { px[o] = 255; px[o + 1] = 245; px[o + 2] = 180; px[o + 3] = 255; }
+          else { px[o] = 255; px[o + 1] = 238; px[o + 2] = 165; px[o + 3] = 92; }
         } else {   // hover
           px[o] = 255; px[o + 1] = 255; px[o + 2] = 255; px[o + 3] = bd ? 190 : 40;
         }
@@ -846,6 +994,7 @@
   // rótulos: número de tropas por provincia (pastilla al estilo AoH) + capital
   function pintarRotulos() {
     cvR.width = st.nx; cvR.height = st.ny;
+    st.pastillas = [];          // rects para el hit-test del ratón (se rellenan aquí)
     if (st.fase === "inicio") { sincronizarEspejos(); return; }
     const ctx = cvR.getContext("2d");
     const esc = Math.max(1, st.nx / 1024);
@@ -886,6 +1035,27 @@
           ctx.fillText(edifs, cx, cy + h);
           ctx.font = `700 ${fs}px system-ui, sans-serif`;
         }
+        // coexistencia naval: si varias flotas comparten la cuenca, un pequeño
+        // globo con su número (la pastilla muestra la MAYORITARIA)
+        if (p.mar && p.flotas && p.flotas.length > 1) {
+          const bx = cx + w / 2, by = cy - h / 2;
+          ctx.fillStyle = "rgba(63,184,175,.96)";
+          ctx.beginPath(); ctx.arc(bx, by, 5.5 * esc, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#062018";
+          ctx.font = `700 ${6.5 * esc}px system-ui, sans-serif`;
+          ctx.fillText(String(p.flotas.length), bx, by);
+          ctx.font = `700 ${fs}px system-ui, sans-serif`;
+          // si mi flota no es la mayoritaria, un punto en mi color abajo-izq
+          if (miFlotaN(p) > 0 && p.dueno !== st.jugador) {
+            const yo = st.paises.get(st.jugador);
+            ctx.fillStyle = `rgb(${(yo ? yo.rgb : [255, 255, 255]).join(",")})`;
+            ctx.beginPath();
+            ctx.arc(cx - w / 2, cy + h / 2, 3.5 * esc, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        // guarda el rect (en coordenadas nx/ny) para el hit-test del clic/hover
+        st.pastillas.push({ id: p.id, x0: cx - w / 2, y0: cy - h / 2,
+                            x1: cx + w / 2, y1: cy + h / 2 });
       };
       dib(p.cx);
       const margen = w / 2 + 8 * esc;
@@ -893,6 +1063,29 @@
       else if (p.cx > st.nx - margen) dib(p.cx - st.nx);
     }
     sincronizarEspejos();
+  }
+
+  // hit-test de pastillas: devuelve el id de la provincia cuya pastilla está
+  // bajo (rx,ry) [coords nx/ny], probando de la última dibujada (encima) a la
+  // primera; envuelve en x (mundo periódico). 0 si ninguna.
+  function idEnPastilla(rx, ry) {
+    const arr = st.pastillas;
+    if (!arr || !arr.length) return 0;
+    const nx = st.nx;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const r = arr[i];
+      if (ry < r.y0 || ry > r.y1) continue;
+      for (const off of [0, -nx, nx]) {
+        const x = rx + off;
+        if (x >= r.x0 && x <= r.x1) return r.id;
+      }
+    }
+    return 0;
+  }
+  // id bajo el cursor: PRIMERO las pastillas (que se dibujan encima de otras
+  // provincias), luego el píxel del raster
+  function idBajoCursor(c) {
+    return idEnPastilla(c.rx, c.ry) || idEn(c.rx, c.ry);
   }
 
   // ================= interfaz =================
@@ -969,13 +1162,137 @@
     _destelloFin = setTimeout(() => { st.destello = 0; pintarSel(); }, 2000);
   }
 
+  // inspector de país para la vista diplomacia: al hacer clic en una región se
+  // muestran las propiedades de su país y con quién está en guerra
+  function pintarPaisInfo(pid) {
+    const caja = $("ficha");
+    const pais = st.paises.get(pid);
+    if (!pais) { caja.hidden = true; return; }
+    caja.hidden = false;
+    $("orden").hidden = true;
+    if (pid === NEUTRAL) {
+      caja.innerHTML = `<h3>tierras neutrales</h3>` +
+        `<div style="color:var(--tenue);font-size:12px">territorio sin dueño</div>`;
+      return;
+    }
+    // población agregada SOLO sobre lo visible (niebla de guerra): las
+    // provincias que no veo quedan como "?" y no suman
+    let pob = 0, incompleto = false;
+    for (const p of st.prov.values()) {
+      if (p.mar || p.dueno !== pid) continue;
+      if (veTropas(p)) pob += p.pob || 0;
+      else incompleto = true;
+    }
+    const rivales = [];
+    for (const g of st.guerras) {
+      const [a, b] = g.split("|").map(Number);
+      if (a === pid || b === pid) {
+        const po = st.paises.get(a === pid ? b : a);
+        if (po) rivales.push(po);
+      }
+    }
+    // tratados de no agresión de ESTE país con cualquiera (par -> turnos)
+    const tratos = [];
+    for (const k in st.tratados) {
+      const [a, b] = k.split("|").map(Number);
+      if (a !== pid && b !== pid) continue;
+      const po = st.paises.get(a === pid ? b : a);
+      if (po) tratos.push({ po, t: st.tratados[k] });
+    }
+    const yo = pid === st.jugador;
+    const guerra = !yo && enGuerra(st.jugador, pid);
+    const trato = yo ? 0 : tratadoTurnos(st.jugador, pid);
+    let h = `<h3><i class="cuad" style="background:rgb(${pais.rgb.join(",")})"></i>` +
+      `${pais.nombre}${yo ? " (tú)" : ""}</h3>`;
+    // los TOTALES visibles los calcula el servidor sobre la niebla (pais.ej es
+    // solo lo VISIBLE; pais.provs es el total público, provsVis lo que veo).
+    // Las relaciones diplomáticas sí son públicas y se muestran siempre.
+    const pv = pais.provsVis != null ? pais.provsVis : pais.provs;
+    const parcial = !yo && pv < pais.provs;      // hay provincias fuera de vista
+    const desc = `<span style="color:var(--tenue)">+?</span>`;
+    const provTxt = parcial
+      ? `${pais.provs} <span style="color:var(--tenue)">(${pv} visibles)</span>`
+      : `${pais.provs}`;
+    h += `<div class="fila"><span>provincias</span><b>${provTxt}</b></div>`;
+    h += `<div class="fila"><span>${yo ? "ejército" : "ejército visible"}</span>` +
+         `<b>⚔ ${fmt(pais.ej)}${parcial ? " " + desc : ""}</b></div>`;
+    h += `<div class="fila"><span>${yo ? "población" : "población visible"}</span>` +
+         `<b>${fmt(pob)}${incompleto ? " " + desc : ""}</b></div>`;
+    if (!yo)
+      h += `<div class="fila"><span>tu relación</span><b>` +
+           `${guerra ? "⚔ en guerra" : "🕊 paz"}${trato > 0 ? ` · no agresión ${trato}t` : ""}</b></div>`;
+    // en guerra con:
+    if (rivales.length) {
+      h += `<div style="margin-top:6px;color:var(--tenue);font-size:12px">⚔ en guerra con:</div>` +
+           `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:3px">`;
+      for (const po of rivales)
+        h += `<span><i class="cuad" style="background:rgb(${po.rgb.join(",")})"></i>${po.nombre}</span>`;
+      h += `</div>`;
+    } else {
+      h += `<div style="margin-top:6px;color:var(--tenue);font-size:12px">sin guerras activas</div>`;
+    }
+    // tratados de no agresión (con quién y cuántos turnos quedan)
+    if (tratos.length) {
+      h += `<div style="margin-top:6px;color:var(--tenue);font-size:12px">🕊 no agresión con:</div>` +
+           `<div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">`;
+      for (const { po, t } of tratos)
+        h += `<span><i class="cuad" style="background:rgb(${po.rgb.join(",")})"></i>` +
+             `${po.nombre} — ${t} turno${t > 1 ? "s" : ""}</span>`;
+      h += `</div>`;
+    }
+    // NO existe un sistema de alianzas en el motor: solo guerra / paz / tratados
+    h += `<div style="margin-top:6px;color:var(--tenue);font-size:11.5px">` +
+         `en paz con el resto · (sin sistema de alianzas)</div>`;
+
+    // ---- acciones diplomáticas en la FICHA del país (no en el listado) ----
+    // cuestan puntos de acción 🏃, que se COBRAN aunque la IA rechace
+    const pre = st.precios;
+    if (!yo && st.fase === "jugando" && pre) {
+      const cPA = pre.pa, mios = st.paises.get(st.jugador).puntos;
+      if (guerra) {
+        const c = cPA.paz;
+        h += `<div class="acciones"><button data-paz="${pid}" ${mios >= c ? "" : "disabled"}>` +
+             `🕊 solicitar la paz (🏃${c})</button></div>`;
+      } else if (trato === 0) {
+        const c = cPA.tratado;
+        h += `<div class="acciones"><button data-tratado="${pid}" ${mios >= c ? "" : "disabled"}>` +
+             `🤝 solicitar tratado de no agresión (🏃${c})</button></div>`;
+      }
+      if ((guerra && mios < cPA.paz) || (!guerra && trato === 0 && mios < cPA.tratado))
+        h += `<div style="color:var(--oro);font-size:11.5px;margin-top:4px">` +
+             `sin puntos de acción 🏃 suficientes</div>`;
+    }
+    caja.innerHTML = h;
+
+    // el SERVIDOR decide si la IA acepta; el costo se cobra igual (anota el log)
+    const negociar = async (accionN, verboOk, verboNo) => {
+      const resp = await accion("diplomacia", { accion: accionN, pais: pid });
+      if (resp)
+        avisar(resp.ok ? `${verboOk} <b>${pais.nombre}</b>`
+                       : `✋ <b>${pais.nombre}</b> ${verboNo}`);
+      // repinta la ficha de ESTE país (aunque no esté fijado en st.paisInfo,
+      // p. ej. si se llegó al botón desde el hover de la lista)
+      pintarPaisInfo(pid);
+      if (st.vista === "diplomacia") pintarDiplomacia();
+    };
+    const bp = caja.querySelector("[data-paz]");
+    if (bp) bp.onclick = () => negociar("paz", "🕊 acepta la paz", "rechaza la paz");
+    const bt = caja.querySelector("[data-tratado]");
+    if (bt) bt.onclick = () => negociar("tratado", "🤝 firma el tratado con", "rechaza el tratado");
+  }
+
   function pintarFicha() {
     const caja = $("ficha");
+    if (st.vista === "diplomacia" && st.paisInfo != null) {
+      pintarPaisInfo(st.paisInfo);
+      return;
+    }
     const p = st.prov.get(st.sel);
     if (!p) { caja.hidden = true; return; }
     caja.hidden = false;
     const pais = st.paises.get(p.dueno), yo = st.paises.get(st.jugador);
-    const mia = p.dueno === st.jugador;
+    // en el mar "mío" = tengo flota (aunque coexista en paz sin ser mayoritario)
+    const mia = esMio(p);
     const iconos = (p.bastion ? " 🛡" : "") + (p.torre ? " 👁" : "") +
                    (p.puerto ? " ⚓" : "");
     const nomPais = p.mar && p.dueno === NEUTRAL ? "aguas libres" : pais.nombre;
@@ -987,8 +1304,22 @@
     if (!p.mar) {
       h += `<div class="fila"><span>población</span><b>${veTropas(p) ? fmt(p.pob) : "?"}</b></div>`;
     }
-    h += `<div class="fila"><span>tropas</span><b>${tropasTxt(p)}` +
-         `${mia && p.movida ? " (ya actuó)" : ""}</b></div>`;
+    if (p.mar && p.flotas && p.flotas.length) {
+      // desglose de flotas coexistiendo en la cuenca
+      h += `<div class="fila"><span>flotas</span><b>${p.flotas.length}</b></div>`;
+      for (const f of p.flotas) {
+        const pf = st.paises.get(f.p);
+        if (!pf) continue;
+        const rel = f.p === st.jugador ? " (tú)"
+          : enGuerra(st.jugador, f.p) ? " ⚔" : " 🕊";
+        h += `<div class="fila"><span><i class="cuad" ` +
+          `style="background:rgb(${pf.rgb.join(",")})"></i>${pf.nombre}${rel}</span>` +
+          `<b>⚔ ${f.n}${f.p === st.jugador && f.m ? " (actuó)" : ""}</b></div>`;
+      }
+    } else {
+      h += `<div class="fila"><span>tropas</span><b>${tropasTxt(p)}` +
+           `${mia && !p.mar && p.movida ? " (ya actuó)" : ""}</b></div>`;
+    }
     if (!p.mar && p.ingreso != null)
       h += `<div class="fila"><span>ingreso</span><b>+${p.ingreso.toFixed(1)}</b></div>`;
     const pre = st.precios;
@@ -1010,8 +1341,17 @@
       for (const [k, e] of Object.entries(pre.edif)) {
         if (p[k]) continue;
         if (k === "puerto" && !p.costera) continue;
-        const ok = yo.dinero >= e.costo && yo.puntos >= cPA.edif;
-        cons += `<button data-edif="${k}" ${ok ? "" : "disabled"}>` +
+        // las torres no aportan con visión total ni oculta: se ofrecen
+        // DESHABILITADAS con una nota (tooltip) en vez de dejarlas comprar
+        const torreInutil = k === "torre" &&
+          (st.ajustes.vision === "total" || st.ajustes.vision === "oculta");
+        const ok = !torreInutil && yo.dinero >= e.costo && yo.puntos >= cPA.edif;
+        const titulo = torreInutil
+          ? (st.ajustes.vision === "total"
+              ? "con visión total la torre no aporta nada"
+              : "con visión oculta las torres no tienen efecto")
+          : e.nombre;
+        cons += `<button data-edif="${k}" ${ok ? "" : "disabled"} title="${titulo}">` +
                 `${e.icono} ${e.nombre} (🪙${e.costo} · 🏃${cPA.edif})</button>`;
       }
       if (cons) h += `<div class="acciones">${cons}</div>`;
@@ -1030,13 +1370,22 @@
       if (yo.puntos < pre.pa.mov)
         h += `<div style="color:var(--oro);font-size:12px;margin-top:6px">` +
              `sin puntos de acción 🏃 — termina el turno para renovarlos</div>`;
-      else if (p.ejercito >= 1 && !p.movida)
+      else if (miFlotaN(p) >= 1 && !yaMovi(p))
         h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
              `haz clic en una provincia resaltada para mover la flota o desembarcar</div>`;
+    } else if (!mia && p.mar) {
+      // cuenca ajena (sin flota mía): solo informativa
+      caja.innerHTML = h;
+      return;
     } else if (!mia && p.dueno !== NEUTRAL && !enGuerra(st.jugador, p.dueno) &&
                st.fase === "jugando") {
-      h += `<div class="acciones"><button data-guerra="${p.dueno}">` +
-           `declarar la guerra a ${pais.nombre}</button></div>`;
+      const t = tratadoTurnos(st.jugador, p.dueno);
+      if (t > 0)
+        h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
+             `🕊 tratado de no agresión (${t} turno${t > 1 ? "s" : ""})</div>`;
+      else
+        h += `<div class="acciones"><button data-guerra="${p.dueno}">` +
+             `declarar la guerra a ${pais.nombre}</button></div>`;
     } else if (st.fase !== "jugando" && (mia || (!mia && p.dueno !== NEUTRAL))) {
       h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
            `modo espectador: sin órdenes disponibles</div>`;
@@ -1089,12 +1438,58 @@
       avisar(`No te quedan puntos de acción 🏃 para esa orden (cuesta ${costo}).`);
       return true;
     }
-    const max = A.ejercito - (A.mar ? 0 : 1);
+    const max = A.mar ? miFlotaN(A) : A.ejercito - 1;
     st.orden = { origen: st.sel, destino, naval, costo, n: max, max,
-                 ataque: D.dueno !== st.jugador &&
-                         !(D.dueno === NEUTRAL && D.ejercito != null && D.ejercito <= 0) };
+                 ataque: esAtaque(D) };
     pintarOrden(); pintarFlecha();
     return true;
+  }
+
+  // estimación APROXIMADA de bajas propias al atacar (la batalla real la
+  // resuelve el servidor). Reproduce su fórmula con los extremos del azar:
+  //   fA = tropas · azar · (desembarco? penaNaval : 1)
+  //   fD = max(def,0.5) · bonoDefensa · (bastión? 1+bastion% : 1) · azar
+  // si fA>fD sobreviven max(1, round(tropas·(fA−fD)/fA)); si no, se pierden
+  // todas. Devuelve el rango mejor–peor caso, o null si no aplica.
+  function estimarBajas(o) {
+    if (!o || !o.ataque) return null;
+    const A = st.prov.get(o.origen), D = st.prov.get(o.destino);
+    const cmb = st.precios && st.precios.combate;
+    // niebla de guerra: sin ver al defensor no se puede estimar
+    if (!A || !D || !cmb || !D.visible || D.ejercito == null) return null;
+    const desembarco = o.naval || (A.mar && !D.mar);
+    const navalF = desembarco ? cmb.penaNaval : 1;
+    const bastF = D.bastion ? (1 + (st.ajustes.bastion || 0) / 100) : 1;
+    const n = o.n;
+    const defBase = Math.max(D.ejercito, 0.5) * cmb.bonoDefensa * bastF;
+    const calc = (azA, azD) => {
+      const fA = n * azA * navalF, fD = defBase * azD;
+      if (fA <= fD) return { perdidas: n, gana: false };
+      return { perdidas: n - Math.max(1, Math.round(n * (fA - fD) / fA)), gana: true };
+    };
+    const opt = calc(cmb.azarHi, cmb.azarLo);   // mejor caso para el atacante
+    const pes = calc(cmb.azarLo, cmb.azarHi);   // peor caso
+    return { min: Math.min(opt.perdidas, pes.perdidas),
+             max: Math.max(opt.perdidas, pes.perdidas),
+             ganaSeguro: opt.gana && pes.gana, ganaTal: opt.gana };
+  }
+
+  function pintarBajas() {
+    const el = $("orden-bajas"), o = st.orden;
+    if (!o || !o.ataque) { el.hidden = true; return; }
+    const D = st.prov.get(o.destino);
+    el.hidden = false;
+    if (!D || !D.visible || D.ejercito == null) {
+      el.innerHTML = `bajas estimadas: <b>?</b> — sin visibilidad del defensor`;
+      return;
+    }
+    const e = estimarBajas(o);
+    if (!e) { el.hidden = true; return; }
+    const rango = e.min === e.max ? `~${e.min}` : `${e.min}–${e.max}`;
+    let txt = `bajas estimadas: <b>${rango}</b> de ${o.n}`;
+    if (!e.ganaTal) txt += ` · <span style="color:var(--rojo)">probable derrota</span>`;
+    else if (!e.ganaSeguro) txt += ` · resultado incierto`;
+    el.innerHTML = txt;
   }
 
   function pintarOrden() {
@@ -1115,6 +1510,7 @@
       `cuesta ${o.costo} punto${o.costo > 1 ? "s" : ""} de acción 🏃` +
       (o.naval ? ` (travesía naval)` : "");
     $("orden-ok").textContent = o.ataque ? "⚔ atacar" : "✔ mover";
+    pintarBajas();
   }
 
   function cancelarOrden() {
@@ -1130,21 +1526,21 @@
     $("orden-n").textContent = st.orden.n;
     $("orden-quedan").textContent =
       st.prov.get(st.orden.origen).ejercito - st.orden.n;
+    pintarBajas();
     pintarFlecha();
   };
   $("orden-no").onclick = cancelarOrden;
   $("orden-ok").onclick = async () => {
     const o = st.orden;
     if (!o || st.ocupado) return;
-    const D = st.prov.get(o.destino);
     st.orden = null; $("orden").hidden = true;
     const resp = await accion("orden", {
-      accion: D.dueno === st.jugador ? "mover" : "atacar",
+      accion: o.ataque ? "atacar" : "mover",
       origen: o.origen, destino: o.destino, tropas: o.n,
     });
     if (resp && !resp.ok) avisar(`✋ ${resp.mensaje}`);
-    // si el destino quedó en tus manos, sigue seleccionado para encadenar
-    st.sel = resp && st.prov.get(o.destino).dueno === st.jugador ? o.destino : 0;
+    // si el destino quedó en tus manos (o tienes flota allí), sigue seleccionado
+    st.sel = resp && esMio(st.prov.get(o.destino)) ? o.destino : 0;
     repintar();
   };
 
@@ -1215,9 +1611,7 @@
         const D = st.prov.get(id);
         if (!D) continue;
         const naval = !(st.vecinos.get(st.sel) || new Set()).has(id);
-        const ataque = D.dueno !== st.jugador &&
-                       !(D.dueno === NEUTRAL && D.ejercito != null && D.ejercito <= 0);
-        flechaEntre(A, D, ataque ? "#ff6a50" : "#5ee6a0", naval, 0.42, null);
+        flechaEntre(A, D, esAtaque(D) ? "#ff6a50" : "#5ee6a0", naval, 0.42, null);
       }
     }
     sincronizarEspejos();
@@ -1233,82 +1627,98 @@
     await accion("turno", {});
   };
 
-  // ================= vista del mapa =================
-  $("ui-vista").onchange = () => {
-    st.vista = $("ui-vista").value;
-    pintarDuenos();
-  };
-
-  // ================= diplomacia (overlay) =================
-  $("b-dip").onclick = () => { pintarDiplomacia(); $("velo-dip").hidden = false; };
-  $("b-dip-cerrar").onclick = () => { $("velo-dip").hidden = true; };
-  $("b-guerras").onclick = () => {
-    const gl = $("guerras-lista");
-    gl.hidden = !gl.hidden;
-    if (!gl.hidden) {
-      pintarGuerras();
-      st.vista = "diplomacia";
-      $("ui-vista").value = "diplomacia";
-      pintarDuenos();
-    }
-  };
-  function pintarGuerras() {
-    const gl = $("guerras-lista");
-    if (!st.guerras.size) {
-      gl.innerHTML = `<p style="color:var(--tenue);font-size:12.5px;margin:0">no hay guerras activas</p>`;
-      return;
-    }
-    let h = "";
-    for (const g of st.guerras) {
-      const [a, b] = g.split("|").map(Number);
-      const pa = st.paises.get(a), pb = st.paises.get(b);
-      if (!pa || !pb) continue;
-      h += `<div class="item"><i class="cuad" style="background:rgb(${pa.rgb.join(",")})"></i>` +
-        `${pa.nombre} <span style="color:var(--rojo)">⚔</span> ` +
-        `<i class="cuad" style="background:rgb(${pb.rgb.join(",")})"></i>${pb.nombre}</div>`;
-    }
-    gl.innerHTML = h;
+  // ================= vista del mapa (botones) =================
+  // marca el botón activo y, salvo en la vista política, pinta la coropleta
+  // sobre un fondo plano neutro (clase .plano oculta la geografía física)
+  function setVista(v) {
+    st.vista = v;
+    const dip = v === "diplomacia";
+    if (!dip) st.paisInfo = null;
+    document.querySelectorAll("#ui-vistas .vista")
+      .forEach(b => b.classList.toggle("activo", b.dataset.vista === v));
+    cinta.classList.toggle("plano", v !== "paises");
+    // el panel acoplado de diplomacia solo aparece en su vista
+    $("dip-dock").hidden = !dip;
+    if (dip) pintarDiplomacia();
+    pintarDuenos(); pintarFicha();
   }
+  function vistasHabilitadas(on) {
+    document.querySelectorAll("#ui-vistas .vista").forEach(b => b.disabled = !on);
+  }
+  document.querySelectorAll("#ui-vistas .vista").forEach(b =>
+    b.onclick = () => setVista(b.dataset.vista));
+
+  // ================= diplomacia (vista + panel acoplado) =================
+  // un ÚNICO control: el botón de vista «🤝 diplomacia» de la barra activa/
+  // desactiva la vista y despliega el panel acoplado con la lista (ya no hay un
+  // botón «diplomacia» aparte ni un overlay separado).
+
+  // referencia de la coropleta/leyenda de diplomacia: el país inspeccionado
+  // (clic en la lista o en el mapa) o, si no hay ninguno, yo mismo
+  function refDiplomacia() {
+    return (st.paisInfo != null && st.paisInfo !== NEUTRAL) ? st.paisInfo : st.jugador;
+  }
+
+  // lista de países en el panel acoplado: cada fila muestra el estado del país
+  // respecto a MÍ (badge) y, al hacer clic/hover, su FICHA completa (pintarPaisInfo)
+  // mini-leyenda del panel acoplado: dice RESPECTO A QUIÉN se pinta el mapa
+  // (el país seleccionado, o yo) y los colores de cada relación
+  function pintarLeyendaDip() {
+    const ref = refDiplomacia();
+    const rp = st.paises.get(ref);
+    const propio = ref === st.jugador ? "tú" : (rp ? rp.nombre : "?");
+    $("dip-key").innerHTML =
+      `<span><i class="cuad" style="background:rgb(80,190,140)"></i>${propio}</span>` +
+      `<span><i class="cuad" style="background:rgb(212,72,56)"></i>guerra</span>` +
+      `<span><i class="cuad" style="background:rgb(86,132,214)"></i>no agresión</span>` +
+      `<span><i class="cuad" style="background:rgb(128,130,138)"></i>paz</span>`;
+    $("dip-ref").textContent = ref === st.jugador
+      ? "relaciones respecto a ti"
+      : `relaciones respecto a ${rp ? rp.nombre : "?"}`;
+  }
+
   function pintarDiplomacia() {
+    pintarLeyendaDip();
     const caja = $("dip-lista");
     caja.innerHTML = "";
+    // orden por ESTADO respecto a mí y, dentro de cada grupo, los países más
+    // grandes (por provincias) primero: guerra > pacto de no agresión > paz.
+    // (No existe un sistema de alianzas en el motor.) Yo encabezo la lista.
+    const rango = p => p.id === st.jugador ? -1
+      : enGuerra(st.jugador, p.id) ? 0
+      : tratadoTurnos(st.jugador, p.id) > 0 ? 1 : 2;
     const lista = [...st.paises.values()]
       .filter(p => p.vivo && p.id !== NEUTRAL)
-      .sort((a, b) => (b.provs || 0) - (a.provs || 0));
+      .sort((a, b) => rango(a) - rango(b) || (b.provs || 0) - (a.provs || 0));
     for (const p of lista) {
       const div = document.createElement("div");
-      div.className = "item";
+      div.className = "item" + (st.paisInfo === p.id ? " sel" : "");
+      div.dataset.pid = p.id;
       const yo = p.id === st.jugador;
       const guerra = enGuerra(st.jugador, p.id);
-      let extra = "";
-      const soloLectura = st.fase !== "jugando";
-      if (yo) extra = `<span class="estado">tú</span>`;
-      else if (guerra)
-        extra = `<span class="estado guerra">guerra</span>` +
-                (soloLectura ? "" : `<button data-paz="${p.id}">pedir paz</button>`);
-      else
-        extra = `<span class="estado paz">paz</span>` +
-                (soloLectura ? "" : `<button data-g="${p.id}">guerra</button>`);
+      const trato = tratadoTurnos(st.jugador, p.id);
+      let badge;
+      if (yo) badge = `<span class="estado">tú</span>`;
+      else if (guerra) badge = `<span class="estado guerra">guerra</span>`;
+      else if (trato > 0)
+        badge = `<span class="estado pacto" title="tratado de no agresión">🕊 pacto ${trato}t</span>`;
+      else badge = `<span class="estado paz">paz</span>`;
+      // el ejército mostrado es solo lo VISIBLE: si hay provincias fuera de
+      // vista, se marca con +? (el total real nunca viaja al front)
+      const parcial = !yo && p.provsVis != null && p.provsVis < p.provs;
       div.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>` +
-        `${p.nombre}<span class="dato">${p.provs} prov · ⚔${fmt(p.ej)}</span>${extra}`;
+        `${p.nombre}<span class="dato">${p.provs} · ⚔${fmt(p.ej)}${parcial ? "+?" : ""}</span>${badge}`;
+      div.onclick = () => { st.paisInfo = p.id; pintarDuenos(); pintarDiplomacia(); pintarFicha(); };
+      div.onmouseenter = () => { resaltarPais(p.id); pintarPaisInfo(p.id); };
+      // al salir de la fila NO se oculta la ficha si no hay país fijado: así el
+      // ratón puede llegar hasta los botones de tratado/paz de la ficha sin que
+      // desaparezcan por el camino (antes el mouseleave la escondía)
+      div.onmouseleave = () => {
+        resaltarPais(null);
+        if (st.paisInfo != null) pintarFicha();
+      };
       caja.appendChild(div);
     }
-    caja.querySelectorAll("[data-g]").forEach(b => b.onclick = async () => {
-      await accion("diplomacia", { accion: "guerra", pais: parseInt(b.dataset.g) });
-      pintarDiplomacia();
-    });
-    caja.querySelectorAll("[data-paz]").forEach(b => b.onclick = async () => {
-      // el SERVIDOR decide si la IA acepta la paz
-      const otro = parseInt(b.dataset.paz);
-      const resp = await accion("diplomacia", { accion: "paz", pais: otro });
-      if (resp) {
-        const nom = st.paises.get(otro).nombre;
-        avisar(resp.ok ? `🕊 <b>${nom}</b> acepta la paz`
-                       : `✋ <b>${nom}</b> rechaza tu oferta de paz`);
-      }
-      pintarDiplomacia();
-    });
-    if (!$("guerras-lista").hidden) pintarGuerras();
   }
 
   // ================= historial y gráficos (datos del servidor) =============
@@ -1323,17 +1733,38 @@
     return [...ids].map(id => st.paises.get(id)).filter(Boolean);
   }
 
+  // número compacto para las cotas del eje Y (12k, 1.2M…)
+  function fmtCorto(n) {
+    const a = Math.abs(n);
+    if (a >= 1e9) return (n / 1e9).toFixed(a < 1e10 ? 1 : 0).replace(/\.0$/, "") + "G";
+    if (a >= 1e6) return (n / 1e6).toFixed(a < 1e7 ? 1 : 0).replace(/\.0$/, "") + "M";
+    if (a >= 1e3) return (n / 1e3).toFixed(a < 1e4 ? 1 : 0).replace(/\.0$/, "") + "k";
+    return String(Math.round(n));
+  }
+
+  // rango de turnos visible (índices absolutos en st.historia), ya recortado
+  function rangoVisible() {
+    const n = st.historia.length;
+    if (!n) return { i0: 0, i1: 0 };
+    const i1 = Math.max(0, Math.min(n - 1, st.graf.i1));
+    const i0 = Math.max(0, Math.min(st.graf.i0, i1));
+    return { i0, i1 };
+  }
+
   function pintarLeyendaGraficos() {
     const el = $("graf-leyenda");
     const lista = paisesEnHistoria();
-    el.innerHTML = lista.map(p =>
-      `<span class="it"><i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>${p.nombre}${p.vivo ? "" : " (eliminado)"}</span>`
-    ).join("") || `<span style="color:var(--tenue)">sin datos todavía — juega al menos un turno</span>`;
+    const fijo = st.graf.fijo;
+    el.innerHTML = lista.map(p => {
+      const cl = "it" + (fijo === p.id ? " fijo" : (fijo != null ? " tenue" : ""));
+      return `<span class="${cl}" data-pid="${p.id}"><i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>${p.nombre}${p.vivo ? "" : " (eliminado)"}</span>`;
+    }).join("") || `<span style="color:var(--tenue)">sin datos todavía — juega al menos un turno</span>`;
   }
 
+  // un solo gráfico: métrica activa, recorte al rango y país resaltado
   function dibujarGrafico(cv, metrica, hoverIdx) {
     const dpr = window.devicePixelRatio || 1;
-    const rectW = cv.clientWidth || 760, rectH = cv.clientHeight || 150;
+    const rectW = cv.clientWidth || 760, rectH = cv.clientHeight || 220;
     const needW = Math.round(rectW * dpr), needH = Math.round(rectH * dpr);
     if (cv.width !== needW || cv.height !== needH) { cv.width = needW; cv.height = needH; }
     const ctx = cv.getContext("2d");
@@ -1342,7 +1773,7 @@
           borde = cssVar("--borde");
     ctx.fillStyle = fondo; ctx.fillRect(0, 0, rectW, rectH);
     const hist = st.historia;
-    const pad = { l: 46, r: 10, t: 8, b: 18 };
+    const pad = { l: 48, r: 12, t: 10, b: 20 };
     const W = Math.max(1, rectW - pad.l - pad.r), H = Math.max(1, rectH - pad.t - pad.b);
     if (!hist.length) {
       ctx.fillStyle = tenue; ctx.font = "12px system-ui, sans-serif";
@@ -1351,31 +1782,50 @@
       return null;
     }
     const paises = paisesEnHistoria();
-    let max = 1;
-    for (const pt of hist) for (const pid in pt.datos) max = Math.max(max, pt.datos[pid][metrica]);
-    const n = hist.length;
-    const xDe = i => pad.l + (n <= 1 ? 0 : i / (n - 1) * W);
-    const yDe = v => pad.t + H - (v / max) * H;
+    const { i0, i1 } = rangoVisible();
+    const nv = i1 - i0 + 1;
+    // cotas del rango visible: máximo y mínimo reales de la métrica
+    let hi = 0, lo = Infinity;
+    for (let i = i0; i <= i1; i++)
+      for (const pid in hist[i].datos) {
+        const v = hist[i].datos[pid][metrica];
+        if (v > hi) hi = v;
+        if (v < lo) lo = v;
+      }
+    if (!isFinite(lo)) lo = 0;
+    if (hi <= lo) hi = lo + 1;   // evita rango plano / división por cero
+    const xDe = i => pad.l + (nv <= 1 ? 0 : (i - i0) / (nv - 1) * W);
+    const yDe = v => pad.t + H - ((v - lo) / (hi - lo)) * H;
+    // rejilla + cotas del eje Y (máx, mín e intermedias, formato compacto)
     ctx.strokeStyle = borde; ctx.lineWidth = 1;
     ctx.fillStyle = tenue; ctx.font = "10.5px system-ui, sans-serif";
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
     const TICKS = 4;
     for (let k = 0; k <= TICKS; k++) {
-      const v = max * k / TICKS, y = yDe(v);
+      const v = lo + (hi - lo) * k / TICKS, y = yDe(v);
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + W, y); ctx.stroke();
-      ctx.fillText(fmt(v), pad.l - 6, y);
+      ctx.fillText(fmtCorto(v), pad.l - 6, y);
     }
-    ctx.textAlign = "center"; ctx.textBaseline = "top";
-    const pasoX = Math.max(1, Math.round(n / 6));
-    for (let i = 0; i < n; i += pasoX)
+    // cotas del eje X: turno inicial/final del rango + intermedios
+    ctx.fillStyle = tenue; ctx.textBaseline = "top";
+    const pasoX = Math.max(1, Math.round((nv - 1) / 5) || 1);
+    for (let i = i0; i <= i1; i += pasoX) {
+      ctx.textAlign = i === i0 ? "left" : "center";
       ctx.fillText(String(hist[i].turno), xDe(i), pad.t + H + 3);
-    if ((n - 1) % pasoX !== 0)
-      ctx.fillText(String(hist[n - 1].turno), xDe(n - 1), pad.t + H + 3);
-    for (const pais of paises) {
+    }
+    ctx.textAlign = "right";
+    ctx.fillText(String(hist[i1].turno), xDe(i1), pad.t + H + 3);
+    // series: el país fijado se pinta grueso y al final; los demás atenuados
+    const fijo = st.graf.fijo;
+    const orden = fijo == null ? paises
+      : [...paises.filter(p => p.id !== fijo), ...paises.filter(p => p.id === fijo)];
+    for (const pais of orden) {
+      const destacado = fijo === pais.id;
+      ctx.globalAlpha = (fijo == null || destacado) ? 1 : 0.16;
       ctx.strokeStyle = `rgb(${pais.rgb.join(",")})`;
-      ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.beginPath();
+      ctx.lineWidth = destacado ? 3.5 : 2; ctx.lineJoin = "round"; ctx.beginPath();
       let trazo = false;
-      for (let i = 0; i < n; i++) {
+      for (let i = i0; i <= i1; i++) {
         const d = hist[i].datos[pais.id];
         if (!d) { trazo = false; continue; }
         const x = xDe(i), y = yDe(d[metrica]);
@@ -1383,7 +1833,9 @@
       }
       ctx.stroke();
     }
-    if (hoverIdx != null && hist[hoverIdx]) {
+    ctx.globalAlpha = 1;
+    // guía vertical del turno bajo el cursor (solo dentro del rango)
+    if (hoverIdx != null && hoverIdx >= i0 && hoverIdx <= i1 && hist[hoverIdx]) {
       const x = xDe(hoverIdx);
       ctx.strokeStyle = tenue; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + H); ctx.stroke();
@@ -1393,31 +1845,87 @@
     return null;
   }
 
-  const GRAFICOS = [["cv-graf-pob", "pob"], ["cv-graf-mil", "mil"], ["cv-graf-eco", "oro"]];
-  function pintarTodosGraficos(hoverIdx) {
-    pintarLeyendaGraficos();
-    for (const [id, metrica] of GRAFICOS) dibujarGrafico($(id), metrica, hoverIdx);
+  // sincroniza tabs/botones/sliders con st.graf (sin dibujar el canvas)
+  function sincronizarControlesGraf() {
+    const n = st.historia.length, maxIdx = Math.max(0, n - 1);
+    const r0 = $("graf-r0"), r1 = $("graf-r1");
+    r0.max = r1.max = maxIdx;
+    r0.value = st.graf.i0; r1.value = st.graf.i1;
+    $("graf-tabs").querySelectorAll(".gtab").forEach(b =>
+      b.classList.toggle("activo", b.dataset.metrica === st.graf.metrica));
+    document.querySelectorAll(".graf-periodo .gper").forEach(b =>
+      b.classList.toggle("activo", st.graf.ult != null &&
+        parseInt(b.dataset.ult) === st.graf.ult));
   }
 
+  function pintarGrafico(hoverIdx) {
+    st.graf.hover = hoverIdx == null ? null : hoverIdx;
+    pintarLeyendaGraficos();
+    sincronizarControlesGraf();
+    dibujarGrafico($("cv-graf"), st.graf.metrica, hoverIdx);
+  }
+
+  // fija el rango a "últimos u" turnos (u=0 → todo)
+  function aplicarUltimos(u) {
+    const n = st.historia.length;
+    st.graf.ult = u;
+    st.graf.i1 = Math.max(0, n - 1);
+    st.graf.i0 = (u > 0 && n > u) ? n - u : 0;
+  }
+
+  // índice de turno absoluto más cercano a la x del cursor
   function idxMasCercano(cv, mx) {
-    const pad = { l: 46, r: 10 };
-    const W = Math.max(1, cv.clientWidth - pad.l - pad.r);
     const n = st.historia.length;
     if (!n) return null;
+    const { i0, i1 } = rangoVisible();
+    const pad = { l: 48, r: 12 };
+    const W = Math.max(1, cv.clientWidth - pad.l - pad.r);
     const t = Math.min(1, Math.max(0, (mx - pad.l) / W));
-    return Math.round(t * (n - 1));
+    return i0 + Math.round(t * (i1 - i0));
   }
-  for (const [id] of GRAFICOS) {
-    const cv = $(id);
+
+  // ---- interacción del overlay de gráficos ----
+  // selector de métrica (una sola visible)
+  $("graf-tabs").addEventListener("click", e => {
+    const b = e.target.closest(".gtab"); if (!b) return;
+    st.graf.metrica = b.dataset.metrica; pintarGrafico(st.graf.hover);
+  });
+  // botones rápidos de periodo
+  document.querySelectorAll(".graf-periodo .gper").forEach(b =>
+    b.addEventListener("click", () => { aplicarUltimos(parseInt(b.dataset.ult)); pintarGrafico(); }));
+  // sliders desde/hasta (rango personalizado)
+  const r0 = $("graf-r0"), r1 = $("graf-r1");
+  r0.addEventListener("input", () => {
+    st.graf.i0 = Math.min(parseInt(r0.value), parseInt(r1.value));
+    st.graf.ult = null; pintarGrafico();
+  });
+  r1.addEventListener("input", () => {
+    st.graf.i1 = Math.max(parseInt(r1.value), parseInt(r0.value));
+    st.graf.ult = null; pintarGrafico();
+  });
+  // resaltar país: clic en la leyenda fija/suelta su serie
+  $("graf-leyenda").addEventListener("click", e => {
+    const it = e.target.closest(".it[data-pid]"); if (!it) return;
+    const pid = parseInt(it.dataset.pid);
+    st.graf.fijo = st.graf.fijo === pid ? null : pid;
+    pintarGrafico(st.graf.hover);
+  });
+  // hover por turno (guía vertical), compatible con el país resaltado
+  {
+    const cv = $("cv-graf");
     cv.addEventListener("mousemove", e => {
       const r = cv.getBoundingClientRect();
       const idx = idxMasCercano(cv, e.clientX - r.left);
       if (idx == null) return;
-      pintarTodosGraficos(idx);
+      pintarGrafico(idx);
     });
-    cv.addEventListener("mouseleave", () => pintarTodosGraficos());
+    cv.addEventListener("mouseleave", () => pintarGrafico());
   }
-  $("b-graf").onclick = () => { pintarTodosGraficos(); $("velo-graf").hidden = false; };
+  $("b-graf").onclick = () => {
+    aplicarUltimos(st.graf.ult == null ? 0 : st.graf.ult);  // reencuadra al turno más nuevo
+    $("velo-graf").hidden = false;
+    pintarGrafico();
+  };
   $("b-graf-cerrar").onclick = () => { $("velo-graf").hidden = true; };
 
   // ================= replay (los diffs los manda el servidor) ==============
@@ -1448,7 +1956,10 @@
     replayEst = { turno: 1, playing: true, vel: 1 };
     st._fasePrevia = st.fase; st._vistaPrevia = st.vista;
     st.fase = "replay"; st.vista = "paises";
-    $("ui-vista").disabled = true;
+    document.querySelectorAll("#ui-vistas .vista")
+      .forEach(b => b.classList.toggle("activo", b.dataset.vista === "paises"));
+    cinta.classList.remove("plano");
+    vistasHabilitadas(false);
     $("velo-fin").hidden = true;
     actualizarControles();
     limpiarRotulos();
@@ -1484,8 +1995,10 @@
     $("replay-hud").hidden = true;
     st.fase = st._fasePrevia || "jugando";
     st.vista = st._vistaPrevia || "paises";
-    $("ui-vista").value = st.vista;
-    $("ui-vista").disabled = false;
+    vistasHabilitadas(true);
+    document.querySelectorAll("#ui-vistas .vista")
+      .forEach(b => b.classList.toggle("activo", b.dataset.vista === st.vista));
+    cinta.classList.toggle("plano", st.vista !== "paises");
     actualizarControles();
     pintarDuenos(); pintarSel(); pintarRotulos(); pintarBarra(); pintarFicha();
   }
@@ -1525,6 +2038,7 @@
     b.textContent = `▶ continuar partida guardada — ` +
       `${pais.nombre}, turno ${est0.turno}`;
     b.onclick = async () => {
+      resaltarPais(null);
       let est = est0;
       try { est = await apiGet("estado"); } catch (e) {}
       aplicarEstado(est);
@@ -1548,8 +2062,23 @@
     st.ajustes.bastion = parseFloat($("aj-bastion").value) || 0;
     st.ajustes.naval = parseFloat($("aj-naval").value) || 0;
     st.ajustes.recup = parseFloat($("aj-recup").value) || 0;
+    st.ajustes.vision = $("aj-vision").value || "parcial";
   }
-  ["aj-bastion", "aj-naval", "aj-recup"].forEach(id => $(id).onchange = leerAjustesUI);
+  ["aj-bastion", "aj-naval", "aj-recup", "aj-vision"]
+    .forEach(id => $(id).onchange = leerAjustesUI);
+
+  // resalta un país entero en el mapa (todas sus provincias) y marca su fila
+  // en la lista; pid === null quita el resalte
+  function resaltarPais(pid) {
+    if (st.paisHover === pid) return;
+    st.paisHover = pid;
+    marcarItemLista(pid);
+    pintarSel();
+  }
+  function marcarItemLista(pid) {
+    document.querySelectorAll("#lista-paises .item").forEach(it =>
+      it.classList.toggle("hl", pid != null && parseInt(it.dataset.pais) === pid));
+  }
 
   // lista de países jugables con sus datos INICIALES (provs/ej del mapa)
   function pintarListaPaises(paisesMapa) {
@@ -1560,13 +2089,19 @@
     for (const p of lista) {
       const div = document.createElement("div");
       div.className = "item";
+      div.dataset.pais = p.id;
       div.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>` +
         `${p.nombre}<span class="dato">${p.provs} provincias · ⚔${fmt(p.ej)}</span>`;
       div.onclick = () => empezar(p.id);
+      // hover en la lista -> resalta ese país en el mapa
+      div.onmouseenter = () => resaltarPais(p.id);
+      div.onmouseleave = () => resaltarPais(null);
       caja.appendChild(div);
     }
   }
   async function empezar(pid) {
+    if (st.ocupado) return;
+    resaltarPais(null);
     leerAjustesUI();
     const est = await accion("nueva", {
       jugador: pid, dificultad: st.difKey, ajustes: st.ajustes });
@@ -1626,16 +2161,22 @@
 
   let abajo = null, movio = false;
   visor.addEventListener("mousedown", e => {
-    if (e.target.closest("#panel, #log, .velo, #aviso")) return;
+    if (e.target.closest("#panel, #log, .velo, #aviso, #dip-dock, #leyenda")) return;
     abajo = { x: e.clientX, y: e.clientY }; movio = false;
   });
   window.addEventListener("mouseup", e => {
     // en "espectador" se puede seleccionar/mirar (solo lectura); en "jugando"
     // además se pueden dar órdenes; en "fin"/"replay" no hay clics
-    if (abajo && !movio && st.ids &&
-        (st.fase === "jugando" || st.fase === "espectador")) {
-      const c = coord(e), id = idEn(c.rx, c.ry);
-      clicEn(id);
+    if (abajo && !movio && st.ids) {
+      if (st.fase === "jugando" || st.fase === "espectador") {
+        const c = coord(e);
+        const pill = idEnPastilla(c.rx, c.ry);      // pastilla primero, luego píxel
+        clicEn(pill || idEn(c.rx, c.ry), !!pill);
+      } else if (st.fase === "inicio" && !st.ocupado) {
+        // clic en el mapa durante inicio: elegir el país bajo el cursor
+        const c = coord(e), id = idEn(c.rx, c.ry), p = st.prov.get(id);
+        if (p && p.dueno !== NEUTRAL && st.paises.has(p.dueno)) empezar(p.dueno);
+      }
     }
     abajo = null; visor.classList.remove("agarrando");
   });
@@ -1651,21 +2192,55 @@
       return;
     }
     if (!st.ids) return;
-    const c = coord(e), id = idEn(c.rx, c.ry);
+    const c = coord(e), id = idBajoCursor(c);   // pastilla primero, luego píxel
+    // fase inicio: al pasar por el mapa se resalta el país bajo el cursor y se
+    // marca en la lista; un tip breve invita a elegirlo con un clic
+    if (st.fase === "inicio") {
+      // si el cursor está sobre el panel de inicio, no tocar el resalte: lo
+      // gobiernan los handlers de la lista (evita que el mapa detrás del panel
+      // pise el país que marcó el hover de la lista)
+      if (e.target.closest("#velo-inicio")) { tip.hidden = true; return; }
+      const p0 = st.prov.get(id);
+      const pid = p0 && p0.dueno !== NEUTRAL && st.paises.has(p0.dueno) ? p0.dueno : null;
+      resaltarPais(pid);
+      const pais = pid != null ? st.paises.get(pid) : null;
+      if (pais) {
+        tip.hidden = false;
+        tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
+        tip.innerHTML =
+          `<i class="cuad" style="background:rgb(${pais.rgb.join(",")})"></i>` +
+          `<b>${pais.nombre}</b><br>` +
+          `<span class="mini">clic para jugar con este país</span>`;
+      } else tip.hidden = true;
+      return;
+    }
     if (id !== st.hover) { st.hover = id; pintarSel(); }
     const p = st.prov.get(id);
     if (p && p.mar) {
       tip.hidden = false;
       tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
       let extra = "";
-      if (p.dueno !== NEUTRAL) {
+      // lista de flotas que coexisten en la cuenca (una línea por país)
+      if (p.flotas && p.flotas.length) {
+        for (const f of p.flotas) {
+          const pais = st.paises.get(f.p);
+          if (!pais) continue;
+          const rel = f.p === st.jugador ? " (tú)"
+            : enGuerra(st.jugador, f.p) ? " ⚔" : "";
+          extra += `<div class="mini"><i class="cuad" ` +
+            `style="background:rgb(${pais.rgb.join(",")})"></i>${pais.nombre}` +
+            ` · ⚔ ${f.n}${rel}</div>`;
+        }
+      } else if (p.dueno !== NEUTRAL && p.visible) {
         const pais = st.paises.get(p.dueno);
         extra = `<div class="mini"><i class="cuad" ` +
           `style="background:rgb(${pais.rgb.join(",")})"></i>${pais.nombre}` +
-          ` · ⚔ ${tropasTxt(p)} tropas</div>`;
+          ` · ⚔ ${tropasTxt(p)}</div>`;
       }
       tip.innerHTML = `<b>${p.nombre}</b><br>` +
-        `<span class="mini">cuenca marina — transitable</span>${extra}`;
+        `<span class="mini">cuenca marina — transitable` +
+        `${p.flotas && p.flotas.length > 1 ? " · flotas compartidas" : ""}` +
+        `</span>${extra}`;
     } else if (p) {
       tip.hidden = false;
       tip.style.left = c.mx + "px"; tip.style.top = c.my + "px";
@@ -1682,6 +2257,7 @@
   visor.addEventListener("mouseleave", () => {
     tip.hidden = true;
     if (st.hover) { st.hover = 0; pintarSel(); }
+    if (st.paisHover != null) resaltarPais(null);
   });
   $("b-reset").onclick = () => {
     st.scale = 1; st.tx = 0; st.ty = 0; acotar(); aplicar();
@@ -1690,9 +2266,25 @@
     if (e.key === "Escape") cancelarOrden();
   });
 
-  function clicEn(id) {
+  function clicEn(id, esPastilla) {
     cancelarOrden();                             // clic en el mapa: descarta la orden
     const p = st.prov.get(id);
+    // vista diplomacia: el clic en el TERRITORIO inspecciona el PAÍS de esa
+    // región (propiedades y guerras) en la ficha; el clic en la PASTILLA de
+    // tropas selecciona esa región concreta (su ficha de provincia)
+    if (st.vista === "diplomacia") {
+      if (esPastilla && p) {
+        st.paisInfo = null;
+        st.sel = st.sel === id ? 0 : id;
+        pintarDuenos(); pintarSel(); pintarFlecha(); pintarFicha(); pintarDiplomacia();
+        return;
+      }
+      st.sel = 0;
+      st.paisInfo = p ? p.dueno : null;
+      pintarDuenos();       // recolorea la coropleta respecto al país elegido
+      pintarSel(); pintarFlecha(); pintarFicha(); pintarDiplomacia();
+      return;
+    }
     if (!p) {                                    // fondo o nada: deseleccionar
       st.sel = 0; pintarSel(); pintarFlecha(); pintarFicha();
       return;
