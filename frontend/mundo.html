@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mundo — Mundaria</title>
+  <meta name="description" content="Explora tu mundo como mapa de fantasía, haz clic en cualquier punto para el battlemap y conquístalo por turnos. Del planeta al encuentro.">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/mundo.css">
+</head>
+<body>
+
+  <!-- estado de error elegante (query inválida o detalle que no carga) -->
+  <div class="ws-error oculto" id="ws-error">
+    <div class="tarjeta ws-error-caja">
+      <h2>No pudimos abrir este mundo</h2>
+      <p class="tenue" id="ws-error-msg">El enlace no trae un mundo válido.</p>
+      <a class="btn btn-oro btn-lg" href="/estudio">← Volver al Estudio</a>
+    </div>
+  </div>
+
+  <!-- workspace -->
+  <div class="ws oculto" id="ws">
+
+    <!-- cabecera compacta del mundo -->
+    <header class="ws-cab">
+      <a class="ws-volver" href="/estudio" title="volver a la galería">← Estudio</a>
+      <div class="ws-titulo">
+        <span class="ws-mundo">Mundo</span>
+        <span class="ws-sello mono" id="ws-sello"></span>
+      </div>
+      <div class="ws-zoom" role="group" aria-label="zoom">
+        <button class="btn btn-sm" id="z-menos" title="alejar (tecla −)" aria-label="alejar">−</button>
+        <span class="ws-zoom-val mono" id="z-val" title="zoom actual">×1.0</span>
+        <button class="btn btn-sm" id="z-mas" title="acercar (tecla +)" aria-label="acercar">+</button>
+        <button class="btn btn-sm" id="z-reset" title="restablecer zoom (tecla 0)" aria-label="restablecer zoom">⟲</button>
+      </div>
+    </header>
+
+    <!-- barra de modos -->
+    <div class="ws-modos">
+      <div class="pestanas" role="tablist" aria-label="modo del workspace">
+        <button class="pestana activa" data-modo="explorar" role="tab" aria-selected="true">🗺️ Explorar</button>
+        <button class="pestana" data-modo="battlemap" role="tab" aria-selected="false">⚔️ Battlemap</button>
+        <button class="pestana" data-modo="conquistar" role="tab" aria-selected="false">👑 Conquistar</button>
+      </div>
+      <span class="ws-estado tenue" id="ws-estado"></span>
+    </div>
+
+    <!-- cuerpo: lienzo + panel lateral -->
+    <div class="ws-cuerpo">
+
+      <!-- LIENZO principal: el visor de fantasía (compartido por los modos) -->
+      <div class="ws-lienzo">
+        <div class="vs" id="visor">
+          <div class="vs-telon"></div>
+          <div class="vs-lienzo">
+            <img class="vs-mapa" alt="mapa de fantasía">
+            <canvas class="vs-pin" aria-hidden="true"></canvas>
+          </div>
+          <img class="vs-deco" alt="" aria-hidden="true">
+          <div class="vs-cargador">
+            <div class="vs-cargador-fila"><span class="vs-spin"></span> pintando el mapa…</div>
+            <div class="barra-progreso indeterminada"><div class="relleno"></div></div>
+          </div>
+          <div class="vs-pista tenue" id="vs-pista"></div>
+        </div>
+      </div>
+
+      <!-- PANEL lateral contextual -->
+      <aside class="ws-panel">
+
+        <!-- ============ MODO EXPLORAR ============ -->
+        <div class="ws-modo-panel" data-panel="explorar">
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Estilo del mapa</h3>
+            <div class="campo">
+              <label for="ex-paleta">Paleta</label>
+              <select id="ex-paleta" class="ex-paleta">
+                <option value="claro">pergamino claro</option>
+                <option value="sepia">sepia envejecido</option>
+                <option value="noche">noche azulada</option>
+                <option value="imprenta">tinta imprenta</option>
+                <option value="esmeralda">esmeralda</option>
+                <option value="carmesi">carmesí y oro</option>
+                <option value="oceanico">atlas oceánico</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label for="ex-calidad">Calidad
+                <span class="insignia insignia-pro" title="disponible en el plan Pro (durante la beta, libre)">4× Pro</span>
+              </label>
+              <select id="ex-calidad" class="ex-calidad" title="mapas más grandes: detalles y rótulos más finos y densos">
+                <option value="1">normal</option>
+                <option value="2">alta (2×)</option>
+                <option value="3">ultra (3×)</option>
+                <option value="4">extrema (4×)</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Capas</h3>
+            <div class="ex-capas">
+              <label><input type="checkbox" class="ex-cap" data-capa="relieve" checked> relieve</label>
+              <label><input type="checkbox" class="ex-cap" data-capa="veg" checked> vegetación</label>
+              <label><input type="checkbox" class="ex-cap" data-capa="rios" checked> ríos</label>
+              <label><input type="checkbox" class="ex-cap" data-capa="caminos" checked> caminos / rutas</label>
+              <label><input type="checkbox" class="ex-cap" data-capa="asent" checked> asentamientos</label>
+              <label><input type="checkbox" class="ex-cap" data-capa="rotulos" checked> rótulos</label>
+              <label><input type="checkbox" class="ex-cap" data-capa="tinte"> tinte político</label>
+              <label><input type="checkbox" class="ex-deco" checked> decoración (marco / rosa)</label>
+            </div>
+            <div class="campo">
+              <label for="ex-paises">Rótulos de países</label>
+              <select id="ex-paises" class="ex-paises">
+                <option value="grandes">solo los más grandes</option>
+                <option value="todos">todos</option>
+              </select>
+            </div>
+            <div class="campo ex-npaises-caja">
+              <label for="ex-npaises">Cuántos países</label>
+              <input type="number" id="ex-npaises" class="ex-npaises" min="1" max="64" value="8">
+            </div>
+            <div class="campo">
+              <label class="campo-etiqueta">Tamaño nombres de países <span class="valor" id="ex-fspais-val">1.0×</span></label>
+              <input type="range" class="ex-fspais" min="0.4" max="2" step="0.1" value="1">
+            </div>
+            <div class="campo">
+              <label class="campo-etiqueta">Tamaño nombres de ciudades <span class="valor" id="ex-fsciu-val">1.8×</span></label>
+              <input type="range" class="ex-fsciu" min="0.4" max="2.5" step="0.1" value="1.8">
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Semilla de estilo</h3>
+            <div class="fila">
+              <input type="text" class="entrada ex-semilla crece" spellcheck="false" title="cambia el ruido decorativo del mapa">
+              <button class="btn btn-sm ex-dado" title="semilla aleatoria">🎲</button>
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <div class="fila fila-sep">
+              <h3 class="panel-titulo" style="margin:0">Rótulos</h3>
+              <button class="btn btn-sm ex-rot-toggle">✏ editar</button>
+            </div>
+            <div class="ex-rot-panel oculto">
+              <p class="tenue" style="font-size:var(--txt-xs);margin:var(--e2) 0">
+                Renombra u oculta; al guardar se re-renderiza el mapa.</p>
+              <div class="ex-rot-lista">cargando rótulos…</div>
+              <div class="fila fila-fin" style="margin-top:var(--e3)">
+                <button class="btn btn-sm ex-rot-restaurar btn-peligro" title="borra todos los cambios">restaurar</button>
+                <button class="btn btn-sm btn-oro ex-rot-guardar">guardar y re-render</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Exportar mapa</h3>
+            <div class="campo">
+              <label for="ex-px">Resolución PNG
+                <span class="insignia insignia-pro" title="disponible en el plan Pro (durante la beta, libre)">8K Pro</span>
+              </label>
+              <select id="ex-px" class="ex-px">
+                <option value="2048">2048 px</option>
+                <option value="4096" selected>4096 px</option>
+                <option value="8192">8192 px</option>
+              </select>
+            </div>
+            <button class="btn btn-oro btn-bloque ex-exportar">💾 Exportar PNG</button>
+          </section>
+        </div>
+
+        <!-- ============ MODO BATTLEMAP ============ -->
+        <div class="ws-modo-panel oculto" data-panel="battlemap">
+          <div class="bm-instruccion tenue">
+            Haz clic en cualquier punto del mapa para elegir el lugar del encuentro.
+          </div>
+
+          <section class="panel-bloque">
+            <p class="bm-titulo">—</p>
+            <p class="bm-sub-esc tenue">elige un punto en el mapa o ajusta los controles</p>
+            <div class="bm-preview-caja">
+              <img class="bm-preview" alt="vista previa del battlemap">
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">El lugar</h3>
+            <div class="bm-ficha"><p class="tenue">haz clic sobre el mapa para elegir un punto</p></div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Escena</h3>
+            <div class="campo">
+              <label>Tema</label>
+              <select class="bm-tema"></select>
+            </div>
+            <div class="campo">
+              <label>Subtipo</label>
+              <select class="bm-sub"></select>
+            </div>
+            <div class="fila">
+              <div class="campo crece">
+                <label>Columnas</label>
+                <input type="number" class="bm-cols" min="10" max="40" value="20">
+              </div>
+              <div class="campo crece">
+                <label>Filas</label>
+                <input type="number" class="bm-rows" min="10" max="40" value="20">
+              </div>
+            </div>
+            <div class="campo">
+              <label>Semilla</label>
+              <div class="fila">
+                <input type="number" class="entrada bm-seed crece" min="0" step="1" value="1">
+                <button class="btn btn-sm bm-dado" title="semilla aleatoria">🎲</button>
+              </div>
+            </div>
+            <div class="fila">
+              <div class="campo crece">
+                <label>Momento</label>
+                <select class="bm-momento">
+                  <option value="dia">☀️ día</option>
+                  <option value="atardecer">🌅 atardecer</option>
+                  <option value="noche">🌙 noche</option>
+                </select>
+              </div>
+              <div class="campo crece">
+                <label>Estación</label>
+                <select class="bm-estacion">
+                  <option value="primavera">🌸 primavera</option>
+                  <option value="verano" selected>☀️ verano</option>
+                  <option value="otono">🍂 otoño</option>
+                  <option value="invierno">❄️ invierno</option>
+                </select>
+              </div>
+            </div>
+            <div class="fila fila-envuelve" style="margin-top:var(--e2)">
+              <label><input type="checkbox" class="bm-grid" checked> rejilla</label>
+              <label><input type="checkbox" class="bm-nums" checked> numeración A1…</label>
+              <button class="btn btn-sm bm-regen">↻ regenerar</button>
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Exportar</h3>
+            <div class="bm-export-botones">
+              <button class="btn bm-exp70">💾 PNG</button>
+              <button class="btn bm-exp140">💾 PNG HD <span class="insignia insignia-pro">140 Pro</span></button>
+              <button class="btn bm-foundry">🎲 Foundry</button>
+              <button class="btn bm-roll20">🎲 Roll20</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- ============ MODO CONQUISTAR ============ -->
+        <div class="ws-modo-panel oculto" data-panel="conquistar">
+          <section class="panel-bloque cq-caja">
+            <h3 class="panel-titulo">Conquistar este mundo</h3>
+            <p class="cq-pitch">
+              Todo mundo forjado se puede conquistar — juego de estrategia por turnos, gratis.
+            </p>
+            <div class="cq-partida oculto"></div>
+            <a class="btn btn-oro btn-lg btn-bloque cq-jugar" href="#">👑 Jugar en este mundo</a>
+          </section>
+        </div>
+
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="/app/js/mundo.js"></script>
+</body>
+</html>

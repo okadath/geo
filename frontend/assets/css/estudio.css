@@ -1,0 +1,373 @@
+/* estudio.css — layout propio de la página Estudio (galería + asistente de
+   creación). Depende de tokens.css y base.css: aquí SOLO va el layout que no
+   cubren los componentes comunes (rejillas, tarjeta de mundo, asistente de
+   forja, progreso). Español en clases y comentarios (ADR-008). */
+
+/* ==========================================================================
+   Encabezado de la página: título + acción primaria
+   ========================================================================== */
+.est-cabecera {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--e5);
+  flex-wrap: wrap;
+  padding-block: var(--e7) var(--e5);
+}
+.est-cabecera .subtitulo {
+  color: var(--tinta-suave);
+  margin-top: var(--e2);
+  max-width: 52ch;
+}
+.est-cabecera .acciones { display: flex; gap: var(--e3); flex-wrap: wrap; }
+
+/* ==========================================================================
+   Secciones
+   ========================================================================== */
+.est-seccion { margin-block: var(--e6); }
+.est-seccion-cab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e3);
+  margin-bottom: var(--e4);
+  flex-wrap: wrap;
+}
+.est-seccion-cab h2 { font-size: var(--txt-xl); }
+.est-seccion-cab .nota { color: var(--tinta-tenue); font-size: var(--txt-sm); }
+
+/* ==========================================================================
+   Rejilla de mundos
+   ========================================================================== */
+.galeria {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  gap: var(--e5);
+}
+.galeria-medio {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--e4);
+}
+
+/* ==========================================================================
+   Tarjeta de mundo
+   ========================================================================== */
+.mundo {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+.mundo-lienzo {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--fondo-2);
+  overflow: hidden;
+}
+.mundo-lienzo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transicion-lenta), opacity var(--transicion);
+  opacity: 0;
+}
+.mundo-lienzo img.cargada { opacity: 1; }
+.mundo:hover .mundo-lienzo img { transform: scale(1.04); }
+/* velo inferior para que el texto respire sobre el mapa cuando lo pisa */
+.mundo-lienzo::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 45%;
+  background: linear-gradient(180deg, transparent, rgba(12, 17, 28, 0.55));
+  pointer-events: none;
+}
+.mundo-insignias {
+  position: absolute;
+  top: var(--e3);
+  left: var(--e3);
+  right: var(--e3);
+  display: flex;
+  gap: var(--e2);
+  flex-wrap: wrap;
+  z-index: 1;
+}
+
+.mundo-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+  padding: var(--e4);
+}
+.mundo-titulo {
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+  line-height: 1.25;
+}
+.mundo-meta {
+  display: flex;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  color: var(--tinta-tenue);
+  font-size: var(--txt-xs);
+}
+.mundo-acciones {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  margin-top: var(--e3);
+}
+.mundo-acciones .abrir { flex: 1 1 auto; }
+
+/* menú secundario por tarjeta (details/summary nativo, accesible por teclado) */
+.menu { position: relative; }
+.menu > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4em;
+  height: 2.4em;
+  border-radius: var(--radio-sm);
+  border: 1px solid var(--borde);
+  background: var(--panel-2);
+  color: var(--tinta-suave);
+  cursor: pointer;
+  transition: background var(--transicion), color var(--transicion),
+    border-color var(--transicion);
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover { background: var(--borde); color: var(--tinta); }
+.menu[open] > summary { background: var(--borde); color: var(--tinta); }
+.menu > summary:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+.menu-lista {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--e2));
+  min-width: 190px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--e2);
+  background: var(--panel-2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra-lg);
+  animation: subir var(--transicion);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  width: 100%;
+  text-align: left;
+  font-size: var(--txt-sm);
+  color: var(--tinta);
+  padding: 0.55em 0.7em;
+  border-radius: var(--radio-sm);
+  transition: background var(--transicion), color var(--transicion);
+}
+.menu-item:hover { background: var(--borde); }
+.menu-item.peligro:hover { background: var(--rojo-t); color: var(--rojo); }
+.menu-item:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+
+/* ==========================================================================
+   Estado vacío (sin mundos)
+   ========================================================================== */
+.vacio {
+  text-align: center;
+  padding: var(--e8) var(--e5);
+  border: 1px dashed var(--borde);
+  border-radius: var(--radio-lg);
+  background:
+    radial-gradient(600px 260px at 50% 0%, var(--oro-t), transparent 70%),
+    var(--panel);
+}
+.vacio .logo-grande { color: var(--oro); margin: 0 auto var(--e4); opacity: 0.9; }
+.vacio h2 { margin-bottom: var(--e2); }
+.vacio p { color: var(--tinta-suave); max-width: 46ch; margin: 0 auto var(--e5); }
+
+/* ==========================================================================
+   Esqueletos de carga
+   ========================================================================== */
+.esq-mundo { padding: 0; overflow: hidden; }
+.esq-mundo .esq-lienzo { aspect-ratio: 16 / 10; }
+.esq-mundo .esq-txt { margin: var(--e4); }
+
+/* ==========================================================================
+   Asistente «Forjar mundo» (dialog nativo)
+   ========================================================================== */
+dialog.modal.forja { max-width: 640px; }
+.forja-titulo { display: flex; align-items: center; gap: var(--e2); }
+
+.paso-etiqueta {
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  margin-bottom: var(--e3);
+}
+
+/* rejilla de presets 2×2 */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--e3);
+  margin-bottom: var(--e5);
+}
+.preset {
+  text-align: left;
+  padding: var(--e4);
+  cursor: pointer;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--panel-2);
+  transition: border-color var(--transicion), box-shadow var(--transicion),
+    background var(--transicion), transform var(--transicion);
+}
+.preset:hover { border-color: var(--oro-hondo); transform: translateY(-1px); }
+.preset:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+.preset[aria-pressed="true"] {
+  border-color: var(--oro);
+  background: var(--oro-t);
+  box-shadow: var(--sombra-oro);
+}
+.preset-icono { font-size: 1.5rem; line-height: 1; }
+.preset-nombre {
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+  margin-top: var(--e2);
+}
+.preset-desc { color: var(--tinta-suave); font-size: var(--txt-xs); margin-top: var(--e1); }
+
+/* fila de semilla */
+.semilla-fila { display: flex; align-items: flex-end; gap: var(--e2); margin-bottom: var(--e4); }
+.semilla-fila .campo { flex: 1 1 auto; }
+.dado {
+  flex: 0 0 auto;
+  height: 2.55em;
+  width: 2.9em;
+  font-size: 1.1rem;
+}
+
+/* acordeón de ajustes avanzados */
+.avanzado { margin-bottom: var(--e4); }
+.avanzado > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  padding: var(--e3) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  border-top: 1px solid var(--borde-suave);
+}
+.avanzado > summary::-webkit-details-marker { display: none; }
+.avanzado > summary::before {
+  content: "▸";
+  color: var(--oro);
+  transition: transform var(--transicion);
+}
+.avanzado[open] > summary::before { transform: rotate(90deg); }
+.avanzado > summary:focus-visible { outline: none; box-shadow: var(--anillo-foco); border-radius: var(--radio-sm); }
+
+.avanzado-grupo { margin-block: var(--e3) var(--e5); }
+.avanzado-grupo h4 {
+  font-family: var(--sans);
+  font-size: var(--txt-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tinta-tenue);
+  margin-bottom: var(--e3);
+}
+.diales {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--e4) var(--e5);
+}
+.dial .campo-etiqueta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--e2);
+  margin-bottom: var(--e2);
+}
+
+.forja-pie {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  margin-top: var(--e5);
+  padding-top: var(--e4);
+  border-top: 1px solid var(--borde-suave);
+}
+.forja-pie .crece { color: var(--tinta-tenue); font-size: var(--txt-xs); }
+
+/* ==========================================================================
+   Progreso de forja (dos fases en una barra)
+   ========================================================================== */
+.forja-progreso { text-align: center; padding-block: var(--e3); }
+.forja-progreso .glifo { font-size: 2.4rem; margin-bottom: var(--e3); }
+.forja-progreso .frase {
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  min-height: 1.6em;
+  transition: opacity var(--transicion);
+}
+.forja-progreso .frase.cambiando { opacity: 0; }
+.forja-progreso .fase-nota { color: var(--tinta-suave); font-size: var(--txt-sm); margin-top: var(--e2); }
+.forja-progreso .barra-progreso { margin-block: var(--e5) var(--e3); height: 12px; }
+.forja-progreso .contador {
+  display: flex;
+  justify-content: space-between;
+  color: var(--tinta-tenue);
+  font-size: var(--txt-xs);
+  font-family: var(--mono);
+}
+.forja-progreso .fases {
+  display: flex;
+  justify-content: center;
+  gap: var(--e5);
+  margin-top: var(--e5);
+}
+.fase-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  font-size: var(--txt-xs);
+  color: var(--tinta-tenue);
+}
+.fase-chip .punto {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--borde); flex: 0 0 auto;
+}
+.fase-chip.activa { color: var(--oro-claro); }
+.fase-chip.activa .punto { background: var(--oro); box-shadow: 0 0 0 3px var(--oro-t); }
+.fase-chip.hecha .punto { background: var(--verde); }
+
+/* aviso de error dentro del modal, con reintento */
+.forja-error { margin-top: var(--e4); }
+.forja-error .aviso { position: static; box-shadow: none; }
+
+/* ==========================================================================
+   Confirmación de borrado
+   ========================================================================== */
+.confirmar-cuerpo p { color: var(--tinta-suave); margin-bottom: var(--e3); }
+.confirmar-cuerpo strong { color: var(--tinta); }
+.confirmar-acciones { display: flex; justify-content: flex-end; gap: var(--e3); margin-top: var(--e5); }
+
+/* ==========================================================================
+   Responsivo
+   ========================================================================== */
+@media (max-width: 560px) {
+  .presets { grid-template-columns: 1fr; }
+  .diales { grid-template-columns: 1fr; }
+  .est-cabecera { padding-top: var(--e6); }
+}

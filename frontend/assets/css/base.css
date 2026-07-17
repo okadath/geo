@@ -1,0 +1,650 @@
+/* base.css — sistema de componentes «atlas nocturno» (ADR-008)
+   Depende de tokens.css. Español en clases y comentarios. Calidad de producto
+   comercial: hover/focus/disabled, focus-visible accesible, transiciones. */
+
+/* ==========================================================================
+   Tipografía base y superficie de página
+   ========================================================================== */
+body {
+  font-family: var(--sans);
+  font-size: var(--txt-base);
+  color: var(--tinta);
+  background: var(--fondo);
+  /* velo cartográfico sutil: dos halos fríos sobre la tinta */
+  background-image:
+    radial-gradient(1200px 600px at 12% -10%, rgba(74, 143, 181, 0.10), transparent 60%),
+    radial-gradient(1000px 700px at 110% 10%, rgba(212, 169, 78, 0.06), transparent 55%);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+  letter-spacing: 0.01em;
+}
+
+h1 { font-size: var(--txt-3xl); }
+h2 { font-size: var(--txt-2xl); }
+h3 { font-size: var(--txt-xl); }
+
+p { color: var(--tinta); }
+
+a {
+  color: var(--mar-claro);
+  transition: color var(--transicion);
+}
+a:hover { color: var(--oro-claro); }
+
+small { font-size: var(--txt-sm); }
+
+code,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--fondo-2);
+  border: 1px solid var(--borde-suave);
+  border-radius: var(--radio-sm);
+  padding: 0.1em 0.4em;
+}
+
+/* ==========================================================================
+   Layout: contenedor y utilidades mínimas
+   ========================================================================== */
+.contenedor {
+  width: 100%;
+  max-width: var(--ancho-max);
+  margin-inline: auto;
+  padding-inline: var(--e5);
+}
+
+.fila {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+}
+.fila-sep { justify-content: space-between; }
+.fila-fin { justify-content: flex-end; }
+.fila-envuelve { flex-wrap: wrap; }
+.crece { flex: 1 1 auto; }
+
+.oculto { display: none !important; }
+.centrado { text-align: center; }
+.tenue { color: var(--tinta-suave); }
+.mono { font-family: var(--mono); }
+
+/* ==========================================================================
+   Botones: .btn base, .btn-oro (primario), .btn-fantasma
+   ========================================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--e2);
+  font-family: var(--sans);
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  line-height: 1;
+  padding: 0.7em 1.2em;
+  border-radius: var(--radio);
+  border: 1px solid var(--borde);
+  background: var(--panel-2);
+  color: var(--tinta);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background var(--transicion), border-color var(--transicion),
+    color var(--transicion), box-shadow var(--transicion), transform var(--transicion);
+}
+.btn:hover {
+  background: var(--borde);
+  border-color: var(--borde);
+}
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { box-shadow: var(--anillo-foco); outline: none; }
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* primario: oro viejo, color de acción del ADR-008 */
+.btn-oro {
+  background: linear-gradient(180deg, var(--oro-claro), var(--oro));
+  border-color: var(--oro-hondo);
+  color: #241a06;
+  font-weight: var(--peso-fuerte);
+  box-shadow: var(--sombra-sm);
+}
+.btn-oro:hover {
+  background: linear-gradient(180deg, #f0d089, var(--oro-claro));
+  border-color: var(--oro);
+  color: #241a06;
+  box-shadow: var(--sombra);
+}
+.btn-oro:focus-visible { box-shadow: var(--anillo-foco), var(--sombra); }
+
+/* fantasma: solo texto/borde tenue, para acciones secundarias */
+.btn-fantasma {
+  background: transparent;
+  border-color: transparent;
+  color: var(--tinta-suave);
+}
+.btn-fantasma:hover {
+  background: var(--oro-t);
+  border-color: transparent;
+  color: var(--oro-claro);
+}
+
+/* peligro: borde rojo, para borrar */
+.btn-peligro:hover {
+  background: var(--rojo-t);
+  border-color: var(--rojo);
+  color: var(--rojo);
+}
+
+.btn-sm { padding: 0.45em 0.8em; font-size: var(--txt-xs); }
+.btn-lg { padding: 0.9em 1.6em; font-size: var(--txt-base); }
+.btn-bloque { display: flex; width: 100%; }
+
+/* ==========================================================================
+   Tarjeta: panel con borde y hover sutil
+   ========================================================================== */
+.tarjeta {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: var(--e5);
+  box-shadow: var(--sombra-sm);
+  transition: border-color var(--transicion), box-shadow var(--transicion),
+    transform var(--transicion), background var(--transicion);
+}
+.tarjeta-enlace,
+a.tarjeta { display: block; color: inherit; }
+.tarjeta-enlace:hover,
+a.tarjeta:hover,
+.tarjeta-activable:hover {
+  border-color: var(--oro-hondo);
+  box-shadow: var(--sombra);
+  transform: translateY(-2px);
+}
+/* tarjeta seleccionada (presets, opciones) */
+.tarjeta-activa {
+  border-color: var(--oro);
+  box-shadow: var(--sombra-oro);
+}
+.tarjeta h3 { margin-bottom: var(--e2); }
+
+/* ==========================================================================
+   Insignia: etiqueta pequeña + variante .insignia-pro dorada
+   ========================================================================== */
+.insignia {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e1);
+  font-family: var(--sans);
+  font-size: var(--txt-xs);
+  font-weight: var(--peso-medio);
+  line-height: 1;
+  padding: 0.35em 0.7em;
+  border-radius: var(--radio-full);
+  border: 1px solid var(--borde);
+  background: var(--fondo-2);
+  color: var(--tinta-suave);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.insignia-pro {
+  border-color: var(--oro-hondo);
+  background: var(--oro-t);
+  color: var(--oro-claro);
+}
+.insignia-mar {
+  border-color: var(--mar);
+  background: var(--mar-t);
+  color: var(--mar-claro);
+}
+.insignia-beta {
+  border-color: var(--borde);
+  background: var(--fondo-2);
+  color: var(--pergamino);
+}
+
+/* ==========================================================================
+   Pestañas (tabs)
+   ========================================================================== */
+.pestanas {
+  display: inline-flex;
+  gap: var(--e1);
+  padding: var(--e1);
+  background: var(--fondo-2);
+  border: 1px solid var(--borde-suave);
+  border-radius: var(--radio);
+}
+.pestanas button,
+.pestana {
+  appearance: none;
+  font-family: var(--sans);
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  padding: 0.5em 1em;
+  border-radius: var(--radio-sm);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--transicion), color var(--transicion);
+}
+.pestanas button:hover,
+.pestana:hover { color: var(--tinta); background: var(--panel-2); }
+.pestanas button[aria-selected="true"],
+.pestana.activa,
+.pestana[aria-selected="true"] {
+  background: var(--panel-2);
+  color: var(--oro-claro);
+  box-shadow: inset 0 0 0 1px var(--oro-hondo);
+}
+.pestanas button:focus-visible,
+.pestana:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+
+/* ==========================================================================
+   Campo: label + input/select/textarea/range estilizados
+   ========================================================================== */
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+}
+.campo > label,
+.campo-etiqueta {
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+}
+.campo-etiqueta .valor { color: var(--oro-claro); font-family: var(--mono); }
+
+.campo input[type="text"],
+.campo input[type="number"],
+.campo input[type="email"],
+.campo input[type="search"],
+.campo select,
+.campo textarea,
+.entrada {
+  width: 100%;
+  font-family: var(--sans);
+  font-size: var(--txt-sm);
+  color: var(--tinta);
+  background: var(--fondo-2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  padding: 0.6em 0.8em;
+  transition: border-color var(--transicion), box-shadow var(--transicion),
+    background var(--transicion);
+}
+.campo input::placeholder,
+.entrada::placeholder { color: var(--tinta-tenue); }
+.campo input:hover,
+.campo select:hover,
+.campo textarea:hover,
+.entrada:hover { border-color: var(--borde); background: var(--panel-2); }
+.campo input:focus,
+.campo select:focus,
+.campo textarea:focus,
+.entrada:focus {
+  outline: none;
+  border-color: var(--oro-hondo);
+  box-shadow: var(--anillo-foco);
+  background: var(--panel-2);
+}
+.campo input:disabled,
+.campo select:disabled,
+.campo textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+.campo textarea { resize: vertical; min-height: 5em; line-height: 1.5; }
+
+.campo select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--tinta-suave) 50%),
+    linear-gradient(135deg, var(--tinta-suave) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(1em + 1px),
+    calc(100% - 13px) calc(1em + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2.2em;
+}
+
+/* --- range: slider con thumb dorado --- */
+.campo input[type="range"],
+input[type="range"].deslizador {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radio-full);
+  background: var(--borde);
+  cursor: pointer;
+  outline-offset: 4px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radio-full);
+  background: linear-gradient(90deg, var(--oro-hondo), var(--borde));
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radio-full);
+  background: var(--borde);
+}
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: var(--radio-full);
+  background: var(--oro-hondo);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--oro-claro), var(--oro));
+  border: 1px solid var(--oro-hondo);
+  box-shadow: var(--sombra-sm);
+  transition: box-shadow var(--transicion), transform var(--transicion);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--oro-claro), var(--oro));
+  border: 1px solid var(--oro-hondo);
+  box-shadow: var(--sombra-sm);
+}
+input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.08); }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--anillo-foco); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: var(--anillo-foco); }
+
+/* checkbox/radio con tinte dorado */
+.campo input[type="checkbox"],
+.campo input[type="radio"] { accent-color: var(--oro); width: auto; }
+
+/* ==========================================================================
+   Barra de progreso (+ variante indeterminada animada)
+   ========================================================================== */
+.barra-progreso {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border-radius: var(--radio-full);
+  background: var(--fondo-2);
+  border: 1px solid var(--borde-suave);
+  overflow: hidden;
+}
+.barra-progreso > .relleno {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--oro-hondo), var(--oro), var(--oro-claro));
+  transition: width var(--transicion-lenta);
+}
+/* indeterminada: barrido continuo mientras no se conoce el avance */
+.barra-progreso.indeterminada > .relleno {
+  width: 40%;
+  animation: barrido 1.3s ease-in-out infinite;
+}
+@keyframes barrido {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .barra-progreso.indeterminada > .relleno {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+/* ==========================================================================
+   Modal (dialog overlay)
+   ========================================================================== */
+.modal-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--e5);
+  background: rgba(6, 10, 18, 0.72);
+  backdrop-filter: blur(3px);
+  animation: aparecer var(--transicion);
+}
+.modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-lg);
+  box-shadow: var(--sombra-lg);
+  padding: var(--e6);
+  animation: subir var(--transicion-lenta);
+}
+.modal-cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--e3);
+  margin-bottom: var(--e4);
+}
+.modal-cerrar {
+  color: var(--tinta-suave);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.2em 0.4em;
+  border-radius: var(--radio-sm);
+  transition: color var(--transicion), background var(--transicion);
+}
+.modal-cerrar:hover { color: var(--tinta); background: var(--panel-2); }
+/* <dialog> nativo, por si se usa */
+dialog.modal { color: var(--tinta); }
+dialog.modal::backdrop { background: rgba(6, 10, 18, 0.72); backdrop-filter: blur(3px); }
+
+@keyframes aparecer { from { opacity: 0; } to { opacity: 1; } }
+@keyframes subir {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ==========================================================================
+   Aviso (toast)
+   ========================================================================== */
+.avisos {
+  position: fixed;
+  right: var(--e5);
+  bottom: var(--e5);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--e3);
+  max-width: min(360px, calc(100vw - 2 * var(--e5)));
+}
+.aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--e3);
+  padding: var(--e3) var(--e4);
+  background: var(--panel-2);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--oro);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra-lg);
+  color: var(--tinta);
+  font-size: var(--txt-sm);
+  animation: subir var(--transicion-lenta);
+}
+.aviso-ok { border-left-color: var(--verde); }
+.aviso-error { border-left-color: var(--rojo); }
+.aviso-info { border-left-color: var(--mar); }
+.aviso.saliendo { animation: desaparecer var(--transicion-lenta) forwards; }
+@keyframes desaparecer {
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+/* ==========================================================================
+   Esqueleto (skeleton loader, shimmer)
+   ========================================================================== */
+.esqueleto {
+  position: relative;
+  overflow: hidden;
+  background: var(--panel-2);
+  border-radius: var(--radio-sm);
+  min-height: 1em;
+}
+.esqueleto::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(233, 226, 208, 0.08),
+    transparent
+  );
+  animation: brillo 1.4s ease-in-out infinite;
+}
+.esqueleto-texto { height: 0.8em; margin-block: 0.35em; }
+.esqueleto-titulo { height: 1.4em; width: 60%; }
+.esqueleto-bloque { min-height: 140px; border-radius: var(--radio); }
+@keyframes brillo { 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .esqueleto::after { animation: none; }
+}
+
+/* ==========================================================================
+   Navegación: header sticky y pie (montados por nav.js)
+   ========================================================================== */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(12, 17, 28, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--borde-suave);
+}
+.nav-in {
+  display: flex;
+  align-items: center;
+  gap: var(--e5);
+  height: 62px;
+  max-width: var(--ancho-max);
+  margin-inline: auto;
+  padding-inline: var(--e5);
+}
+.nav-marca {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  font-weight: var(--peso-fuerte);
+  color: var(--pergamino);
+}
+.nav-marca:hover { color: var(--pergamino); }
+.nav-marca .logo { color: var(--oro); width: 30px; height: 30px; }
+.nav-tagline {
+  font-family: var(--sans);
+  font-size: var(--txt-xs);
+  font-weight: var(--peso-normal);
+  color: var(--tinta-tenue);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.nav-enlaces {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  margin-left: auto;
+}
+.nav-enlace {
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  padding: 0.5em 0.85em;
+  border-radius: var(--radio-sm);
+  transition: color var(--transicion), background var(--transicion);
+}
+.nav-enlace:hover { color: var(--tinta); background: var(--panel-2); }
+.nav-enlace.activa { color: var(--oro-claro); background: var(--oro-t); }
+
+.pie {
+  border-top: 1px solid var(--borde-suave);
+  margin-top: var(--e8);
+  background: var(--fondo-2);
+}
+.pie-in {
+  display: flex;
+  align-items: center;
+  gap: var(--e4);
+  flex-wrap: wrap;
+  max-width: var(--ancho-max);
+  margin-inline: auto;
+  padding: var(--e6) var(--e5);
+  font-size: var(--txt-sm);
+  color: var(--tinta-suave);
+}
+.pie-marca {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  font-family: var(--serif);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+}
+.pie-marca .logo { color: var(--oro); width: 22px; height: 22px; }
+.pie-lema { color: var(--tinta-tenue); }
+.pie-lab {
+  margin-left: auto;
+  color: var(--tinta-tenue);
+  font-size: var(--txt-xs);
+}
+.pie-lab:hover { color: var(--tinta-suave); }
+
+/* ==========================================================================
+   Barras de desplazamiento oscuras
+   ========================================================================== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--borde) transparent;
+}
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--borde);
+  border-radius: var(--radio-full);
+  border: 3px solid var(--fondo);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--panel-2); }
+*::-webkit-scrollbar-corner { background: transparent; }
+
+/* contenedores que deben desplazar en horizontal sin arrastrar la página */
+.scroll-x { overflow-x: auto; max-width: 100%; }
+
+/* ==========================================================================
+   Responsivo mínimo del andamiaje común
+   ========================================================================== */
+@media (max-width: 640px) {
+  h1 { font-size: var(--txt-2xl); }
+  h2 { font-size: var(--txt-xl); }
+  .contenedor { padding-inline: var(--e4); }
+  .nav-tagline { display: none; }
+  .nav-in { gap: var(--e3); }
+}

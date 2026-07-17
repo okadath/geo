@@ -3,39 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tecto — subregiones</title>
+<title>Mundaria — subregiones</title>
+<link rel="stylesheet" href="/app/css/tokens.css">
+<link rel="stylesheet" href="/app/css/base.css">
 <style>
+  /* alias de la paleta local -> tokens del sistema «atlas nocturno» (ADR-008);
+     el resto de la hoja sigue usando los nombres cortos de siempre */
   :root {
-    --fondo: #10141c; --panel: #171d28; --borde: #262f40;
-    --texto: #dde4ee; --tenue: #8090a5; --acento: #3fb8af; --rojo: #d06a5a;
+    --texto: var(--tinta); --tenue: var(--tinta-suave); --acento: var(--oro);
   }
-  * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body {
-    margin: 0; background: var(--fondo); color: var(--texto);
-    font: 15px/1.5 system-ui, sans-serif; min-height: 100vh;
+  body { font-size: 15px; }
+  /* cabecera de la página (bajo la nav de marca que monta nav.js) */
+  .cab-pagina {
+    display: flex; align-items: baseline; gap: var(--e3);
+    flex-wrap: wrap; padding: var(--e5) var(--e5) var(--e2);
+    max-width: var(--ancho-max); margin-inline: auto; width: 100%;
   }
-  header { padding: 16px 26px 6px; display: flex; align-items: baseline; gap: 14px; }
-  h1 { margin: 0; font-size: 20px; font-weight: 650; }
-  h1 small { color: var(--tenue); font-weight: 400; margin-left: 10px; font-size: 13px; }
-  header a { color: var(--acento); font-size: 13px; text-decoration: none; }
+  h1 { margin: 0; font-size: var(--txt-xl); }
+  h1 small { color: var(--tenue); font-family: var(--mono); font-weight: 400;
+             margin-left: 10px; font-size: var(--txt-xs); letter-spacing: 0; }
+  .cab-pagina .acciones { margin-left: auto; display: flex; gap: var(--e2);
+                          flex-wrap: wrap; }
   main {
     display: grid; grid-template-columns: 1fr 340px; gap: 18px;
-    padding: 12px 26px 26px; align-items: start;
+    padding: var(--e3) var(--e5) var(--e5); align-items: start;
+    max-width: var(--ancho-max); margin-inline: auto; width: 100%;
   }
   @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
   section {
     background: var(--panel); border: 1px solid var(--borde);
-    border-radius: 12px; padding: 14px;
+    border-radius: var(--radio); padding: 14px; box-shadow: var(--sombra-sm);
   }
-  h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
-       letter-spacing: .08em; color: var(--tenue); font-weight: 600; }
-  button {
-    background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
-    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px;
-    cursor: pointer; white-space: nowrap;
+  h2 { margin: 0 0 10px; font-family: var(--sans); font-size: var(--txt-xs);
+       text-transform: uppercase; letter-spacing: .08em; color: var(--tenue);
+       font-weight: var(--peso-fuerte); }
+  section button {
+    background: var(--panel-2); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: var(--radio-sm); padding: 5px 10px; font: inherit;
+    font-size: var(--txt-sm); cursor: pointer; white-space: nowrap;
+    transition: border-color var(--transicion), background var(--transicion);
   }
-  button:hover { border-color: var(--acento); }
+  section button:hover { border-color: var(--oro-hondo); background: var(--borde); }
   .vacio { color: var(--tenue); font-size: 13px; }
   .error { color: var(--rojo); }
 
@@ -48,7 +57,7 @@
   .visor-ctrl input[type=range] { width: 90px; accent-color: var(--acento); }
   #visor {
     position: relative; overflow: hidden; border-radius: 10px;
-    border: 1px solid var(--borde); background: #0a0d13; cursor: crosshair;
+    border: 1px solid var(--borde); background: #090d16; cursor: crosshair;
     width: 100%;
   }
   #visor.agarrando { cursor: grabbing; }
@@ -59,11 +68,11 @@
   }
   #tip {
     position: absolute; pointer-events: none; transform: translate(12px, 14px);
-    background: rgba(10, 13, 19, .92); border: 1px solid var(--borde);
+    background: rgba(12, 17, 28, .93); border: 1px solid var(--borde);
     border-radius: 8px; padding: 5px 9px; font-size: 12.5px; max-width: 260px;
     z-index: 3;
   }
-  #tip b { color: var(--acento); }
+  #tip b { color: var(--oro-claro); }
 
   /* panel lateral */
   .cuad { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
@@ -71,14 +80,15 @@
   #ficha .fila-dato { display: flex; justify-content: space-between; gap: 10px;
                       font-size: 13.5px; padding: 2px 0; }
   #ficha .fila-dato span { color: var(--tenue); }
-  #ficha ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+  #ficha ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px;
+              list-style: disc; }
   #ficha li { margin: 1px 0; }
   #seleccion .item, .arbol .item {
     display: flex; align-items: center; gap: 4px; padding: 3px 6px;
     border-radius: 7px; font-size: 13.5px; cursor: pointer;
   }
-  #seleccion .item:hover, .arbol .item:hover { background: rgba(63,184,175,.10); }
-  .arbol .item.sel { background: rgba(63,184,175,.18); }
+  #seleccion .item:hover, .arbol .item:hover { background: var(--oro-t); }
+  .arbol .item.sel { background: var(--oro-t-fuerte); }
   .arbol .item .area { margin-left: auto; color: var(--tenue); font-size: 12px;
                        font-variant-numeric: tabular-nums; }
   .arbol { max-height: 46vh; overflow: auto; }
@@ -90,13 +100,18 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>subregiones<small id="sub-titulo"></small></h1>
-  <a href="/">← volver al simulador</a>
-  <a href="#" id="a-juego">🎮 jugar conquista</a>
-  <a href="#" id="a-fantasia">🗺️ mapa fantasía</a>
-  <a href="#" id="a-batalla">⚔️ battlemaps</a>
-</header>
+<script type="module">
+  // cabecera de marca compartida (nav.js, ADR-008)
+  import { montarNav } from "/app/js/nav.js";
+  montarNav("estudio");
+</script>
+<div class="cab-pagina">
+  <h1>Subregiones<small id="sub-titulo"></small></h1>
+  <div class="acciones">
+    <a class="btn btn-sm btn-oro" href="#" id="a-mundo">🗺️ abrir en el workspace</a>
+    <a class="btn btn-sm" href="#" id="a-juego">👑 jugar conquista</a>
+  </div>
+</div>
 <main>
   <section>
     <div class="visor-ctrl">
@@ -149,9 +164,8 @@
   }
   const RUTA = `/salidas/${sello}/detalles/${stem}`;
   $("sub-titulo").textContent = `${sello} · ${stem}`;
+  $("a-mundo").href = `/estudio/mundo?sello=${sello}&d=${stem}`;
   $("a-juego").href = `/juego?sello=${sello}&d=${stem}`;
-  $("a-fantasia").href = `/fantasia?sello=${sello}&d=${stem}`;
-  $("a-batalla").href = `/batalla?sello=${sello}&d=${stem}`;
 
   // ---- estado ----
   const st = {

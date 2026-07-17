@@ -31,6 +31,22 @@ from urllib.parse import parse_qs, urlparse
 
 BASE = Path(__file__).resolve().parent
 SALIDAS = BASE / "salidas"
+# front comercial nuevo (ADR-004): paginas en frontend/ y estaticos en
+# frontend/assets/ servidos bajo /app/. El panel cientifico (web.html) se muda
+# a /lab; "/" pasa a ser la landing.
+FRONTEND = BASE / "frontend"
+ASSETS = FRONTEND / "assets"
+# tipos de contenido de los estaticos servidos por /app/ (allowlist)
+CTYPE_APP = {
+    "css": "text/css; charset=utf-8",
+    "js": "application/javascript; charset=utf-8",
+    "svg": "image/svg+xml",
+    "png": "image/png",
+    "webp": "image/webp",
+    "woff2": "font/woff2",
+}
+# ruta relativa segura para /app/<rel>: solo minusculas/digitos/_/-/./ y sin ".."
+RE_APP_REL = re.compile(r"^[a-z0-9_/.-]+$")
 
 # nombre de carpeta de una corrida: sello de tiempo, con sufijo -N si dos
 # corridas arrancan en el mismo segundo
@@ -357,6 +373,12 @@ class Manejador(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(datos)
 
+    def _redirigir(self, destino):
+        self.send_response(302)
+        self.send_header("Location", destino)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _cuerpo(self):
         n = int(self.headers.get("Content-Length") or 0)
         try:
@@ -366,9 +388,34 @@ class Manejador(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        # --- front comercial (ADR-004): paginas de frontend/ + estaticos ---
         if url.path == "/":
+            return self._archivo(FRONTEND / "index.html",
+                                 "text/html; charset=utf-8", cache=False)
+        if url.path == "/estudio":
+            return self._archivo(FRONTEND / "estudio.html",
+                                 "text/html; charset=utf-8", cache=False)
+        if url.path == "/estudio/mundo":
+            return self._archivo(FRONTEND / "mundo.html",
+                                 "text/html; charset=utf-8", cache=False)
+        # laboratorio: el panel cientifico completo, antes en "/"
+        if url.path == "/lab":
             return self._archivo(BASE / "web.html", "text/html; charset=utf-8",
                                  cache=False)
+        # estaticos del front: allowlist estricta (sin traversal ni ".."),
+        # extensiones y content-type de CTYPE_APP; cache como los demas estaticos
+        if url.path.startswith("/app/"):
+            rel = url.path[len("/app/"):]
+            ext = rel.rsplit(".", 1)[-1] if "." in rel else ""
+            if (not RE_APP_REL.fullmatch(rel) or ".." in rel
+                    or ext not in CTYPE_APP):
+                return self._json({"error": "nombre invalido"}, 400)
+            destino = (ASSETS / rel).resolve()
+            if not str(destino).startswith(str(ASSETS.resolve()) + os.sep):
+                return self._json({"error": "nombre invalido"}, 400)
+            # .css/.js sin cache para ver los cambios al recargar; binarios con cache
+            return self._archivo(destino, CTYPE_APP[ext],
+                                 cache=(ext not in ("css", "js")))
         # pagina de subregiones: mapa interactivo con seleccion de provincias y
         # cuencas marinas de UN detalle (query: ?sello=...&d=<stem del detalle>)
         if url.path == "/regiones":
@@ -379,16 +426,14 @@ class Manejador(BaseHTTPRequestHandler):
         if url.path == "/juego":
             return self._archivo(BASE / "juego.html",
                                  "text/html; charset=utf-8", cache=False)
-        # mapa de fantasia: render estilizado (pergamino) de UN detalle
-        # (misma query que /regiones)
+        # rutas viejas desactivadas (ADR-009): fantasia y batalla son ahora
+        # modos del workspace; redirigen conservando la query (?sello&d)
         if url.path == "/fantasia":
-            return self._archivo(BASE / "fantasia.html",
-                                 "text/html; charset=utf-8", cache=False)
-        # generador de battlemaps: escenas de encuentro 20x20 desde un punto
-        # del detalle (misma query que /regiones)
+            extra = f"?{url.query}" if url.query else ""
+            return self._redirigir(f"/estudio/mundo{extra}")
         if url.path == "/batalla":
-            return self._archivo(BASE / "batalla.html",
-                                 "text/html; charset=utf-8", cache=False)
+            extra = f"{url.query}&" if url.query else ""
+            return self._redirigir(f"/estudio/mundo?{extra}modo=battlemap")
         # modulo del detallado: allowlist estricta (sin traversal), solo estos
         # dos archivos; sin cache, igual que la pagina, para ver los cambios al
         # recargar

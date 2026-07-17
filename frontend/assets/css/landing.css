@@ -1,0 +1,465 @@
+/* landing.css — estilos propios de la landing comercial (index.html).
+   Depende de tokens.css + base.css (sistema «atlas nocturno», ADR-008).
+   No redefine componentes compartidos; solo compone y añade secciones.
+   Español en clases y comentarios. */
+
+/* ==========================================================================
+   Andamiaje general de secciones
+   ========================================================================== */
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+.seccion {
+  padding-block: var(--e8);
+}
+.seccion-alt {
+  background: var(--fondo-2);
+  border-block: 1px solid var(--borde-suave);
+}
+
+.seccion-cabecera {
+  max-width: 720px;
+  margin-inline: auto;
+  margin-bottom: var(--e7);
+  text-align: center;
+}
+.seccion-cabecera h2 {
+  font-size: var(--txt-3xl);
+  margin-bottom: var(--e3);
+}
+.seccion-cabecera p {
+  color: var(--tinta-suave);
+  font-size: var(--txt-lg);
+}
+
+.orla {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: var(--txt-xs);
+  font-weight: var(--peso-fuerte);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--oro);
+  margin-bottom: var(--e3);
+}
+
+/* animación de entrada por scroll (IntersectionObserver -> .visible) */
+.aparece {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 620ms ease, transform 620ms ease;
+  will-change: opacity, transform;
+}
+.aparece.visible {
+  opacity: 1;
+  transform: none;
+}
+.aparece.d1 { transition-delay: 90ms; }
+.aparece.d2 { transition-delay: 180ms; }
+.aparece.d3 { transition-delay: 270ms; }
+@media (prefers-reduced-motion: reduce) {
+  .aparece { opacity: 1; transform: none; transition: none; }
+}
+
+/* ==========================================================================
+   Hero
+   ========================================================================== */
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding-block: var(--e8);
+}
+.hero-in {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: var(--e8);
+  align-items: center;
+}
+.hero-marca {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e2);
+  color: var(--oro);
+  margin-bottom: var(--e4);
+}
+.hero-marca .logo { width: 34px; height: 34px; }
+.hero-marca span {
+  font-family: var(--serif);
+  font-size: var(--txt-xl);
+  font-weight: var(--peso-fuerte);
+  color: var(--pergamino);
+}
+.hero h1 {
+  font-size: clamp(2.6rem, 6vw, 4.2rem);
+  line-height: 1.05;
+  margin-bottom: var(--e4);
+}
+.hero h1 .lema {
+  display: block;
+  color: var(--oro-claro);
+  font-style: italic;
+}
+.hero-sub {
+  font-size: var(--txt-lg);
+  color: var(--tinta-suave);
+  max-width: 40ch;
+  margin-bottom: var(--e6);
+}
+.hero-sub strong { color: var(--tinta); font-weight: var(--peso-medio); }
+.hero-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e3);
+  align-items: center;
+}
+.hero-nota {
+  margin-top: var(--e4);
+  color: var(--tinta-tenue);
+  font-size: var(--txt-sm);
+}
+
+/* --- lienzo del hero: arte autocontenido + posible imagen real --- */
+.hero-arte {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  max-width: 520px;
+  margin-inline: auto;
+  border-radius: var(--radio-lg);
+  border: 1px solid var(--borde);
+  background: radial-gradient(120% 120% at 30% 20%, #142438, #0a0f1a 75%);
+  box-shadow: var(--sombra-lg);
+  overflow: hidden;
+}
+.hero-arte svg { width: 100%; height: 100%; }
+.hero-arte .marco {
+  position: absolute;
+  inset: var(--e3);
+  border: 1px solid var(--oro-t-fuerte);
+  border-radius: var(--radio);
+  pointer-events: none;
+}
+/* imagen real del producto (mejora progresiva); oculta hasta cargar */
+.hero-real {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.hero-real.cargada { opacity: 1; }
+.hero-real-etq {
+  position: absolute;
+  left: var(--e4);
+  bottom: var(--e4);
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.hero-real-etq.visible { opacity: 1; }
+
+/* animaciones sutiles del arte generativo */
+.arte-gira { transform-origin: center; animation: girar 90s linear infinite; }
+.arte-lat { animation: latir 7s ease-in-out infinite; }
+.arte-flota { animation: flotar 12s ease-in-out infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+@keyframes latir { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+@keyframes flotar { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  .arte-gira, .arte-lat, .arte-flota { animation: none; }
+}
+
+/* ==========================================================================
+   Cómo funciona — 3 pasos
+   ========================================================================== */
+.pasos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--e5);
+}
+.paso {
+  position: relative;
+  padding: var(--e6) var(--e5);
+  text-align: center;
+}
+.paso-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radio-full);
+  border: 1px solid var(--oro-hondo);
+  background: var(--oro-t);
+  color: var(--oro-claro);
+  font-family: var(--serif);
+  font-weight: var(--peso-fuerte);
+  margin-bottom: var(--e4);
+}
+.paso-icono {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto var(--e4);
+  color: var(--oro);
+}
+.paso h3 { color: var(--pergamino); margin-bottom: var(--e2); }
+.paso p { color: var(--tinta-suave); font-size: var(--txt-sm); }
+/* flechas entre pasos (solo escritorio) */
+.paso:not(:last-child)::after {
+  content: "→";
+  position: absolute;
+  right: calc(var(--e5) * -0.5 - 8px);
+  top: var(--e7);
+  color: var(--borde);
+  font-size: var(--txt-xl);
+}
+
+/* ==========================================================================
+   Bloque «díptico» reutilizable (texto + visual), para battlemaps/juego
+   ========================================================================== */
+.diptico {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--e8);
+  align-items: center;
+}
+.diptico.invertido .diptico-media { order: -1; }
+.diptico h2 { font-size: var(--txt-3xl); margin-bottom: var(--e4); }
+.diptico > div > p {
+  color: var(--tinta-suave);
+  font-size: var(--txt-lg);
+  margin-bottom: var(--e5);
+}
+.lista-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e2);
+}
+.lista-marcas {
+  display: grid;
+  gap: var(--e3);
+  margin-bottom: var(--e5);
+}
+.lista-marcas li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--e3);
+  color: var(--tinta);
+}
+.lista-marcas .tic {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--verde);
+  margin-top: 2px;
+}
+.lista-marcas b { color: var(--pergamino); font-weight: var(--peso-fuerte); }
+
+.diptico-media {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radio-lg);
+  border: 1px solid var(--borde);
+  background: var(--panel);
+  box-shadow: var(--sombra-lg);
+  overflow: hidden;
+}
+.diptico-media svg { width: 100%; height: 100%; }
+
+/* ==========================================================================
+   Diferenciador — banda destacada
+   ========================================================================== */
+.banda-dif {
+  text-align: center;
+  max-width: 820px;
+  margin-inline: auto;
+}
+.banda-dif h2 { font-size: var(--txt-3xl); margin-bottom: var(--e4); }
+.banda-dif p { font-size: var(--txt-lg); color: var(--tinta-suave); }
+.banda-dif .subrayado {
+  color: var(--oro-claro);
+  font-style: italic;
+}
+.dif-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--e5);
+  margin-top: var(--e7);
+  text-align: left;
+}
+.dif-cols .tarjeta h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  color: var(--pergamino);
+}
+.dif-cols .tarjeta .ico {
+  width: 26px; height: 26px; color: var(--oro); flex: none;
+}
+.dif-cols .tarjeta p { color: var(--tinta-suave); font-size: var(--txt-sm); }
+
+/* ==========================================================================
+   Precios (ADR-007)
+   ========================================================================== */
+.conmutador {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--e6);
+}
+.precios {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--e5);
+  align-items: stretch;
+}
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e4);
+  position: relative;
+}
+.plan-destacado {
+  border-color: var(--oro);
+  box-shadow: var(--sombra-oro), var(--sombra);
+  transform: translateY(-8px);
+}
+.plan-cinta {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.plan-nombre {
+  font-family: var(--serif);
+  color: var(--pergamino);
+  font-size: var(--txt-xl);
+  font-weight: var(--peso-fuerte);
+}
+.plan-precio {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e2);
+  flex-wrap: wrap;
+}
+.plan-precio .cifra {
+  font-family: var(--serif);
+  font-size: var(--txt-3xl);
+  font-weight: var(--peso-fuerte);
+  color: var(--tinta);
+  line-height: 1;
+}
+.plan-precio .periodo { color: var(--tinta-suave); font-size: var(--txt-sm); }
+.plan-mensual { color: var(--tinta-tenue); font-size: var(--txt-xs); min-height: 1.2em; }
+.plan-lema { color: var(--tinta-suave); font-size: var(--txt-sm); }
+.plan-rasgos {
+  display: grid;
+  gap: var(--e3);
+  margin-block: var(--e2) auto;
+}
+.plan-rasgos li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--e2);
+  font-size: var(--txt-sm);
+  color: var(--tinta);
+}
+.plan-rasgos .tic { flex: none; width: 18px; height: 18px; color: var(--oro); margin-top: 2px; }
+.plan-rasgos .tenue-item { color: var(--tinta-tenue); }
+.plan .btn { margin-top: var(--e2); }
+.plan-beta {
+  text-align: center;
+  color: var(--tinta-tenue);
+  font-size: var(--txt-xs);
+  min-height: 1em;
+}
+.precios-pie {
+  text-align: center;
+  margin-top: var(--e6);
+  color: var(--tinta-tenue);
+  font-size: var(--txt-sm);
+}
+
+/* ==========================================================================
+   FAQ
+   ========================================================================== */
+.faq {
+  max-width: 760px;
+  margin-inline: auto;
+  display: grid;
+  gap: var(--e3);
+}
+.faq details {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: var(--e4) var(--e5);
+  transition: border-color var(--transicion), background var(--transicion);
+}
+.faq details[open] { border-color: var(--oro-hondo); background: var(--panel-2); }
+.faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e3);
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+";
+  color: var(--oro);
+  font-size: var(--txt-xl);
+  line-height: 1;
+  transition: transform var(--transicion);
+}
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq summary:focus-visible { outline: none; box-shadow: var(--anillo-foco); border-radius: var(--radio-sm); }
+.faq details p {
+  margin-top: var(--e3);
+  color: var(--tinta-suave);
+  font-size: var(--txt-base);
+}
+
+/* ==========================================================================
+   CTA final
+   ========================================================================== */
+.cta-final {
+  text-align: center;
+  padding: var(--e8) var(--e5);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-lg);
+  background:
+    radial-gradient(700px 300px at 50% -20%, var(--oro-t), transparent 70%),
+    var(--panel);
+  box-shadow: var(--sombra-lg);
+}
+.cta-final h2 { font-size: var(--txt-3xl); margin-bottom: var(--e3); }
+.cta-final p { color: var(--tinta-suave); font-size: var(--txt-lg); margin-bottom: var(--e6); }
+.cta-final .hero-ctas { justify-content: center; }
+
+/* ==========================================================================
+   Responsivo
+   ========================================================================== */
+@media (max-width: 900px) {
+  .hero-in { grid-template-columns: 1fr; gap: var(--e7); text-align: center; }
+  .hero-marca, .hero-ctas { justify-content: center; }
+  .hero-sub { margin-inline: auto; }
+  .hero-arte { order: -1; max-width: 420px; }
+  .diptico, .diptico.invertido { grid-template-columns: 1fr; gap: var(--e6); }
+  .diptico.invertido .diptico-media { order: 0; }
+  .dif-cols { grid-template-columns: 1fr; }
+  .precios { grid-template-columns: 1fr; max-width: 440px; margin-inline: auto; }
+  .plan-destacado { transform: none; }
+}
+@media (max-width: 720px) {
+  .pasos { grid-template-columns: 1fr; gap: var(--e6); }
+  .paso:not(:last-child)::after { content: none; }
+  .seccion { padding-block: var(--e7); }
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estudio — Mundaria</title>
+  <meta name="description" content="Tu galería de mundos: fórjalos, ábrelos como mapa de fantasía y conquístalos.">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/estudio.css">
+</head>
+<body>
+  <main class="contenedor">
+    <!-- encabezado + acción primaria -->
+    <header class="est-cabecera">
+      <div>
+        <h1>Tus mundos</h1>
+        <p class="subtitulo">
+          Cada mundo nace de una geología real. Fórjalo, ábrelo como mapa de
+          fantasía y haz clic donde quieras para el encuentro.
+        </p>
+      </div>
+      <div class="acciones">
+        <button class="btn btn-oro btn-lg" id="btn-forjar" type="button">
+          ✦ Forjar mundo
+        </button>
+      </div>
+    </header>
+
+    <!-- galería de mundos usables -->
+    <section class="est-seccion" id="seccion-galeria" aria-busy="true">
+      <div id="galeria" class="galeria" role="list"></div>
+    </section>
+
+    <!-- corridas sin detalle usable -->
+    <section class="est-seccion oculto" id="seccion-medio">
+      <div class="est-seccion-cab">
+        <h2>Mundos a medio forjar</h2>
+        <span class="nota">geología lista, sin geografía todavía</span>
+      </div>
+      <div id="galeria-medio" class="galeria galeria-medio" role="list"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/app/js/estudio.js"></script>
+</body>
+</html>

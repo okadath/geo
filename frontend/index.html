@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mundaria — del planeta al encuentro</title>
+  <meta name="description" content="Genera un planeta con geología real, míralo como mapa de fantasía y convierte cualquier punto en un battlemap listo para tu mesa. Foundry y Roll20.">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/landing.css">
+</head>
+<body>
+  <main id="inicio">
+
+    <!-- ================= HERO ================= -->
+    <section class="hero">
+      <div class="contenedor hero-in">
+        <div class="hero-texto">
+          <span class="hero-marca">
+            <svg class="logo" width="34" height="34" viewBox="0 0 48 48" fill="none"
+                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                 stroke-linejoin="round" role="img" aria-label="Mundaria">
+              <circle cx="24" cy="24" r="18"/>
+              <ellipse cx="24" cy="24" rx="7" ry="18"/>
+              <line x1="6" y1="24" x2="42" y2="24"/>
+              <path d="M9.5 14 A24 24 0 0 0 38.5 14" opacity="0.75"/>
+              <path d="M9.5 34 A24 24 0 0 1 38.5 34" opacity="0.75"/>
+              <path d="M24 9 L27 21 L39 24 L27 27 L24 39 L21 27 L9 24 L21 21 Z"
+                    fill="currentColor" fill-opacity="0.14"/>
+              <path d="M24 9 L27 21 L39 24 L27 27 L24 39 L21 27 L9 24 L21 21 Z"/>
+              <circle cx="24" cy="24" r="2.2" fill="currentColor" stroke="none"/>
+            </svg>
+            <span>Mundaria</span>
+          </span>
+          <h1>Del planeta<br><span class="lema">al encuentro.</span></h1>
+          <p class="hero-sub">
+            Genera un planeta con <strong>geología real</strong> —tectónica, clima,
+            ríos que corren cuesta abajo de verdad—, míralo como un mapa de fantasía
+            y haz clic en cualquier punto para obtener el <strong>battlemap</strong>
+            coherente con ese lugar. Listo para tu mesa: Foundry y Roll20.
+          </p>
+          <div class="hero-ctas">
+            <a class="btn btn-oro btn-lg" href="/estudio">Probar gratis</a>
+            <a class="btn btn-lg" href="#precios">Ver planes</a>
+          </div>
+          <p class="hero-nota">Sin instalar nada. Corre en tu navegador. Beta abierta.</p>
+        </div>
+
+        <!-- lienzo del hero: arte autocontenido; el JS puede superponer una
+             imagen real del producto con fallback silencioso a este SVG -->
+        <div class="hero-arte" id="heroArte">
+          <svg viewBox="0 0 400 400" role="img"
+               aria-label="Mapa de fantasía estilizado con un continente, ríos y una rosa de vientos">
+            <defs>
+              <radialGradient id="mar" cx="35%" cy="30%" r="90%">
+                <stop offset="0%" stop-color="#1c3a52"/>
+                <stop offset="100%" stop-color="#0a1626"/>
+              </radialGradient>
+              <linearGradient id="tierra" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#3a4a34"/>
+                <stop offset="55%" stop-color="#5c6b3f"/>
+                <stop offset="100%" stop-color="#7d7a48"/>
+              </linearGradient>
+              <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#d4a94e" stop-opacity="0.20"/>
+                <stop offset="100%" stop-color="#d4a94e" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+
+            <!-- océano -->
+            <rect x="0" y="0" width="400" height="400" fill="url(#mar)"/>
+            <!-- paralelos/meridianos tenues -->
+            <g stroke="#4a8fb5" stroke-opacity="0.12" stroke-width="1">
+              <line x1="0" y1="100" x2="400" y2="100"/>
+              <line x1="0" y1="200" x2="400" y2="200"/>
+              <line x1="0" y1="300" x2="400" y2="300"/>
+              <line x1="100" y1="0" x2="100" y2="400"/>
+              <line x1="200" y1="0" x2="200" y2="400"/>
+              <line x1="300" y1="0" x2="300" y2="400"/>
+            </g>
+
+            <!-- halo cálido que late -->
+            <circle class="arte-lat" cx="215" cy="185" r="150" fill="url(#halo)"/>
+
+            <!-- continente -->
+            <path fill="url(#tierra)" stroke="#e8d5a8" stroke-opacity="0.5" stroke-width="1.4"
+                  d="M120 140
+                     C 150 90, 230 95, 262 130
+                     C 300 128, 322 168, 300 200
+                     C 320 232, 292 268, 250 268
+                     C 236 300, 188 306, 168 280
+                     C 120 286, 96 250, 112 214
+                     C 84 196, 90 152, 120 140 Z"/>
+            <!-- costa interior (bahía) -->
+            <path fill="#0a1626" fill-opacity="0.55"
+                  d="M250 268 C 244 250, 258 236, 276 240 C 270 262, 262 268, 250 268 Z"/>
+
+            <!-- ríos que bajan del interior al mar -->
+            <g fill="none" stroke="#4a8fb5" stroke-width="2" stroke-linecap="round" stroke-opacity="0.85">
+              <path d="M196 150 C 200 178, 182 196, 186 224 C 190 250, 176 262, 168 280"/>
+              <path d="M232 150 C 236 176, 254 190, 258 214 C 262 236, 280 244, 300 200"
+                    stroke-opacity="0.5"/>
+            </g>
+            <!-- cordillera (marcas de relieve) -->
+            <g stroke="#e8d5a8" stroke-opacity="0.55" stroke-width="1.4" fill="none">
+              <path d="M170 156 l7 -10 l7 10"/>
+              <path d="M186 158 l7 -12 l7 12"/>
+              <path d="M204 156 l6 -9 l6 9"/>
+            </g>
+
+            <!-- rosa de vientos que gira lentamente -->
+            <g class="arte-gira" transform="translate(330 320)">
+              <circle r="26" fill="none" stroke="#d4a94e" stroke-opacity="0.6" stroke-width="1"/>
+              <path fill="#d4a94e" fill-opacity="0.85"
+                    d="M0 -24 L5 -5 L0 0 L-5 -5 Z M0 24 L5 5 L0 0 L-5 5 Z
+                       M24 0 L5 5 L0 0 L5 -5 Z M-24 0 L-5 5 L0 0 L-5 -5 Z"/>
+              <circle r="2.4" fill="#e6c479"/>
+            </g>
+
+            <!-- velero que flota -->
+            <g class="arte-flota" transform="translate(70 300)" stroke="#e8d5a8"
+               stroke-opacity="0.7" stroke-width="1.4" fill="none">
+              <path d="M-10 6 L10 6 L6 12 L-6 12 Z"/>
+              <line x1="0" y1="6" x2="0" y2="-10"/>
+              <path d="M0 -10 L9 0 L0 0 Z" fill="#e8d5a8" fill-opacity="0.25"/>
+            </g>
+
+            <!-- marcador «X» del encuentro sobre el continente -->
+            <g transform="translate(196 224)">
+              <circle r="9" fill="none" stroke="#d4a94e" stroke-width="2"/>
+              <path d="M-4 -4 L4 4 M4 -4 L-4 4" stroke="#d4a94e" stroke-width="2" stroke-linecap="round"/>
+            </g>
+          </svg>
+          <span class="marco"></span>
+          <span class="insignia insignia-mar hero-real-etq" id="heroEtq">mundo real generado</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CÓMO FUNCIONA ================= -->
+    <section class="seccion seccion-alt" id="como">
+      <div class="contenedor">
+        <div class="seccion-cabecera aparece">
+          <span class="orla">Cómo funciona</span>
+          <h2>Tres pasos, de la nada a tu mesa</h2>
+          <p>Sin diales, sin curva de aprendizaje. El motor científico hace el trabajo pesado; tú solo eliges.</p>
+        </div>
+        <div class="pasos">
+          <div class="paso aparece d1">
+            <span class="paso-num">1</span>
+            <svg class="paso-icono" viewBox="0 0 64 64" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="32" cy="32" r="22"/>
+              <ellipse cx="32" cy="32" rx="9" ry="22"/>
+              <line x1="10" y1="32" x2="54" y2="32"/>
+              <path d="M16 20 A28 28 0 0 0 48 20"/>
+              <path d="M16 44 A28 28 0 0 1 48 44"/>
+            </svg>
+            <h3>Forja tu mundo</h3>
+            <p>Un clic. El planeta nace de tectónica de placas real: continentes, montañas y océanos con geología de verdad.</p>
+          </div>
+          <div class="paso aparece d2">
+            <span class="paso-num">2</span>
+            <svg class="paso-icono" viewBox="0 0 64 64" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 16 L24 12 L40 16 L52 12 L52 48 L40 52 L24 48 L12 52 Z"/>
+              <line x1="24" y1="12" x2="24" y2="48"/>
+              <line x1="40" y1="16" x2="40" y2="52"/>
+              <path d="M18 34 C 24 30, 30 40, 36 36" stroke-opacity="0.7"/>
+              <circle cx="44" cy="26" r="1.6" fill="currentColor"/>
+            </svg>
+            <h3>Explora el mapa de fantasía</h3>
+            <p>Pergamino, reinos y fronteras. Rótulos editables, capas y decoración cartográfica. Compártelo o expórtalo.</p>
+          </div>
+          <div class="paso aparece d3">
+            <span class="paso-num">3</span>
+            <svg class="paso-icono" viewBox="0 0 64 64" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="12" y="12" width="40" height="40" rx="3"/>
+              <line x1="12" y1="26" x2="52" y2="26" stroke-opacity="0.55"/>
+              <line x1="12" y1="40" x2="52" y2="40" stroke-opacity="0.55"/>
+              <line x1="26" y1="12" x2="26" y2="52" stroke-opacity="0.55"/>
+              <line x1="40" y1="12" x2="40" y2="52" stroke-opacity="0.55"/>
+              <path d="M30 30 L38 36 L34 38 L38 46" stroke-width="2.6"/>
+            </svg>
+            <h3>Clic → battlemap</h3>
+            <p>Elige cualquier punto del planeta y se convierte en un mapa de encuentro con rejilla, exportable a tu VTT.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BATTLEMAPS (protagonista) ================= -->
+    <section class="seccion" id="battlemaps">
+      <div class="contenedor">
+        <div class="diptico">
+          <div class="aparece">
+            <span class="orla">Battlemaps</span>
+            <h2>Mapas de encuentro coherentes con tu mundo</h2>
+            <p>
+              No son mapas sueltos de un catálogo: cada battlemap sale del lugar exacto
+              que tocaste en tu planeta. El bosque que pintaste, el río que baja de esa
+              montaña, la costa de ese reino. Infinitos y siempre consistentes.
+            </p>
+            <ul class="lista-marcas">
+              <li>
+                <svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+                <span><b>Coherentes con TU mundo</b> — el bioma, el relieve y la hidrología del punto real.</span>
+              </li>
+              <li>
+                <svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+                <span><b>Temas por bioma</b> — bosque, desierto, tundra, costa, pantano… cada tema con su paleta.</span>
+              </li>
+              <li>
+                <svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+                <span><b>Día/noche y estaciones</b> — la misma escena al amanecer, bajo la nieve o de noche.</span>
+              </li>
+              <li>
+                <svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+                <span><b>Rejilla configurable</b> — tamaño de celda, numeración y píxeles por casilla a tu gusto.</span>
+              </li>
+              <li>
+                <svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>
+                <span><b>Export directo</b> — PNG, manifiesto para Foundry VTT y Roll20.</span>
+              </li>
+            </ul>
+            <div class="lista-chips">
+              <span class="insignia insignia-mar">PNG</span>
+              <span class="insignia insignia-mar">Foundry VTT</span>
+              <span class="insignia insignia-mar">Roll20</span>
+              <span class="insignia">rejilla</span>
+              <span class="insignia">día / noche</span>
+              <span class="insignia">estaciones</span>
+            </div>
+          </div>
+          <div class="diptico-media aparece d1">
+            <svg viewBox="0 0 400 300" role="img" aria-label="Battlemap con rejilla, un río y árboles">
+              <defs>
+                <linearGradient id="bm" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#243a26"/>
+                  <stop offset="100%" stop-color="#3a4a34"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="300" fill="url(#bm)"/>
+              <!-- río -->
+              <path d="M0 90 C 120 110, 160 60, 260 120 C 320 156, 360 130, 400 170"
+                    fill="none" stroke="#4a8fb5" stroke-width="26" stroke-opacity="0.85" stroke-linecap="round"/>
+              <path d="M0 90 C 120 110, 160 60, 260 120 C 320 156, 360 130, 400 170"
+                    fill="none" stroke="#6cabce" stroke-width="10" stroke-opacity="0.6" stroke-linecap="round"/>
+              <!-- árboles -->
+              <g fill="#2f5a35" stroke="#1c3a22" stroke-width="1.5">
+                <circle cx="60" cy="210" r="16"/><circle cx="96" cy="232" r="13"/>
+                <circle cx="132" cy="206" r="15"/><circle cx="300" cy="70" r="14"/>
+                <circle cx="340" cy="52" r="12"/><circle cx="70" cy="60" r="13"/>
+              </g>
+              <!-- claro rocoso -->
+              <g fill="#6b7688" stroke="#4a5468" stroke-width="1.4">
+                <path d="M230 210 l14 -6 l16 8 l-6 14 l-18 4 l-10 -12 Z"/>
+                <path d="M270 230 l10 -4 l12 6 l-4 10 l-14 2 Z"/>
+              </g>
+              <!-- rejilla -->
+              <g stroke="#0c111c" stroke-opacity="0.35" stroke-width="1">
+                <line x1="50" y1="0" x2="50" y2="300"/><line x1="100" y1="0" x2="100" y2="300"/>
+                <line x1="150" y1="0" x2="150" y2="300"/><line x1="200" y1="0" x2="200" y2="300"/>
+                <line x1="250" y1="0" x2="250" y2="300"/><line x1="300" y1="0" x2="300" y2="300"/>
+                <line x1="350" y1="0" x2="350" y2="300"/>
+                <line x1="0" y1="50" x2="400" y2="50"/><line x1="0" y1="100" x2="400" y2="100"/>
+                <line x1="0" y1="150" x2="400" y2="150"/><line x1="0" y1="200" x2="400" y2="200"/>
+                <line x1="0" y1="250" x2="400" y2="250"/>
+              </g>
+              <rect x="1" y="1" width="398" height="298" fill="none" stroke="#e8d5a8" stroke-opacity="0.35" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= DIFERENCIADOR ================= -->
+    <section class="seccion seccion-alt" id="diferenciador">
+      <div class="contenedor">
+        <div class="banda-dif aparece">
+          <span class="orla">Por qué Mundaria</span>
+          <h2>Geología real, no dibujos sueltos</h2>
+          <p>
+            Otras herramientas te dan un lienzo para dibujar mapas a mano, uno a uno.
+            Mundaria genera <span class="subrayado">el planeta entero</span>: las
+            montañas están donde chocan las placas, y los ríos corren cuesta abajo
+            de verdad. Por eso todo encaja —el mapa mundi, la región y el battlemap
+            son el mismo mundo a distintas escalas.
+          </p>
+        </div>
+        <div class="dif-cols">
+          <div class="tarjeta aparece d1">
+            <h3>
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18l6-9 4 5 3-4 5 8z"/><circle cx="7" cy="7" r="2"/></svg>
+              Tectónica que manda
+            </h3>
+            <p>Las placas mueven la corteza durante millones de años simulados. El relieve no es ruido: es historia geológica.</p>
+          </div>
+          <div class="tarjeta aparece d2">
+            <h3>
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14c2-3 5-3 7 0M13 10c2-3 5-3 7 0M6 20h12"/><path d="M12 4v6"/></svg>
+              Clima y ríos de verdad
+            </h3>
+            <p>Vientos, lluvia, corrientes y cuencas hidrográficas. El agua fluye pendiente abajo hasta el mar, como debe.</p>
+          </div>
+          <div class="tarjeta aparece d3">
+            <h3>
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+              Una sola verdad, tres escalas
+            </h3>
+            <p>Planeta, mapa de fantasía y battlemap comparten las mismas coordenadas. Cambia la escala, no el mundo.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= JUEGO ================= -->
+    <section class="seccion" id="juego">
+      <div class="contenedor">
+        <div class="diptico invertido">
+          <div class="aparece d1">
+            <span class="orla">Incluido gratis</span>
+            <h2>Y cuando el mapa esté listo… conquístalo</h2>
+            <p>
+              Cada mundo trae un modo de <b>conquista por turnos</b>: reinos, ejércitos
+              y campañas sobre el mismo mapa que acabas de crear. Gratis en todos los
+              planes, siempre. Perfecto para preparar la geopolítica de tu campaña
+              —o para jugar una tarde entera.
+            </p>
+            <div class="lista-chips">
+              <span class="insignia insignia-pro">gratis en todos los planes</span>
+              <span class="insignia">por turnos</span>
+              <span class="insignia">sobre tu mundo</span>
+            </div>
+          </div>
+          <div class="diptico-media aparece">
+            <svg viewBox="0 0 400 300" role="img" aria-label="Mapa de conquista por turnos con territorios y ejércitos">
+              <rect width="400" height="300" fill="#101726"/>
+              <!-- territorios -->
+              <g stroke="#0c111c" stroke-width="2">
+                <path d="M40 40 L160 30 L180 120 L90 150 L30 100 Z" fill="#5c6b3f" fill-opacity="0.85"/>
+                <path d="M160 30 L300 50 L320 140 L180 120 Z" fill="#7d7a48" fill-opacity="0.85"/>
+                <path d="M180 120 L320 140 L300 250 L170 240 L90 150 Z" fill="#4a6b52" fill-opacity="0.85"/>
+                <path d="M30 100 L90 150 L170 240 L60 270 L20 180 Z" fill="#6b5540" fill-opacity="0.85"/>
+              </g>
+              <!-- fichas de ejército -->
+              <g font-family="serif" font-size="15" font-weight="700" text-anchor="middle">
+                <circle cx="100" cy="90" r="16" fill="#cf6b5c" stroke="#241a06" stroke-width="1.5"/>
+                <text x="100" y="95" fill="#241a06">4</text>
+                <circle cx="240" cy="85" r="16" fill="#4a8fb5" stroke="#241a06" stroke-width="1.5"/>
+                <text x="240" y="90" fill="#241a06">7</text>
+                <circle cx="220" cy="185" r="16" fill="#6fae74" stroke="#241a06" stroke-width="1.5"/>
+                <text x="220" y="190" fill="#241a06">3</text>
+                <circle cx="90" cy="205" r="16" fill="#d4a94e" stroke="#241a06" stroke-width="1.5"/>
+                <text x="90" y="210" fill="#241a06">5</text>
+              </g>
+              <!-- flecha de ataque -->
+              <path d="M120 100 C 170 110, 200 130, 210 170" fill="none" stroke="#e8d5a8"
+                    stroke-width="2.4" stroke-dasharray="6 5" stroke-linecap="round"/>
+              <path d="M210 170 l-9 -3 l4 9 Z" fill="#e8d5a8"/>
+              <rect x="1" y="1" width="398" height="298" fill="none" stroke="#2a3550" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= PRECIOS ================= -->
+    <section class="seccion seccion-alt" id="precios">
+      <div class="contenedor">
+        <div class="seccion-cabecera aparece">
+          <span class="orla">Precios</span>
+          <h2>Elige tu plan</h2>
+          <p>Empieza gratis. Sube a Pro cuando quieras tus propios mundos en alta calidad. Facturación anual, sin sorpresas.</p>
+        </div>
+
+        <div class="precios">
+          <!-- FREE -->
+          <div class="tarjeta plan aparece d1">
+            <span class="plan-nombre">Free</span>
+            <div class="plan-precio">
+              <span class="cifra">$0</span>
+              <span class="periodo">para siempre</span>
+            </div>
+            <span class="plan-mensual">&nbsp;</span>
+            <p class="plan-lema">Prueba la herramienta completa con mundos precocinados.</p>
+            <ul class="plan-rasgos">
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Mundos precocinados listos para explorar</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Calidad 1× · battlemap 70 px con marca de agua</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Renders limitados por día</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Modo conquista incluido</span></li>
+            </ul>
+            <a class="btn btn-bloque" href="/estudio">Probar gratis</a>
+            <span class="plan-beta">&nbsp;</span>
+          </div>
+
+          <!-- PRO (destacado) -->
+          <div class="tarjeta plan plan-destacado aparece d2">
+            <span class="insignia insignia-pro plan-cinta">El más popular</span>
+            <span class="plan-nombre">Pro</span>
+            <div class="plan-precio">
+              <span class="cifra">$29</span>
+              <span class="periodo">/ año</span>
+            </div>
+            <span class="plan-mensual">o $4.99 / mes</span>
+            <p class="plan-lema">Tus propios mundos, con semilla, en máxima calidad.</p>
+            <ul class="plan-rasgos">
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span><b>Mundos propios</b> con la semilla que elijas</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Calidad 4× · export 8K</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Battlemap 140 px, <b>sin marca de agua</b></span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Renders sin límite diario</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Todo lo de Free</span></li>
+            </ul>
+            <a class="btn btn-oro btn-bloque"
+               href="mailto:gustavo@merauto.com?subject=Acceso%20anticipado%20Mundaria%20%E2%80%94%20Pro&body=Hola%2C%20quiero%20unirme%20a%20la%20beta%20de%20Mundaria%20con%20el%20plan%20Pro%20anual%20(%2429%2Fa%C3%B1o).">
+              Beta — acceso anticipado</a>
+            <span class="plan-beta">Sin pago aún · te avisamos al abrir</span>
+          </div>
+
+          <!-- COMERCIAL -->
+          <div class="tarjeta plan aparece d3">
+            <span class="plan-nombre">Comercial</span>
+            <div class="plan-precio">
+              <span class="cifra">$59</span>
+              <span class="periodo">/ año</span>
+            </div>
+            <span class="plan-mensual">o $9.99 / mes</span>
+            <p class="plan-lema">Para publicar y vender lo que creas.</p>
+            <ul class="plan-rasgos">
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Todo lo de Pro</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span><b>Licencia comercial</b> de tus mapas</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Cola de render prioritaria</span></li>
+              <li><svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Soporte por correo</span></li>
+            </ul>
+            <a class="btn btn-bloque"
+               href="mailto:gustavo@merauto.com?subject=Acceso%20anticipado%20Mundaria%20%E2%80%94%20Comercial&body=Hola%2C%20quiero%20unirme%20a%20la%20beta%20de%20Mundaria%20con%20el%20plan%20Comercial%20anual%20(%2459%2Fa%C3%B1o).">
+              Beta — acceso anticipado</a>
+            <span class="plan-beta">Sin pago aún · te avisamos al abrir</span>
+          </div>
+        </div>
+
+        <p class="precios-pie">
+          Durante la beta el acceso es de facto Pro para todos. No pedimos tarjeta:
+          los botones abren un correo para apuntarte a la lista de acceso anticipado.
+        </p>
+      </div>
+    </section>
+
+    <!-- ================= FAQ ================= -->
+    <section class="seccion" id="faq">
+      <div class="contenedor">
+        <div class="seccion-cabecera aparece">
+          <span class="orla">Preguntas</span>
+          <h2>Lo que suelen preguntar</h2>
+        </div>
+        <div class="faq aparece d1">
+          <details>
+            <summary>¿Mis mapas son míos?</summary>
+            <p>Sí. Lo que generas es tuyo. Con el plan Comercial obtienes además licencia
+               explícita para usar tus mapas en productos que publiques o vendas.</p>
+          </details>
+          <details>
+            <summary>¿Necesito instalar algo?</summary>
+            <p>No. Mundaria corre entero en tu navegador. Sin descargas, sin plugins, sin
+               cuenta de terceros. Abres la página y creas.</p>
+          </details>
+          <details>
+            <summary>¿Qué es la licencia comercial?</summary>
+            <p>El derecho a usar los mapas que generas en obras que monetizas —módulos de
+               aventura, libros, mapas a la venta, streams con patrocinio—. Free y Pro son
+               para uso personal en tu mesa; Comercial cubre la publicación.</p>
+          </details>
+          <details>
+            <summary>¿Funciona con Foundry y Roll20?</summary>
+            <p>Sí. Cada battlemap se exporta como PNG y con manifiesto directo para Foundry
+               VTT y Roll20, con la rejilla ya alineada. Lo arrastras a tu escena y listo.</p>
+          </details>
+          <details>
+            <summary>¿En qué estado está el producto?</summary>
+            <p>Beta abierta. La herramienta funciona hoy; estamos afinando calidad y
+               preparando cuentas y pagos. Quien entre ahora tiene acceso Pro de facto y
+               ayuda a decidir qué construimos después.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CTA FINAL ================= -->
+    <section class="seccion" id="empezar">
+      <div class="contenedor">
+        <div class="cta-final aparece">
+          <h2>Forja tu primer mundo</h2>
+          <p>Del planeta al encuentro en un par de clics. Gratis, sin instalar nada.</p>
+          <div class="hero-ctas">
+            <a class="btn btn-oro btn-lg" href="/estudio">Probar gratis</a>
+            <a class="btn btn-lg" href="#precios">Ver planes</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script type="module" src="/app/js/landing.js"></script>
+</body>
+</html>

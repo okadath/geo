@@ -1,0 +1,160 @@
+/* tokens.css — sistema de diseño «atlas nocturno» (ADR-008)
+   Custom properties (colores, tipografía, radios, sombras, espaciados) y un
+   reset mínimo. Único tema; el color lo pone el mapa. */
+
+:root {
+  /* --- color: fondos azul-tinta profundos --- */
+  --fondo: #0c111c;          /* fondo de página */
+  --fondo-2: #101726;        /* fondo alterno / hundido */
+  --panel: #161f31;          /* superficie de tarjeta/panel */
+  --panel-2: #1c2740;        /* panel elevado / hover */
+  --borde: #2a3550;          /* borde estándar */
+  --borde-suave: #212c44;    /* borde tenue */
+
+  /* --- color: texto marfil/pergamino --- */
+  --tinta: #e9e2d0;          /* texto principal (marfil) */
+  --tinta-suave: #98a2b3;    /* texto secundario */
+  --tinta-tenue: #6b7688;    /* texto terciario / deshabilitado */
+  --pergamino: #e8d5a8;      /* acento cartográfico, títulos */
+
+  /* --- color: acción y acentos --- */
+  --oro: #d4a94e;            /* color de acción primario (oro viejo) */
+  --oro-claro: #e6c479;      /* oro iluminado (hover) */
+  --oro-hondo: #a37d2e;      /* oro en sombra (active/borde) */
+  --mar: #4a8fb5;            /* azul mar (enlaces, info) */
+  --mar-claro: #6cabce;
+  --verde: #6fae74;          /* éxito */
+  --rojo: #cf6b5c;           /* error / peligro */
+  --ambar: #d9a441;          /* aviso */
+
+  /* tintes translúcidos derivados (para halos/estados) */
+  --oro-t: rgba(212, 169, 78, 0.14);
+  --oro-t-fuerte: rgba(212, 169, 78, 0.28);
+  --mar-t: rgba(74, 143, 181, 0.16);
+  --rojo-t: rgba(207, 107, 92, 0.16);
+  --verde-t: rgba(111, 174, 116, 0.16);
+
+  /* --- tipografía: solo fuentes del sistema, cero webfonts --- */
+  --serif: "Palatino Linotype", Palatino, "Book Antiqua", Georgia,
+           "Times New Roman", serif;                 /* voz «atlas antiguo» */
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;                         /* UI */
+  --mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+
+  /* escala tipográfica */
+  --txt-xs: 0.75rem;
+  --txt-sm: 0.85rem;
+  --txt-base: 1rem;
+  --txt-lg: 1.15rem;
+  --txt-xl: 1.4rem;
+  --txt-2xl: 1.9rem;
+  --txt-3xl: 2.6rem;
+  --peso-normal: 400;
+  --peso-medio: 500;
+  --peso-fuerte: 600;
+
+  /* --- radios --- */
+  --radio: 10px;             /* radio estándar */
+  --radio-sm: 6px;
+  --radio-lg: 16px;
+  --radio-full: 999px;
+
+  /* --- sombras suaves --- */
+  --sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --sombra: 0 4px 14px rgba(0, 0, 0, 0.4);
+  --sombra-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --sombra-oro: 0 0 0 3px var(--oro-t-fuerte);
+
+  /* --- espaciados (escala de 4) --- */
+  --e1: 4px;
+  --e2: 8px;
+  --e3: 12px;
+  --e4: 16px;
+  --e5: 24px;
+  --e6: 32px;
+  --e7: 48px;
+  --e8: 64px;
+
+  /* --- misceláneo --- */
+  --ancho-max: 1200px;
+  --transicion: 160ms ease;
+  --transicion-lenta: 280ms ease;
+  --anillo-foco: 0 0 0 3px var(--oro-t-fuerte);
+
+  color-scheme: dark;
+}
+
+/* ===== reset mínimo ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+picture,
+svg,
+canvas,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul,
+ol {
+  list-style: none;
+  padding: 0;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  line-height: 1.2;
+  font-weight: var(--peso-fuerte);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--oro);
+  outline-offset: 2px;
+}
