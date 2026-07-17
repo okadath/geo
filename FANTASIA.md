@@ -91,7 +91,18 @@ waterlines) cada vez que el zoom/paneo se asienta. Claves:
   dibujo es idéntico se mire el sector que se mire;
 - el grosor del trazo de costa crece **sublinealmente** con el zoom del sector
   (√), para que de cerca la tinta no se vuelva una franja;
-- los glifos se **descartan por ventana** (culling) antes de dibujar.
+- los **rótulos** (países, mares, ríos, asentamientos) también crecen
+  **sublinealmente** (√ del zoom, `_fs_rotulo`) con techo del 3 % del ancho de
+  salida: a mapa completo el tamaño es el clásico, y de cerca los nombres
+  chicos se vuelven legibles sin que los grandes dominen la vista ni el halo
+  pierda definición. Las fuentes buscan también rutas de Linux (Liberation
+  Serif / DejaVu) además de las de Windows;
+- los glifos se **descartan por ventana** (culling) antes de dibujar;
+- mientras el servidor rehornea, el visor muestra el PNG anterior estirado en
+  **pixelado** (`image-rendering: pixelated`) con un **loader** flotante
+  («cargando sector…»), para que la espera se lea como carga y no como error;
+- los PNG cacheados en disco llevan la **versión del renderer**
+  (`VERSION_RENDER`) en la clave: subirla invalida la caché al cambiar el dibujo.
 
 ## Controles
 

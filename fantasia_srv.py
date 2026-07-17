@@ -48,6 +48,10 @@ CAPAS_VALIDAS = ("relieve", "veg", "rios", "caminos", "asent", "rotulos", "tinte
 PALETAS_VALIDAS = ("claro", "sepia", "noche", "imprenta", "esmeralda",
                    "carmesi", "oceanico")
 
+# version del renderer: entra en la clave de cache de los PNG, subir cuando
+# cambie el dibujo (p.ej. v4: rotulos de tamano constante en pantalla)
+VERSION_RENDER = "v6"
+
 # tipos de rotulo editables y longitud maxima de un nombre saneado
 TIPOS_ROTULO = ("asent", "pais", "mar", "rio")
 NOMBRE_MAX = 60
@@ -379,21 +383,32 @@ def _fuente(clase, px):
     if hit:
         return hit
     wf = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    lb = Path("/usr/share/fonts/truetype/liberation")
+    dv = Path("/usr/share/fonts/truetype/dejavu")
     candidatos = {
-        "serif": ["georgia.ttf", "times.ttf"],
-        "italic": ["georgiai.ttf", "timesi.ttf"],
-        "bold": ["georgiab.ttf", "timesbd.ttf"],
-        "fantasy": ["constanb.ttf", "constan.ttf", "georgiab.ttf", "times.ttf"],
-    }.get(clase, ["georgia.ttf"])
+        "serif": [wf / "georgia.ttf", wf / "times.ttf",
+                  lb / "LiberationSerif-Regular.ttf", dv / "DejaVuSerif.ttf"],
+        "italic": [wf / "georgiai.ttf", wf / "timesi.ttf",
+                   lb / "LiberationSerif-Italic.ttf", dv / "DejaVuSerif.ttf"],
+        "bold": [wf / "georgiab.ttf", wf / "timesbd.ttf",
+                 lb / "LiberationSerif-Bold.ttf", dv / "DejaVuSerif-Bold.ttf"],
+        "fantasy": [wf / "constanb.ttf", wf / "constan.ttf", wf / "georgiab.ttf",
+                    wf / "times.ttf", lb / "LiberationSerif-Bold.ttf",
+                    dv / "DejaVuSerif-Bold.ttf"],
+    }.get(clase, [wf / "georgia.ttf", lb / "LiberationSerif-Regular.ttf",
+                  dv / "DejaVuSerif.ttf"])
     fnt = None
-    for nombre in candidatos:
+    for ruta in candidatos:
         try:
-            fnt = ImageFont.truetype(str(wf / nombre), px)
+            fnt = ImageFont.truetype(str(ruta), px)
             break
         except OSError:
             continue
     if fnt is None:
-        fnt = ImageFont.load_default()
+        try:
+            fnt = ImageFont.load_default(size=px)   # Pillow >= 10.1: escalable
+        except TypeError:
+            fnt = ImageFont.load_default()
     _CACHE_FUENTES[clave] = fnt
     return fnt
 
@@ -816,6 +831,18 @@ def _map_pts(pts, x0, y0, sc):
     return [((p[0] - x0) * sc, (p[1] - y0) * sc) for p in pts]
 
 
+def _fs_rotulo(base, sc, nx, win_w, mult=1.0):
+    """Tamano de fuente EN PANTALLA constante a cualquier zoom: el sector
+    renderizado siempre cubre el mismo viewport (con margen), asi que un
+    tamano fijo relativo al ancho de salida (outW = sc*win_w) se ve siempre
+    igual en pantalla, sin importar cuanto se acerque o aleje la vista.
+    `base` es el tamano clasico en unidades de mundo a mapa completo
+    (base*sc cuando win_w == nx) y fija la proporcion; el piso/techo
+    relativos a la salida evitan rotulos ilegibles o gigantes."""
+    outw = sc * win_w
+    return min(max(base * outw / nx, 0.0085 * outw), 0.035 * outw) * mult
+
+
 def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides):
     x0, y0 = win[0], win[1]
     K = calidad
@@ -829,9 +856,11 @@ def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides):
         sp = _map_pts(_suave(pts), x0, y0, sc)
         dr.line(sp, fill=rio + (230,), width=max(1, int(round(w))), joint="curve")
     # nombres de rios grandes, en cursiva siguiendo el cauce
+    # nombres: umbral fijo bajo para que los rios medianos tambien se rotulen
+    # (con 0.4/K casi ningun rio alcanzaba; los caudales tipicos rondan 0.1-0.3)
     for r in d["capas"].get("rios", []):
         pts = r.get("puntos", [])
-        if (r.get("caudal", 0) < 0.4 / K) or len(pts) < 6 or not r.get("nombre"):
+        if (r.get("caudal", 0) < 0.10) or len(pts) < 6 or not r.get("nombre"):
             continue
         nombre = _rotulo_final(overrides, "rio:%s" % r.get("id"), r["nombre"])
         if not nombre:
@@ -842,7 +871,7 @@ def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides):
         ang = math.atan2(b[1] - a[1], b[0] - a[0])
         if ang > math.pi / 2 or ang < -math.pi / 2:
             ang += math.pi
-        fs = max(9 / K, uni / 150) * sc
+        fs = _fs_rotulo(max(9 / K, uni / 150), sc, d["nx"], win[2])
         cx = (pts[i][0] - x0) * sc
         cy = (pts[i][1] - y0) * sc
         _texto_rotado(img, nombre, cx, cy - fs * 0.2, fs, ang, "italic",
@@ -939,7 +968,8 @@ def _castillo(dr, x, y, s, pal):
           fill=(176, 52, 44))
 
 
-def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides):
+def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
+                   fs_ciu=1.0):
     x0, y0 = win[0], win[1]
     x1, y1 = x0 + win[2], y0 + win[3]
     K = calidad
@@ -976,7 +1006,9 @@ def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides):
         ax, ay = a.get("x", 0), a.get("y", 0)
         if ax < x0 - 40 or ax > x1 + 200 or ay < y0 - 40 or ay > y1 + 40:
             continue
-        fs = (max(12 / K, uni / 118) if rg >= 3 else max(9.5 / K, uni / 165)) * sc
+        fs = _fs_rotulo(max(12 / K, uni / 118) if rg >= 3
+                        else max(9.5 / K, uni / 165), sc, d["nx"], win[2],
+                        mult=0.5 * fs_ciu)
         clase = "bold" if rg >= 3 else "serif"
         off = (base * 1.8 if rg >= 3 else base * 1.3 if rg == 2 else base) + 2
         x = (ax - x0) * sc + off
@@ -1019,9 +1051,27 @@ def _centroide_pais(d, pid, tierra_por_pais, cent_cache):
     return res
 
 
-def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides):
+def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides,
+                     modo_paises="todos", n_paises=8, fs_pais=1.0):
     if d["ids"] is None:
         return
+    # anti-encimado: bboxes ya ocupados; cada rotulo nuevo prueba corrimientos
+    # verticales y usa el primero libre (si ninguno lo esta, se dibuja igual)
+    ocupados = []
+
+    def _choca(bb):
+        return any(bb[2] > o[0] and bb[0] < o[2] and bb[3] > o[1] and bb[1] < o[3]
+                   for o in ocupados)
+
+    def _acomodar(x, y, ancho, alto):
+        for k in (0, -1, 1, -2, 2, -3, 3):
+            yy = y + k * alto * 1.15
+            bb = (x - ancho / 2, yy - alto / 2, x + ancho / 2, yy + alto / 2)
+            if not _choca(bb):
+                ocupados.append(bb)
+                return yy
+        ocupados.append((x - ancho / 2, y - alto / 2, x + ancho / 2, y + alto / 2))
+        return y
     x0, y0 = win[0], win[1]
     x1, y1 = x0 + win[2], y0 + win[3]
     K = calidad
@@ -1034,6 +1084,8 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides):
     paises = sorted(capas.get("paises", {}).get("lista", []),
                     key=lambda p: -p.get("area", 0))
     area_max = paises[0].get("area", 1) if paises else 1
+    if modo_paises == "grandes":
+        paises = paises[:max(1, n_paises)]
     for p in paises:
         if p.get("area", 0) < area_max * 0.03 / (K * K):
             continue
@@ -1045,20 +1097,29 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides):
             continue
         if c[0] < x0 or c[0] > x1 or c[1] < y0 or c[1] > y1:
             continue
-        fs = max(15, min(36, nx / 46 * math.sqrt(p["area"] / area_max) + 12)) / K * sc
+        fs = _fs_rotulo(max(18, min(38, nx / 46 * math.sqrt(p["area"] / area_max)
+                                    + 12)), sc, nx, win[2], mult=0.5 * fs_pais)
         x = (c[0] - x0) * sc
         y = (c[1] - y0) * sc
-        _texto_espaciado(dr, nombre.upper(), x, y, fs, "fantasy",
-                         pal["texto"] + (235,), pal["textoHalo"], round(fs * 0.14))
+        txt = nombre.upper()
+        esp = round(fs * 0.14)
+        fnt = _fuente("fantasy", fs)
+        ancho = dr.textlength(txt, font=fnt) + esp * max(0, len(txt) - 1)
+        y = _acomodar(x, y, ancho + fs, fs * 1.5)
+        _texto_espaciado(dr, txt, x, y, fs, "fantasy",
+                         pal["texto"] + (235,), pal["textoHalo"], esp,
+                         placa=True)
 
     mares = sorted(capas.get("subregiones", {}).get("mar", []),
                    key=lambda m: -m.get("area", 0))
     mar_max = mares[0].get("area", 1) if mares else 1
+    # solo los mares mas grandes: umbral fijo (independiente de calidad) y
+    # tope duro para no saturar el mapa completo de rotulos oceanicos
     dibujados = 0
     for m in mares:
-        if m.get("area", 0) < mar_max * 0.12 / K:
+        if m.get("area", 0) < mar_max * 0.18:
             continue
-        if dibujados > 9 * K * K:
+        if dibujados >= 6:
             break
         c = _centroide_id(d, m["id"])
         if not c:
@@ -1069,33 +1130,61 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides):
         nombre = _rotulo_final(overrides, "mar:%s" % m.get("id"), m["nombre"])
         if not nombre:
             continue
-        fs = max(11, min(24, nx / 70 * math.sqrt(m["area"] / mar_max) + 8)) / K * sc
+        fs = _fs_rotulo(max(13, min(26, nx / 70 * math.sqrt(m["area"] / mar_max)
+                                    + 8)), sc, nx, win[2], mult=0.5)
         x = (c[0] - x0) * sc
         y = (c[1] - y0) * sc
+        ancho = dr.textlength(nombre, font=_fuente("italic", fs))
+        y = _acomodar(x, y, ancho + fs, fs * 1.4)
         _texto(dr, nombre, x, y, fs, "italic", pal["mareText"] + (230,),
-               pal["textoHalo"], anchor="mm")
+               pal["textoHalo"], anchor="mm", placa=True)
 
 
 # ==========================================================================
 #  helpers de texto (halo por stroke; espaciado y rotacion manuales)
 # ==========================================================================
-def _texto(dr, txt, x, y, fs, clase, fill, halo, anchor="mm"):
+def _placa(dr, x0, y0, x1, y1, fs, halo):
+    """Placa de fondo de un titulo: rectangulo redondeado medido sobre el
+    bbox real del texto ya espaciado, para que el fondo cuadre exactamente
+    con las dimensiones del rotulo."""
+    a = halo[3] if len(halo) > 3 else 217
+    pad = fs * 0.32
+    dr.rounded_rectangle([x0 - pad, y0 - pad * 0.7, x1 + pad, y1 + pad * 0.7],
+                         radius=fs * 0.35, fill=halo[:3] + (a,))
+
+
+def _texto(dr, txt, x, y, fs, clase, fill, halo, anchor="mm", placa=False):
     fnt = _fuente(clase, fs)
-    sw = max(1, int(round(fs * 0.12))) if (len(halo) < 4 or halo[3] > 0) else 0
+    con_halo = len(halo) < 4 or halo[3] > 0
+    if placa and con_halo:
+        bb = dr.textbbox((x, y), txt, font=fnt, anchor=anchor)
+        _placa(dr, bb[0], bb[1], bb[2], bb[3], fs, halo)
+    sw = max(1, int(round(fs * 0.12))) if con_halo else 0
     dr.text((x, y), txt, font=fnt, fill=fill, anchor=anchor,
             stroke_width=sw, stroke_fill=halo[:3])
 
 
-def _texto_espaciado(dr, txt, cx, cy, fs, clase, fill, halo, spacing):
+def _texto_espaciado(dr, txt, cx, cy, fs, clase, fill, halo, spacing, placa=False):
     fnt = _fuente(clase, fs)
     anchos = [fnt.getlength(ch) for ch in txt]
     total = sum(anchos) + spacing * (len(txt) - 1 if txt else 0)
-    x = cx - total / 2
-    sw = max(1, int(round(fs * 0.14))) if (len(halo) < 4 or halo[3] > 0) else 0
-    for ch, aw in zip(txt, anchos):
-        dr.text((x, cy), ch, font=fnt, fill=fill, anchor="lm",
-                stroke_width=sw, stroke_fill=halo[:3])
-        x += aw + spacing
+    x0 = cx - total / 2
+    con_halo = len(halo) < 4 or halo[3] > 0
+    if placa and con_halo and txt:
+        bb = dr.textbbox((x0, cy), txt, font=fnt, anchor="lm")
+        _placa(dr, x0, bb[1], x0 + total, bb[3], fs, halo)
+    sw = max(1, int(round(fs * 0.14))) if con_halo else 0
+    # dos pasadas: primero todo el halo y luego todas las letras, para que
+    # el borde de una letra no pise el cuerpo de la anterior
+    for paso in ((0, 1) if sw else (1,)):
+        x = x0
+        for ch, aw in zip(txt, anchos):
+            if paso == 0:
+                dr.text((x, cy), ch, font=fnt, fill=halo[:3], anchor="lm",
+                        stroke_width=sw, stroke_fill=halo[:3])
+            else:
+                dr.text((x, cy), ch, font=fnt, fill=fill, anchor="lm")
+            x += aw + spacing
 
 
 def _texto_rotado(img, txt, cx, cy, fs, ang, clase, fill, halo):
@@ -1289,7 +1378,8 @@ def _workres(calidad):
 
 
 def _render(d, sello, stem, calidad, semilla, paleta, capas, win, deco, workres,
-            overrides):
+            overrides, modo_paises="todos", n_paises=8, fs_pais=1.0,
+            fs_ciu=1.0):
     pal = PALETAS[paleta]
     nx, ny = d["nx"], d["ny"]
     uni = nx / calidad
@@ -1326,9 +1416,11 @@ def _render(d, sello, stem, calidad, semilla, paleta, capas, win, deco, workres,
     if capas.get("caminos", True):
         _dibujar_caminos(dr, d, pal, win, sc, calidad, uni)
     if capas.get("asent", True):
-        _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides)
+        _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
+                       fs_ciu)
     if capas.get("rotulos", True):
-        _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides)
+        _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides,
+                         modo_paises, n_paises, fs_pais)
 
     img = _vineta(img, pal, win, nx, ny)
 
@@ -1415,6 +1507,15 @@ def _atender(handler, url, es_sector, es_deco=False):
     calidad, paleta, semilla, capas, deco = _params_comunes(q)
     if not semilla:
         semilla = stem
+    # filtro de rotulos de paises: todos, o solo los n mas grandes por area
+    modo_paises = q.get("paises", ["todos"])[0]
+    if modo_paises not in ("todos", "grandes"):
+        modo_paises = "todos"
+    n_paises = int(_float(q, "npaises", 8))
+    n_paises = min(64, max(1, n_paises))
+    # multiplicadores de tamano de rotulos (sliders del visor)
+    fs_pais = min(2.5, max(0.3, _float(q, "fspais", 1.0)))
+    fs_ciu = min(2.5, max(0.3, _float(q, "fsciu", 1.0)))
     nx, ny = d["nx"], d["ny"]
     workres = _workres(calidad)
     # px opcional: ancho de salida en pixeles (exportes a mas/menos resolucion)
@@ -1450,10 +1551,12 @@ def _atender(handler, url, es_sector, es_deco=False):
 
     capas_str = ",".join(c for c in CAPAS_VALIDAS if capas[c])
     clave = "|".join([
+        VERSION_RENDER,
         "deco" if es_deco else ("sector" if es_sector else "full"),
         stem, str(calidad), semilla, paleta,
         capas_str, "1" if deco else "0",
         "%.2f_%.2f_%.2f_%.2f" % win, str(workres), firma_ov,
+        modo_paises, str(n_paises), "%.2f_%.2f" % (fs_pais, fs_ciu),
     ])
     cache = _cache_path(sello, stem, clave)
     if cache.exists():
@@ -1464,7 +1567,8 @@ def _atender(handler, url, es_sector, es_deco=False):
         png = _render_deco(d, paleta, calidad, win, min(workres, 2048))
     else:
         png = _render(d, sello, stem, calidad, semilla, paleta, capas, win,
-                      deco, workres, overrides)
+                      deco, workres, overrides, modo_paises, n_paises,
+                      fs_pais, fs_ciu)
     try:
         cache.write_bytes(png)
     except OSError:

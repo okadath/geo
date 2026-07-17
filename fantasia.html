@@ -62,6 +62,30 @@
     transform-origin: 0 0; display: block;
     user-select: none; -webkit-user-drag: none;
   }
+  /* mientras se re-hornea el sector: el PNG viejo estirado se muestra
+     pixelado (look intencional de "cargando", no borroso "de error") */
+  #visor.cargando #mapa { image-rendering: pixelated; }
+  #cargador {
+    position: absolute; top: 14px; right: 14px; z-index: 5;
+    display: flex; align-items: center; gap: 10px; pointer-events: none;
+    background: rgba(16, 20, 28, .88); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 10px;
+    padding: 10px 18px; font-size: 17px; font-weight: 600;
+    letter-spacing: .02em; box-shadow: 0 2px 10px rgba(0, 0, 0, .35);
+    opacity: 0; transition: opacity .15s ease .18s;
+  }
+  #cargador .spin { width: 21px; height: 21px; border-width: 3px; }
+  #visor.cargando #cargador { opacity: 1; }
+  /* telon detras del lienzo: las zonas de mundo que el PNG del sector aun no
+     cubre (p.ej. al hacer zoom-out) no se ven negras sino como "cargando" */
+  #telon {
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(45deg,
+      rgba(0, 0, 0, .08) 0 16px, rgba(0, 0, 0, 0) 16px 32px);
+    opacity: 0; transition: opacity .2s ease;
+  }
+  #visor.cargando #telon { opacity: .6; animation: telon-mov 1.1s linear infinite; }
+  @keyframes telon-mov { to { background-position: 45.25px 0; } }
   #estado { color: var(--tenue); font-size: 13px; margin: 10px 2px 0; }
   #estado.error { color: var(--rojo); }
 
@@ -109,6 +133,26 @@
       <label><input type="checkbox" id="cb-rotulos" checked>rótulos</label>
       <label><input type="checkbox" id="cb-tinte">tinte político</label>
       <span class="sep"></span>
+      <label>países
+        <select id="sel-paises" title="qué rótulos de países mostrar (con muchos países el mapa completo se satura)">
+          <option value="grandes" selected>solo los más grandes</option>
+          <option value="todos">todos</option>
+        </select>
+      </label>
+      <label>cuántos <input type="number" id="in-npaises" min="1" max="64" value="8"
+        title="cuántos países (los más grandes por área) rotular"
+        style="width:56px"></label>
+      <label title="tamaño de los nombres de países">Aa países
+        <input type="range" id="sl-fs-pais" min="0.4" max="2" step="0.1" value="1"
+          style="width:80px;vertical-align:middle">
+        <output id="v-fs-pais">1.0×</output>
+      </label>
+      <label title="tamaño de los nombres de ciudades/asentamientos">Aa ciudades
+        <input type="range" id="sl-fs-ciu" min="0.4" max="2" step="0.1" value="1"
+          style="width:80px;vertical-align:middle">
+        <output id="v-fs-ciu">1.0×</output>
+      </label>
+      <span class="sep"></span>
       <label>paleta
         <select id="sel-paleta">
           <option value="claro">pergamino claro</option>
@@ -132,6 +176,8 @@
       <button type="button" id="b-regen">↻ regenerar</button>
       <span class="sep"></span>
       <button type="button" id="b-reset">⟲ zoom</button>
+      <span id="v-zoom" title="zoom actual de la vista"
+        style="font-variant-numeric:tabular-nums">×1.0</span>
       <span class="sep"></span>
       <button type="button" id="b-rotulos" title="renombrar u ocultar rótulos">✏ rótulos</button>
       <span class="sep"></span>
@@ -159,10 +205,12 @@
       <div id="pr-lista" class="pr-lista">cargando rótulos…</div>
     </div>
     <div id="visor">
+      <div id="telon"></div>
       <div id="lienzo">
         <img id="mapa" alt="">
       </div>
       <img id="deco" alt="">
+      <div id="cargador"><span class="spin"></span>definiendo…</div>
     </div>
     <p id="estado">cargando…</p>
   </section>
@@ -216,6 +264,9 @@
     rotver: 0,                 // versión de overrides de rótulos (bust de caché)
   };
   const mapa = $("mapa"), deco = $("deco"), lienzo = $("lienzo"), visor = $("visor");
+  // fondo del visor = papel de la paleta desde el inicio: las zonas de mundo
+  // que el sector renderizado aun no cubre se ven "papel cargando", no negras
+  visor.style.background = FONDO_UI[st.paleta];
 
   // ==========================================================================
   //  URLs de la API de render
@@ -238,6 +289,15 @@
     p.set("semilla", st.semilla);
     p.set("paleta", st.paleta);
     p.set("capas", capasActivas());
+    p.set("paises", $("sel-paises").value);
+    if ($("sel-paises").value === "grandes") {
+      const n = Math.max(1, Math.min(64, parseInt($("in-npaises").value, 10) || 8));
+      p.set("npaises", String(n));
+    }
+    const fsp = parseFloat($("sl-fs-pais").value) || 1;
+    const fsc = parseFloat($("sl-fs-ciu").value) || 1;
+    if (fsp !== 1) p.set("fspais", fsp.toFixed(1));
+    if (fsc !== 1) p.set("fsciu", fsc.toFixed(1));
     return p;
   }
   function urlSector(win, extras) {
@@ -320,10 +380,12 @@
     const win = winVisible(0.18);
     const gen = ++genRender;
     const url = urlSector(win);
-    $("estado").textContent = "renderizando sector en el servidor…";
+    visor.classList.add("cargando");
+    $("estado").textContent = "definiendo el sector en el servidor…";
     const im = new Image();
     im.onload = () => {
       if (gen !== genRender) return;              // llegó tarde: ya hay otra vista
+      visor.classList.remove("cargando");
       mapa.src = url;
       st.win = win;
       colocarMapa();
@@ -331,6 +393,7 @@
     };
     im.onerror = () => {
       if (gen !== genRender) return;
+      visor.classList.remove("cargando");
       $("estado").textContent = "el servidor no pudo renderizar el sector";
       $("estado").className = "error";
     };
@@ -354,6 +417,7 @@
   let tmrRender = 0;
   function programarRender() {
     clearTimeout(tmrRender);
+    visor.classList.add("cargando");   // feedback inmediato: pixelado + loader
     tmrRender = setTimeout(renderVisible, 220);
   }
 
@@ -366,6 +430,8 @@
   // ==========================================================================
   function aplicar() {
     lienzo.style.transform = `translate(${st.tx}px,${st.ty}px) scale(${st.scale})`;
+    $("v-zoom").textContent = "×" + (st.scale >= 10 ? st.scale.toFixed(0)
+                                                    : st.scale.toFixed(1));
   }
   function acotar() {
     const W = visor.clientWidth, H = visor.clientHeight;
@@ -404,6 +470,16 @@
   // ==========================================================================
   for (const id of ["cb-relieve", "cb-veg", "cb-rios", "cb-caminos", "cb-asent", "cb-rotulos", "cb-tinte"])
     $(id).addEventListener("change", redibujar);
+  $("sel-paises").addEventListener("change", redibujar);
+  $("in-npaises").addEventListener("change", redibujar);
+  // sliders de tamaño: el valor se muestra en vivo, el re-render (costoso,
+  // va al servidor) solo se dispara al soltar el control
+  for (const [sl, out] of [["sl-fs-pais", "v-fs-pais"], ["sl-fs-ciu", "v-fs-ciu"]]) {
+    $(sl).addEventListener("input", e => {
+      $(out).textContent = parseFloat(e.target.value).toFixed(1) + "×";
+    });
+    $(sl).addEventListener("change", redibujar);
+  }
   $("sel-paleta").addEventListener("change", e => {
     st.paleta = e.target.value; visor.style.background = FONDO_UI[st.paleta]; redibujar();
   });

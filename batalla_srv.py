@@ -2165,15 +2165,21 @@ def _fuente(px):
     if hit:
         return hit
     wf = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    lb = Path("/usr/share/fonts/truetype/liberation")
+    dv = Path("/usr/share/fonts/truetype/dejavu")
     fnt = None
-    for nombre in ("arialbd.ttf", "arial.ttf", "segoeui.ttf"):
+    for ruta in (wf / "arialbd.ttf", wf / "arial.ttf", wf / "segoeui.ttf",
+                 lb / "LiberationSans-Bold.ttf", dv / "DejaVuSans-Bold.ttf"):
         try:
-            fnt = ImageFont.truetype(str(wf / nombre), px)
+            fnt = ImageFont.truetype(str(ruta), px)
             break
         except OSError:
             continue
     if fnt is None:
-        fnt = ImageFont.load_default()
+        try:
+            fnt = ImageFont.load_default(size=px)   # Pillow >= 10.1: escalable
+        except TypeError:
+            fnt = ImageFont.load_default()
     _CACHE_FUENTES[px] = fnt
     return fnt
 
