@@ -468,27 +468,54 @@ def _islas_vacias(tierra, cont, n_cont, submap, costo_f, seed, lista_prov):
     ny, nx = tierra.shape
     if n_cont == 0:
         return
-    con_prov = np.zeros(n_cont, bool)
-    sel = (cont >= 0) & (submap >= 0)
-    if sel.any():
-        con_prov[np.unique(cont[sel])] = True
-    vacia = tierra & (cont >= 0) & ~con_prov[np.maximum(cont, 0)]
+    # tierra SIN provincia: no solo las islas enteramente vacias, tambien la
+    # PARTE LIBRE de una isla que un pais alcanzo solo parcialmente (con
+    # tam_paises=2 quedan tierras sin reclamar). El criterio ya no es "el
+    # continente tiene alguna provincia" (que excluia la isla entera) sino "esta
+    # celda no tiene provincia": asi la zona libre tambien recibe nombre. Las
+    # celdas ya provinciadas quedan fuera y no se pisan.
+    vacia = tierra & (cont >= 0) & (submap < 0)
     if not vacia.any():
         return
+    # umbral de area minima aplicado a cada ZONA LIBRE CONEXA (no al continente
+    # ni al archipielago): un islote suelto O un retazo libre al borde de una
+    # provincia por debajo del umbral se deja SIN region (submap = -1, como antes
+    # de existir esta funcion) -- ese es justo el caso "sliver" que hay que
+    # evitar. Umbral ~ nx/24 celdas de area, con piso de 6 (a 200 celdas de
+    # ancho = 8 celdas, ~3x3): a esa escala una celda son cientos de km, asi que
+    # <8 celdas es ruido de malla, no una isla ni una comarca real.
+    area_min = max(6, int(round(nx / 24.0)))
+    piezas, npz = _bfs_continentes(vacia)
+    if npz:
+        areas_pz = np.bincount(piezas[vacia], minlength=npz)
+        chica = areas_pz < area_min
+        if chica.any():
+            vacia &= ~chica[np.maximum(piezas, 0)]
+            if not vacia.any():
+                return
     # agrupar islas cercanas (mar de por medio <= ~4 celdas) en archipielagos
     glab, ng = _bfs_continentes(_dilatar(vacia, 2))
     rng = np.random.default_rng((seed & 0x7FFFFFFF) ^ 0x151A)
     for g in range(ng):
         celdas_g = vacia & (glab == g)
         area = int(np.count_nonzero(celdas_g))
-        if area < 2:                          # islote suelto: sin region
+        if area == 0:
             continue
-        n_islas = len(np.unique(cont[celdas_g]))
-        n_sub = int(np.clip(area // 45, 1, 4))
-        # semillas por muestreo del punto mas lejano (determinista)
+        # islas FISICAS del grupo: el brazo de mar (hasta ~4 celdas) las separa
+        # y el Dijkstra tiene coste inf fuera de celdas_g, asi que NO cruza el
+        # agua. Sin una semilla dentro de cada isla, las islas del archipielago
+        # que no reciben semilla quedaban sin id (celdas huerfanas, islas
+        # grandes "no detectadas"). Sembramos una semilla por isla y ampliamos
+        # con muestreo del punto mas lejano hasta n_sub.
+        comp_g, ncg = _bfs_continentes(celdas_g)
+        n_islas = ncg
+        n_sub = max(ncg, int(np.clip(area // 45, 1, 4)))
         ys, xs = np.nonzero(celdas_g)
         pts = list(zip(ys.tolist(), xs.tolist()))
-        fs = [pts[0]]
+        fs = []
+        for c in range(ncg):
+            yy, xx = np.nonzero(comp_g == c)
+            fs.append((int(yy[0]), int(xx[0])))
         while len(fs) < n_sub:
             fs.append(max(pts, key=lambda p: min(
                 _dist_esf(p[0], p[1], q[0], q[1], ny, nx) for q in fs)))
