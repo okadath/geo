@@ -16,11 +16,13 @@ import argparse
 import hashlib
 import importlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -510,12 +512,49 @@ class Manejador(BaseHTTPRequestHandler):
         return self._json({"error": "no existe"}, 404)
 
 
+def _vigilar_cambios(intervalo=1.0):
+    """Autorecarga: vigila los .py del proyecto y, si alguno cambia, reinicia
+    el proceso con os.execv para reimportar los modulos (los *_srv.py se
+    importan al arrancar, asi que editar uno requiere reiniciar). Los .html no
+    se vigilan: se leen del disco en cada peticion. Antes de reiniciar espera
+    a que terminen los trabajos de tecto.py en curso para no perderles la
+    pista (el dict `procs` no sobrevive al re-exec)."""
+    def firmas():
+        return {f: f.stat().st_mtime for f in BASE.glob("*.py") if f.exists()}
+    visto = firmas()
+    while True:
+        time.sleep(intervalo)
+        ahora = firmas()
+        cambiados = sorted({f.name for f in ahora if ahora[f] != visto.get(f)} |
+                           {f.name for f in visto if f not in ahora})
+        visto = ahora
+        if not cambiados:
+            continue
+        # flush: sin el, los mensajes se pierden en el buffer al hacer execv
+        print(f"autorecarga: cambio en {', '.join(cambiados)} -> reiniciando",
+              flush=True)
+        while True:
+            with lock:
+                vivos = sum(1 for pr in procs.values() if pr.poll() is None)
+            if not vivos:
+                break
+            print(f"autorecarga: esperando {vivos} trabajo(s) en curso...",
+                  flush=True)
+            time.sleep(2)
+        os.execv(sys.executable, [sys.executable, str(BASE / "web.py")]
+                 + sys.argv[1:])
+
+
 def main():
     p = argparse.ArgumentParser(description="Interfaz web local de tecto.py")
     p.add_argument("-p", "--puerto", type=int, default=8000)
+    p.add_argument("--sin-recarga", action="store_true",
+                   help="no reiniciar automaticamente al cambiar los .py")
     args = p.parse_args()
     SALIDAS.mkdir(exist_ok=True)
     servidor = ThreadingHTTPServer(("127.0.0.1", args.puerto), Manejador)
+    if not args.sin_recarga:
+        threading.Thread(target=_vigilar_cambios, daemon=True).start()
     print(f"tecto web -> http://127.0.0.1:{args.puerto}  (Ctrl+C para salir)")
     try:
         servidor.serve_forever()
