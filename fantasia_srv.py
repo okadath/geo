@@ -50,7 +50,53 @@ PALETAS_VALIDAS = ("claro", "sepia", "noche", "imprenta", "esmeralda",
 
 # version del renderer: entra en la clave de cache de los PNG, subir cuando
 # cambie el dibujo (p.ej. v4: rotulos de tamano constante en pantalla)
-VERSION_RENDER = "v6"
+VERSION_RENDER = "v8"
+
+# ---- hidronimos procedurales ----
+# clima.py hornea nombres genericos ("Rio N") en capas.json; el mapa de
+# fantasia los sustituye por un hidronimo evocador. Determinista por
+# (stem, id) para que el nombre no cambie entre recargas ni entre sectores.
+# Los overrides del editor de rotulos siguen mandando (_rotulo_final).
+_RE_RIO_GEN = re.compile(r"^Rio\s+\d+$")
+_RIO_ONSET = ["", "b", "d", "g", "l", "m", "n", "r", "s", "t", "v",
+              "br", "dr", "gr", "tr", "th", "sh", "cel", "mor", "val", "isil"]
+_RIO_NUCLEO = ["a", "e", "i", "o", "u", "ae", "ia", "ei", "au", "or", "il", "un"]
+_RIO_CODA = ["", "n", "r", "s", "l", "th", "mir", "wen", "duin", "ros", "gal"]
+_RIO_EPITETO = ["Plateado", "Serpenteante", "Susurrante", "Sombrío",
+                "Cantarino", "Errante", "de las Nieblas", "de los Ecos",
+                "del Alba", "de las Estrellas", "sin Retorno", "de la Luna"]
+
+
+def _nombre_rio(stem, rid):
+    h = int.from_bytes(hashlib.sha256(
+        ("%s|rio|%s" % (stem, rid)).encode("utf-8")).digest()[:8], "big")
+    rng = np.random.default_rng(h)
+    az = rng.random()
+    if az < 0.15:
+        return "Río %s" % _RIO_EPITETO[int(rng.integers(len(_RIO_EPITETO)))]
+    # 2 silabas casi siempre y grupos complejos (br/isil/...) solo al inicio,
+    # para que no salgan trabalenguas tipo "Celeitrautriagal"
+    nsil = 2 if rng.random() < 0.7 else 3
+    s = ""
+    for k in range(nsil):
+        onset = _RIO_ONSET if k == 0 else _RIO_ONSET[:11]
+        s += onset[int(rng.integers(len(onset)))]
+        s += _RIO_NUCLEO[int(rng.integers(len(_RIO_NUCLEO)))]
+        if k == nsil - 1:
+            s += _RIO_CODA[int(rng.integers(len(_RIO_CODA)))]
+    if len(s) < 4:            # nombres tipo "ae": alargar con coda de agua
+        s += _RIO_CODA[6 + int(rng.integers(len(_RIO_CODA) - 6))]
+    s = s[:1].upper() + s[1:]
+    # a veces el hidronimo va solo (estilo "Duinros"), sin la particula "Río"
+    return s if az < 0.40 else "Río %s" % s
+
+
+def _renombrar_rios(capas, stem):
+    """Cambia in place los nombres genericos "Rio N" por hidronimos; un rio
+    partido en varios tramos (borde E-O) comparte id y por tanto nombre."""
+    for r in capas.get("rios", []):
+        if _RE_RIO_GEN.match(r.get("nombre") or ""):
+            r["nombre"] = _nombre_rio(stem, r.get("id"))
 
 # tipos de rotulo editables y longitud maxima de un nombre saneado
 TIPOS_ROTULO = ("asent", "pais", "mar", "rio")
@@ -78,7 +124,7 @@ PALETAS = {
         "montF": (224, 210, 176), "montI": (92, 74, 48), "montS": (176, 158, 120),
         "colina": (106, 86, 54), "veg": (76, 103, 47), "conif": (61, 90, 52),
         "desierto": (165, 138, 82),
-        "rio": (63, 93, 120), "texto": (64, 49, 28),
+        "rio": (63, 93, 120), "camino": (146, 90, 40), "texto": (64, 49, 28),
         "textoHalo": (236, 226, 198, 217), "mareText": (77, 113, 128),
         "hielo": (143, 166, 176), "vineta": (70, 52, 28, 87), "fondoUI": (233, 220, 191),
     },
@@ -89,7 +135,7 @@ PALETAS = {
         "montF": (210, 190, 148), "montI": (74, 55, 32), "montS": (168, 146, 104),
         "colina": (90, 68, 31), "veg": (95, 86, 38), "conif": (76, 70, 32),
         "desierto": (154, 130, 74),
-        "rio": (90, 74, 42), "texto": (58, 43, 22),
+        "rio": (90, 74, 42), "camino": (134, 76, 34), "texto": (58, 43, 22),
         "textoHalo": (226, 208, 166, 217), "mareText": (106, 90, 46),
         "hielo": (176, 160, 114), "vineta": (52, 36, 16, 107), "fondoUI": (220, 199, 154),
     },
@@ -100,7 +146,7 @@ PALETAS = {
         "montF": (53, 72, 93), "montI": (205, 216, 228), "montS": (36, 50, 66),
         "colina": (159, 179, 200), "veg": (126, 160, 122), "conif": (111, 154, 114),
         "desierto": (162, 152, 106),
-        "rio": (111, 159, 208), "texto": (219, 230, 241),
+        "rio": (111, 159, 208), "camino": (216, 174, 122), "texto": (219, 230, 241),
         "textoHalo": (16, 26, 38, 209), "mareText": (147, 182, 204),
         "hielo": (188, 204, 220), "vineta": (6, 12, 20, 140), "fondoUI": (34, 48, 63),
     },
@@ -112,7 +158,7 @@ PALETAS = {
         "montF": (255, 255, 255), "montI": (17, 17, 17), "montS": (208, 208, 208),
         "colina": (34, 34, 34), "veg": (51, 51, 51), "conif": (34, 34, 34),
         "desierto": (120, 120, 120),
-        "rio": (58, 58, 58), "texto": (8, 8, 8),
+        "rio": (58, 58, 58), "camino": (96, 96, 96), "texto": (8, 8, 8),
         "textoHalo": (255, 255, 255, 235), "mareText": (54, 54, 54),
         "hielo": (140, 140, 140), "vineta": (0, 0, 0, 38), "fondoUI": (250, 250, 250),
     },
@@ -124,7 +170,7 @@ PALETAS = {
         "montF": (210, 218, 189), "montI": (28, 54, 38), "montS": (166, 182, 148),
         "colina": (50, 82, 58), "veg": (56, 96, 54), "conif": (42, 82, 52),
         "desierto": (150, 150, 96),
-        "rio": (46, 92, 102), "texto": (24, 50, 34),
+        "rio": (46, 92, 102), "camino": (128, 88, 42), "texto": (24, 50, 34),
         "textoHalo": (224, 230, 202, 222), "mareText": (46, 96, 84),
         "hielo": (176, 196, 186), "vineta": (16, 40, 26, 104), "fondoUI": (222, 227, 199),
     },
@@ -136,7 +182,7 @@ PALETAS = {
         "montF": (224, 208, 178), "montI": (92, 32, 32), "montS": (182, 160, 120),
         "colina": (120, 58, 44), "veg": (110, 96, 50), "conif": (96, 84, 46),
         "desierto": (170, 140, 80),
-        "rio": (120, 74, 58), "texto": (86, 26, 26),
+        "rio": (120, 74, 58), "camino": (152, 102, 40), "texto": (86, 26, 26),
         "textoHalo": (236, 224, 198, 224), "mareText": (120, 74, 58),
         "hielo": (200, 190, 166), "vineta": (58, 20, 16, 112), "fondoUI": (235, 223, 197),
     },
@@ -148,7 +194,7 @@ PALETAS = {
         "montF": (216, 230, 240), "montI": (24, 58, 88), "montS": (176, 198, 214),
         "colina": (46, 84, 112), "veg": (70, 120, 96), "conif": (54, 104, 92),
         "desierto": (176, 168, 120),
-        "rio": (34, 96, 150), "texto": (18, 50, 80),
+        "rio": (34, 96, 150), "camino": (152, 98, 52), "texto": (18, 50, 80),
         "textoHalo": (230, 240, 246, 224), "mareText": (38, 96, 140),
         "hielo": (206, 224, 236), "vineta": (12, 36, 60, 96), "fondoUI": (226, 236, 242),
     },
@@ -232,6 +278,7 @@ def _cargar_datos(sello, stem):
             return hit[1]
 
     capas = json.loads(fcapas.read_text(encoding="utf-8"))
+    _renombrar_rios(capas, stem)
     nx, ny = capas.get("resolucion", [1536, 1536])
     d2 = np.asarray(Image.open(fd2).convert("RGB"))     # (H,W,3)
     ndy, ndx = d2.shape[0], d2.shape[1]
@@ -843,21 +890,69 @@ def _fs_rotulo(base, sc, nx, win_w, mult=1.0):
     return min(max(base * outw / nx, 0.0085 * outw), 0.035 * outw) * mult
 
 
+# ---- anti-encimado global de rotulos ----
+# `ocupados` es una lista compartida de bboxes (x0,y0,x1,y1) en pixeles de
+# salida; se rellena en orden de prioridad (ciudades > rios > paises/mares):
+# quien llega primero reserva su sitio y los siguientes se apartan o ceden.
+
+def _choca(ocupados, bb):
+    return any(bb[2] > o[0] and bb[0] < o[2] and bb[3] > o[1] and bb[1] < o[3]
+               for o in ocupados)
+
+
+def _acomodar(ocupados, x, y, ancho, alto, forzar=True, horiz=False):
+    """Prueba corrimientos alrededor de (x, y) centrado y devuelve el (x, y)
+    del primer hueco libre: primero verticales puros y, con horiz=True (para
+    rotulos sin ancla fija, como paises y mares), tambien laterales. Si
+    ninguno esta libre: con forzar=True reserva y devuelve la posicion
+    original (el rotulo se dibuja igual); con forzar=False devuelve None
+    (el rotulo cede y no se dibuja)."""
+    pasos_x = (0, -1, 1, -2, 2) if horiz else (0,)
+    for kx in pasos_x:
+        xx = x + kx * ancho * 0.55
+        for ky in (0, -1, 1, -2, 2, -3, 3):
+            yy = y + ky * alto * 1.15
+            bb = (xx - ancho / 2, yy - alto / 2, xx + ancho / 2, yy + alto / 2)
+            if not _choca(ocupados, bb):
+                ocupados.append(bb)
+                return xx, yy
+    if not forzar:
+        return None
+    ocupados.append((x - ancho / 2, y - alto / 2, x + ancho / 2, y + alto / 2))
+    return x, y
+
+
 def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides):
     x0, y0 = win[0], win[1]
     K = calidad
     kw = math.sqrt(K)
     rio = pal["rio"]
+    # dos pasadas: primero una ORILLA ancha y tenue (color agua) bajo todos los
+    # cauces y luego la tinta del rio, mas ancha que antes -- marca mas los
+    # rios y los separa a simple vista de caminos y fronteras
+    trazos = []
     for r in d["capas"].get("rios", []):
         pts = r.get("puntos", [])
         if len(pts) < 2:
             continue
-        w = (0.7 + (r.get("caudal", 0.2)) * 2.6) / kw * sc
-        sp = _map_pts(_suave(pts), x0, y0, sc)
-        dr.line(sp, fill=rio + (230,), width=max(1, int(round(w))), joint="curve")
-    # nombres de rios grandes, en cursiva siguiendo el cauce
-    # nombres: umbral fijo bajo para que los rios medianos tambien se rotulen
-    # (con 0.4/K casi ningun rio alcanzaba; los caudales tipicos rondan 0.1-0.3)
+        w = (1.0 + (r.get("caudal", 0.2)) * 3.2) / kw * sc
+        trazos.append((_map_pts(_suave(pts), x0, y0, sc), w))
+    orilla = pal["agua"] + (80,)
+    for sp, w in trazos:
+        dr.line(sp, fill=orilla, width=max(2, int(round(w * 2.2))), joint="curve")
+    for sp, w in trazos:
+        dr.line(sp, fill=rio + (240,), width=max(1, int(round(w))), joint="curve")
+
+def _rotular_rios(img, d, pal, win, sc, calidad, uni, overrides, ocupados):
+    """Nombres de rios grandes, en cursiva siguiendo el cauce. Va DESPUES de
+    los nombres de asentamientos: si el sitio esta tomado prueba otros puntos
+    del cauce y corrimientos perpendiculares; si todo choca, el rio cede
+    (primero va la ciudad). Umbral de caudal fijo bajo para que los rios
+    medianos tambien se rotulen (los caudales tipicos rondan 0.1-0.3)."""
+    x0, y0 = win[0], win[1]
+    K = calidad
+    rio = pal["rio"]
+    outw, outh = sc * win[2], sc * win[3]
     for r in d["capas"].get("rios", []):
         pts = r.get("puntos", [])
         if (r.get("caudal", 0) < 0.10) or len(pts) < 6 or not r.get("nombre"):
@@ -865,31 +960,58 @@ def _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides):
         nombre = _rotulo_final(overrides, "rio:%s" % r.get("id"), r["nombre"])
         if not nombre:
             continue
-        i = len(pts) // 2
-        a = pts[i - 1]
-        b = pts[i + 1] if i + 1 < len(pts) else pts[i]
-        ang = math.atan2(b[1] - a[1], b[0] - a[0])
-        if ang > math.pi / 2 or ang < -math.pi / 2:
-            ang += math.pi
         fs = _fs_rotulo(max(9 / K, uni / 150), sc, d["nx"], win[2])
-        cx = (pts[i][0] - x0) * sc
-        cy = (pts[i][1] - y0) * sc
-        _texto_rotado(img, nombre, cx, cy - fs * 0.2, fs, ang, "italic",
-                      rio, pal["textoHalo"])
+        fnt = _fuente("italic", fs)
+        tw = fnt.getlength(nombre) + fs * 0.5
+        th = fs * 1.3
+        colocado = None
+        # candidatos: centro del cauce primero, luego hacia los extremos, y
+        # en cada punto corrimientos perpendiculares crecientes
+        for f in (0.5, 0.38, 0.62, 0.26, 0.74, 0.16, 0.84):
+            i = min(max(int(f * len(pts)), 1), len(pts) - 2)
+            a, b = pts[i - 1], pts[i + 1]
+            ang = math.atan2(b[1] - a[1], b[0] - a[0])
+            if ang > math.pi / 2 or ang < -math.pi / 2:
+                ang += math.pi
+            # bbox eje-alineado del texto rotado
+            bw = abs(tw * math.cos(ang)) + abs(th * math.sin(ang))
+            bh = abs(tw * math.sin(ang)) + abs(th * math.cos(ang))
+            px, py = -math.sin(ang), math.cos(ang)  # perpendicular al cauce
+            for n in (-1, 1, -2, 2):
+                off = n * th * 0.55  # -1 = el clasico "encima del cauce"
+                cx = (pts[i][0] - x0) * sc + px * off
+                cy = (pts[i][1] - y0) * sc + py * off
+                if cx < -bw or cx > outw + bw or cy < -bh or cy > outh + bh:
+                    continue
+                bb = (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2)
+                if not _choca(ocupados, bb):
+                    ocupados.append(bb)
+                    colocado = (cx, cy, ang)
+                    break
+            if colocado:
+                break
+        if colocado:
+            cx, cy, ang = colocado
+            _texto_rotado(img, nombre, cx, cy, fs, ang, "italic",
+                          rio, pal["textoHalo"])
 
 
 def _dibujar_caminos(dr, d, pal, win, sc, calidad, uni):
     x0, y0 = win[0], win[1]
     K = calidad
     u = uni
-    wc = max(0.7 / K, u / 1400) * sc
-    dash_c = (u / 500 * sc, u / 380 * sc)
+    # caminos en su PROPIO color (tierra/siena, "camino" en la paleta), mas
+    # anchos y opacos que antes: se distinguen de las fronteras (tinta) y de
+    # los rios (azul continuo con orilla); el trazo discontinuo se mantiene
+    camino = pal.get("camino", pal["tinta"])
+    wc = max(1.0 / K, u / 1000) * sc
+    dash_c = (u / 450 * sc, u / 420 * sc)
     for c in d["capas"].get("caminos", []):
         pts = c.get("puntos", [])
         if len(pts) < 2:
             continue
         sp = _map_pts(_suave(pts), x0, y0, sc)
-        _linea_punteada(dr, sp, pal["tinta"] + (179,), max(1, int(round(wc))), dash_c)
+        _linea_punteada(dr, sp, camino + (215,), max(1, int(round(wc))), dash_c)
     wr = max(0.6 / K, u / 1700) * sc
     dash_r = (u / 700 * sc, u / 550 * sc)
     for r in d["capas"].get("rutas", []):
@@ -969,7 +1091,7 @@ def _castillo(dr, x, y, s, pal):
 
 
 def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
-                   fs_ciu=1.0):
+                   ocupados, fs_ciu=1.0):
     x0, y0 = win[0], win[1]
     x1, y1 = x0 + win[2], y0 + win[3]
     K = calidad
@@ -977,6 +1099,7 @@ def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
     # se conserva el indice original (id estable "asent:<indice>") al ordenar
     cfg = sorted(enumerate(d["capas"].get("asentamientos", [])),
                  key=lambda t: t[1].get("y", 0))
+    iconos = []
     for idx, a in cfg:
         ax, ay = a.get("x", 0), a.get("y", 0)
         if ax < x0 - 20 or ax > x1 + 20 or ay < y0 - 20 or ay > y1 + 20:
@@ -995,6 +1118,10 @@ def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
             if rg == 1:
                 r2 = base * 0.22
                 dr.ellipse([x - r2, y - r2, x + r2, y + r2], fill=pal["tinta"])
+        # el sitio del icono se reserva (tras colocar los nombres, para que
+        # un nombre no choque con su propio icono) y ningun rio/pais se encima
+        ri = base * (1.6 if rg >= 3 else 1.1)
+        iconos.append((x - ri, y - ri, x + ri, y + ri))
     # nombres
     for idx, a in cfg:
         rg = int(a.get("rango", 0))
@@ -1013,8 +1140,13 @@ def _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
         off = (base * 1.8 if rg >= 3 else base * 1.3 if rg == 2 else base) + 2
         x = (ax - x0) * sc + off
         y = (ay - y0) * sc
+        # anti-encimado entre ciudades: se aparta en vertical si el sitio esta
+        # tomado; la ciudad manda, asi que si no hay hueco se dibuja igual
+        ancho = dr.textlength(nombre, font=_fuente(clase, fs))
+        _, y = _acomodar(ocupados, x + ancho / 2, y, ancho + fs * 0.4, fs * 1.3)
         _texto(dr, nombre, x, y, fs, clase, pal["texto"], pal["textoHalo"],
                anchor="lm")
+    ocupados.extend(iconos)
 
 
 # ==========================================================================
@@ -1051,27 +1183,13 @@ def _centroide_pais(d, pid, tierra_por_pais, cent_cache):
     return res
 
 
-def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides,
+def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides, ocupados,
                      modo_paises="todos", n_paises=8, fs_pais=1.0):
     if d["ids"] is None:
         return
-    # anti-encimado: bboxes ya ocupados; cada rotulo nuevo prueba corrimientos
+    # anti-encimado: `ocupados` es la lista GLOBAL de bboxes ya reservados
+    # (ciudades y rios incluidos); cada rotulo nuevo prueba corrimientos
     # verticales y usa el primero libre (si ninguno lo esta, se dibuja igual)
-    ocupados = []
-
-    def _choca(bb):
-        return any(bb[2] > o[0] and bb[0] < o[2] and bb[3] > o[1] and bb[1] < o[3]
-                   for o in ocupados)
-
-    def _acomodar(x, y, ancho, alto):
-        for k in (0, -1, 1, -2, 2, -3, 3):
-            yy = y + k * alto * 1.15
-            bb = (x - ancho / 2, yy - alto / 2, x + ancho / 2, yy + alto / 2)
-            if not _choca(bb):
-                ocupados.append(bb)
-                return yy
-        ocupados.append((x - ancho / 2, y - alto / 2, x + ancho / 2, y + alto / 2))
-        return y
     x0, y0 = win[0], win[1]
     x1, y1 = x0 + win[2], y0 + win[3]
     K = calidad
@@ -1105,7 +1223,7 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides,
         esp = round(fs * 0.14)
         fnt = _fuente("fantasy", fs)
         ancho = dr.textlength(txt, font=fnt) + esp * max(0, len(txt) - 1)
-        y = _acomodar(x, y, ancho + fs, fs * 1.5)
+        x, y = _acomodar(ocupados, x, y, ancho + fs, fs * 1.5, horiz=True)
         _texto_espaciado(dr, txt, x, y, fs, "fantasy",
                          pal["texto"] + (235,), pal["textoHalo"], esp,
                          placa=True)
@@ -1135,7 +1253,7 @@ def _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides,
         x = (c[0] - x0) * sc
         y = (c[1] - y0) * sc
         ancho = dr.textlength(nombre, font=_fuente("italic", fs))
-        y = _acomodar(x, y, ancho + fs, fs * 1.4)
+        x, y = _acomodar(ocupados, x, y, ancho + fs, fs * 1.4, horiz=True)
         _texto(dr, nombre, x, y, fs, "italic", pal["mareText"] + (230,),
                pal["textoHalo"], anchor="mm", placa=True)
 
@@ -1411,15 +1529,21 @@ def _render(d, sello, stem, calidad, semilla, paleta, capas, win, deco, workres,
     _dibujar_glifos(dr, glifos, pal, capas.get("relieve", True),
                     capas.get("veg", True), win, sc)
 
+    # anti-encimado global: los rotulos reservan bboxes en `ocupados` en orden
+    # de prioridad (ciudades primero, luego rios -- que ceden si no hay hueco
+    # --, al final paises y mares)
+    ocupados = []
     if capas.get("rios", True):
         _dibujar_rios(dr, img, d, pal, win, sc, calidad, uni, overrides)
     if capas.get("caminos", True):
         _dibujar_caminos(dr, d, pal, win, sc, calidad, uni)
     if capas.get("asent", True):
         _dibujar_asent(img, dr, d, pal, win, sc, calidad, uni, overrides,
-                       fs_ciu)
+                       ocupados, fs_ciu)
+    if capas.get("rios", True):
+        _rotular_rios(img, d, pal, win, sc, calidad, uni, overrides, ocupados)
     if capas.get("rotulos", True):
-        _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides,
+        _dibujar_rotulos(dr, d, pal, win, sc, calidad, nx, overrides, ocupados,
                          modo_paises, n_paises, fs_pais)
 
     img = _vineta(img, pal, win, nx, ny)
@@ -1507,10 +1631,11 @@ def _atender(handler, url, es_sector, es_deco=False):
     calidad, paleta, semilla, capas, deco = _params_comunes(q)
     if not semilla:
         semilla = stem
-    # filtro de rotulos de paises: todos, o solo los n mas grandes por area
-    modo_paises = q.get("paises", ["todos"])[0]
+    # filtro de rotulos de paises: solo los n mas grandes por area (default,
+    # igual que el visor: con muchos paises el mapa completo se satura) o todos
+    modo_paises = q.get("paises", ["grandes"])[0]
     if modo_paises not in ("todos", "grandes"):
-        modo_paises = "todos"
+        modo_paises = "grandes"
     n_paises = int(_float(q, "npaises", 8))
     n_paises = min(64, max(1, n_paises))
     # multiplicadores de tamano de rotulos (sliders del visor)
