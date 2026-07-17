@@ -50,10 +50,14 @@ RE_STEM = re.compile(r"^d[0-9]{6}_f[0-9]+_[0-9a-f]{6}$")
 # ===================================================================
 NEUTRAL = -1
 COSTO_TROPA = 3          # oro por tropa reclutada
+MANTEN_TROPA = 0.1       # oro por tropa y turno (mantener la milicia se
+                         # descuenta del ingreso; un ejercito enorme arruina)
 BONO_DEFENSA = 1.2       # ventaja del defensor
 PENA_NAVAL = 0.72        # penalizacion al desembarcar / cruzar el mar
 HAB_TROPA = 150          # habitantes que consume cada tropa
 DINERO_INICIAL = 120
+PA_POR_POB = 150000      # habitantes por punto de accion extra (los paises
+                         # poblados mueven mas ordenes por turno)
 
 # ---- poblacion inicial (rebalanceo: piso mas alto, picos mas bajos) ----
 POB_BASE_PROV = 6000     # habitantes minimos por provincia de tierra
@@ -509,7 +513,7 @@ def _nueva_partida(mapa, sello, stem, jugador, dif_key, ajustes):
         # las capitales nacen con BASTION; las capitales costeras, ademas, con
         # PUERTO (para no quedar encerradas sin poder embarcar de salida)
         entry = {"dueno": p["dueno0"], "pob": p["pob0"],
-                 "ejercito": p["ejercito0"], "movida": False,
+                 "ejercito": p["ejercito0"], "movida": False, "agotado": 0,
                  "bastion": bool(p["capital"]), "torre": False,
                  "puerto": bool(p["capital"] and p["costera"])}
         if p["mar"]:
@@ -625,6 +629,24 @@ def _ingreso_pais(mapa, part, pid):
     return jround(s)
 
 
+def _mantenimiento_pais(mapa, part, pid):
+    """Costo por turno de mantener la milicia: MANTEN_TROPA de oro por cada
+    tropa del pais (guarniciones y flotas). Se descuenta del ingreso."""
+    _, ej = _resumen_pais(mapa, part, pid)
+    return jround(ej * MANTEN_TROPA)
+
+
+def _ingreso_neto(mapa, part, pid):
+    """Ingreso menos mantenimiento de la milicia (puede ser negativo: un
+    ejercito desmedido come mas oro del que producen las provincias)."""
+    return _ingreso_pais(mapa, part, pid) - _mantenimiento_pais(mapa, part, pid)
+
+
+def _poblacion_pais(mapa, part, pid):
+    return sum(p["pob"] for i, p in part["prov"].items()
+               if not mapa["prov"][i]["mar"] and p["dueno"] == pid)
+
+
 def _resumen_pais(mapa, part, pid):
     provs = 0
     ej = 0
@@ -640,8 +662,11 @@ def _resumen_pais(mapa, part, pid):
 
 
 def _puntos_max(mapa, part, pid):
+    """Puntos de accion por turno: base + provincias + POBLACION disponible
+    (un punto extra por cada PA_POR_POB habitantes), con tope en 30."""
     provs, _ = _resumen_pais(mapa, part, pid)
-    return min(30, 4 + provs // 2)
+    extra_pob = _poblacion_pais(mapa, part, pid) // PA_POR_POB
+    return min(30, 4 + provs // 2 + int(extra_pob))
 
 
 def _nombre_pais(mapa, pid):
@@ -670,6 +695,65 @@ def _dur_tratado(part, a, b):
     sea el mas belicoso del par, mas corto el tratado (paz fragil)."""
     agr = max(_agresividad(part, a), _agresividad(part, b))
     return max(1, min(3, jround(3 - 2 * agr)))
+
+
+# ===================================================================
+#  MOVIMIENTO PARCIAL  (la fatiga es POR TROPA, no por provincia)
+# ===================================================================
+# Cada provincia de tierra guarda `agotado`: cuantas de sus tropas YA actuaron
+# este turno (llegaron moviendose, conquistando u ocupando). Las flotas guardan
+# lo mismo en f["a"]. Reglas:
+#   - solo las tropas FRESCAS (ejercito - agotado) pueden salir; las que llegan
+#     a una celda quedan agotadas hasta el proximo turno (asi no hay cadenas de
+#     movimientos larguisimos en un solo turno, ni por tierra ni por mar);
+#   - reclutar produce tropas frescas: aunque la provincia ya haya actuado,
+#     las recien reclutadas SI pueden moverse este mismo turno;
+#   - una provincia puede dar VARIAS ordenes por turno (cada una paga sus 🏃)
+#     mientras le queden tropas frescas por encima de la guarnicion.
+# El campo `movida` se conserva como derivado (compat de guardados y render del
+# front: "actuo y no le queda fuerza fresca").
+def _disp_tierra(p):
+    """Tropas frescas que pueden salir de una provincia de tierra: las no
+    agotadas, dejando siempre al menos 1 de guarnicion."""
+    return max(0, min(p["ejercito"] - 1,
+                      p["ejercito"] - p.get("agotado", 0)))
+
+
+def _sinc_tierra(p):
+    """Tras mutar tropas en tierra, recalcula los derivados: `agotado` nunca
+    excede al ejercito y `movida` marca «actuo y sin fuerza fresca»."""
+    p["agotado"] = max(0, min(p.get("agotado", 0), p["ejercito"]))
+    p["movida"] = p["agotado"] > 0 and _disp_tierra(p) < 1
+
+
+def _llegar_tierra(p, n):
+    """Suma n tropas RECIEN LLEGADAS a una provincia de tierra: entran agotadas
+    (ya gastaron su movimiento del turno)."""
+    p["ejercito"] += n
+    p["agotado"] = p.get("agotado", 0) + n
+    _sinc_tierra(p)
+
+
+def _disp_flota(f):
+    return max(0, f["n"] - f.get("a", 0))
+
+
+def _sinc_flota(f):
+    f["a"] = max(0, min(f.get("a", 0), f["n"]))
+    f["m"] = f["n"] > 0 and f["a"] >= f["n"]
+
+
+def _migrar_actuadas(mapa, part):
+    """COMPATIBILIDAD: guardados anteriores marcaban `movida` por provincia (y
+    f["m"] por flota) sin contador de tropas agotadas. Se sintetiza: si la
+    celda ya actuo, TODAS sus tropas quedan agotadas; si no, ninguna."""
+    for i, p in part["prov"].items():
+        if mapa["prov"][i]["mar"]:
+            for f in p.get("flotas", ()):
+                if "a" not in f:
+                    f["a"] = f["n"] if f.get("m") else 0
+        elif "agotado" not in p:
+            p["agotado"] = p["ejercito"] if p.get("movida") else 0
 
 
 # ===================================================================
@@ -706,13 +790,17 @@ def _flota(part, pid, pais):
 
 
 def _flota_pon(part, pid, pais, n, movida):
-    """Agrega n tropas del pais a la cuenca pid (crea o refuerza su flota)."""
+    """Agrega n tropas del pais a la cuenca pid (crea o refuerza su flota).
+    Con movida=True las recien llegadas entran AGOTADAS (f["a"]), pero las que
+    ya estaban frescas en la flota siguen pudiendo moverse este turno."""
     f = _flota(part, pid, pais)
-    if f:
-        f["n"] += n
-        f["m"] = f["m"] or movida
-    else:
-        _flotas(part, pid).append({"p": pais, "n": int(n), "m": bool(movida)})
+    if not f:
+        f = {"p": pais, "n": 0, "a": 0, "m": False}
+        _flotas(part, pid).append(f)
+    f["n"] += int(n)
+    if movida:
+        f["a"] = f.get("a", 0) + int(n)
+    _sinc_flota(f)
 
 
 def _sinc_mar(part, pid):
@@ -760,10 +848,12 @@ def _resolver_choques_mar(mapa, part, a, b):
         nom = mapa["prov"][i]["nombre"]
         if fA >= fB:
             fa["n"] = max(1, jround(fa["n"] * (fA - fB) / fA))
+            _sinc_flota(fa)
             p["flotas"] = [f for f in _flotas(part, i) if f["p"] != b]
             gan, per = a, b
         else:
             fb["n"] = max(1, jround(fb["n"] * (fB - fA) / fB))
+            _sinc_flota(fb)
             p["flotas"] = [f for f in _flotas(part, i) if f["p"] != a]
             gan, per = b, a
         _sinc_mar(part, i)
@@ -809,27 +899,30 @@ def _normalizar_mar(mapa, part, pid):
 
 
 def _tropas_disponibles(mapa, part, origen, actor):
-    """Tropas que `actor` puede sacar de `origen` (toda la flota en el mar; la
-    guarnicion menos 1 en tierra). El actor puede no ser el dueno mayoritario de
-    una cuenca compartida: por eso se pasa explicito y no se deduce del dueno."""
+    """Tropas FRESCAS que `actor` puede sacar de `origen` (las no agotadas de
+    su flota en el mar; las no agotadas menos 1 de guarnicion en tierra). El
+    actor puede no ser el dueno mayoritario de una cuenca compartida: por eso
+    se pasa explicito y no se deduce del dueno."""
     if mapa["prov"][origen]["mar"]:
         f = _flota(part, origen, actor)
-        return f["n"] if f else 0
-    return part["prov"][origen]["ejercito"] - 1
+        return _disp_flota(f) if f else 0
+    return _disp_tierra(part["prov"][origen])
 
 
 def _quitar_origen(mapa, part, origen, actor, k):
-    """Descuenta k tropas de `actor` en `origen` y marca movida esa fuerza."""
+    """Descuenta k tropas FRESCAS de `actor` en `origen`. Las agotadas que ya
+    actuaron se quedan: solo la fuerza fresca viaja, asi la misma celda puede
+    seguir dando ordenes con lo que le quede fresco (movimiento parcial)."""
     if mapa["prov"][origen]["mar"]:
         f = _flota(part, origen, actor)
         if f:
             f["n"] -= k
-            f["m"] = True
+            _sinc_flota(f)
         _sinc_mar(part, origen)
     else:
         A = part["prov"][origen]
         A["ejercito"] -= k
-        A["movida"] = True
+        _sinc_tierra(A)
 
 
 def _mover_a(mapa, part, origen, destino, actor, n):
@@ -844,8 +937,8 @@ def _mover_a(mapa, part, origen, destino, actor, n):
         _flota_pon(part, destino, actor, n, True)
         _sinc_mar(part, destino)
     else:
-        D = part["prov"][destino]
-        D["ejercito"] += n
+        # las tropas llegan AGOTADAS: no pueden encadenar otro movimiento
+        _llegar_tierra(part["prov"][destino], n)
     return True
 
 
@@ -895,6 +988,7 @@ def _atacar(mapa, part, origen, destino, naval, n=None, atacante=None):
             return True
         for f in enemigos:                    # la flota enemiga resiste, mermada
             f["n"] = max(1, jround(f["n"] * (fD - fA) / fD))
+            _sinc_flota(f)
         _sinc_mar(part, destino)
         _anotar(part, f"la flota de {nD} resiste el ataque de {nA}", destino)
         return False
@@ -905,7 +999,8 @@ def _atacar(mapa, part, origen, destino, naval, n=None, atacante=None):
         _quitar_origen(mapa, part, origen, atacante, tropas)
         D["dueno"] = atacante
         D["ejercito"] = tropas
-        D["movida"] = True
+        D["agotado"] = tropas          # las ocupantes ya actuaron este turno
+        _sinc_tierra(D)
         _anotar(part, f"{nA} ocupa {nD}", destino)
         return True
 
@@ -925,13 +1020,15 @@ def _atacar(mapa, part, origen, destino, naval, n=None, atacante=None):
         sobran = max(1, jround(tropas * (fA - fD) / fA))
         D["dueno"] = atacante
         D["ejercito"] = sobran
-        D["movida"] = True
+        D["agotado"] = sobran          # las conquistadoras ya actuaron
+        _sinc_tierra(D)
         D["bastion"] = False
         despoblar((tropas - sobran) + defensores, desembarco)
         _anotar(part, f"{nA} conquista {nD}" + (" (desembarco)" if desembarco else ""), destino)
         _comprobar_muerte(mapa, part, defensor)
         return True
     D["ejercito"] = max(1, jround(D["ejercito"] * (fD - fA) / fD))
+    _sinc_tierra(D)
     despoblar(tropas + (defensores - D["ejercito"]), False)
     _anotar(part, f"{nD} resiste el ataque de {nA}", destino)
     return False
@@ -1034,11 +1131,13 @@ def _turno_ia(mapa, part, pid):
             return f["n"] if f else 0
         return part["prov"][i]["ejercito"]
 
-    def mimov(i):
+    def midisp(i):
+        """Tropas FRESCAS que la IA puede sacar de la celda (misma regla de
+        movimiento parcial que el jugador)."""
         if mapa["prov"][i]["mar"]:
             f = _flota(part, i, pid)
-            return bool(f and f["m"])
-        return part["prov"][i]["movida"]
+            return _disp_flota(f) if f else 0
+        return _disp_tierra(part["prov"][i])
 
     # mis celdas: tierra propia + toda cuenca donde tengo flota (aun minoritaria)
     mias = [i for i, p in part["prov"].items()
@@ -1046,7 +1145,11 @@ def _turno_ia(mapa, part, pid):
             or (mapa["prov"][i]["mar"] and _flota(part, i, pid))]
     if not mias:
         return
-    pais["dinero"] += jround(_ingreso_pais(mapa, part, pid) * dif["eco"])
+    # ingreso (con la ayuda economica de la dificultad) MENOS el mantenimiento
+    # de la milicia; el oro nunca baja de 0 (no hay deuda)
+    pais["dinero"] = max(0, pais["dinero"]
+                         + jround(_ingreso_pais(mapa, part, pid) * dif["eco"])
+                         - _mantenimiento_pais(mapa, part, pid))
     pais["puntos"] = _puntos_max(mapa, part, pid)
     jugador = part["jugador"]
 
@@ -1207,10 +1310,11 @@ def _turno_ia(mapa, part, pid):
             cupo -= 1
 
     # --- reagrupar reservas hacia el frente (o la punta de lanza) ANTES de
-    # atacar, para que el gran cumulo pueda golpear este mismo turno ---
+    # atacar; con el movimiento parcial las que LLEGAN quedan agotadas (el
+    # golpe lo da la fuerza fresca local del borde; el refuerzo pega al
+    # siguiente turno) ---
     interior = [i for i in mias if not mapa["prov"][i]["mar"]
-                and not part["prov"][i]["movida"]
-                and part["prov"][i]["ejercito"] > 6 and i not in bordes]
+                and _disp_tierra(part["prov"][i]) > 5 and i not in bordes]
     borde_set = set(bordes)
     for i in interior:
         if pais["puntos"] < PA_MOV:
@@ -1230,11 +1334,10 @@ def _turno_ia(mapa, part, pid):
                 elif part["prov"][v]["ejercito"] > part["prov"][destino]["ejercito"] \
                         and not (destino in borde_set and v not in borde_set):
                     destino = v
-        enviar = p["ejercito"] - (0 if mapa["prov"][i]["mar"] else 1)
-        part["prov"][destino]["ejercito"] += enviar
+        enviar = _disp_tierra(p)
         p["ejercito"] -= enviar
-        p["movida"] = True
-        _normalizar_mar(mapa, part, i)
+        _sinc_tierra(p)
+        _llegar_tierra(part["prov"][destino], enviar)
         pais["puntos"] -= PA_MOV
 
     # --- atacar: eleccion de blanco segun `objetivo`; la punta de lanza va a
@@ -1243,7 +1346,8 @@ def _turno_ia(mapa, part, pid):
     for i in mias:
         p = part["prov"][i]
         mi = mif(i)
-        if mimov(i) or mi < dif["minAtq"]:
+        disp = midisp(i)              # solo la fuerza FRESCA puede atacar
+        if disp < dif["minAtq"]:
             continue
         if pais["puntos"] < PA_MOV:
             break
@@ -1255,7 +1359,7 @@ def _turno_ia(mapa, part, pid):
                 continue
         best = None       # (score, v, naval)
 
-        def mirar(v, naval, _mi=mi, _pmar=p_mar, _spear=es_spear):
+        def mirar(v, naval, _disp=disp, _pmar=p_mar, _spear=es_spear):
             nonlocal best
             o = part["prov"].get(v)
             if not o:
@@ -1283,8 +1387,7 @@ def _turno_ia(mapa, part, pid):
                 defval = o["ejercito"]
                 objdueno = o["dueno"]
                 bast = (1 + part["ajustes"]["bastion"] / 100) if o["bastion"] else 1
-            eff = (_mi - (0 if _pmar else 1)) * \
-                (PENA_NAVAL if (naval or (_pmar and not o_mar)) else 1)
+            eff = _disp * (PENA_NAVAL if (naval or (_pmar and not o_mar)) else 1)
             umbral = max(defval, 0.5) * BONO_DEFENSA * bast * dif["margen"]
             if eff <= umbral:
                 return
@@ -1321,7 +1424,10 @@ def _fin_de_turno(mapa, part):
     """Cobra el ingreso del jugador, resuelve la IA de todos los paises,
     aplica crecimiento de poblacion y renueva puntos: un turno global."""
     jugador = part["jugador"]
-    part["paises"][jugador]["dinero"] += _ingreso_pais(mapa, part, jugador)
+    # ingreso NETO: producir de las provincias menos mantener la milicia
+    # (MANTEN_TROPA por tropa); el oro nunca baja de 0
+    part["paises"][jugador]["dinero"] = max(
+        0, part["paises"][jugador]["dinero"] + _ingreso_neto(mapa, part, jugador))
     ias = [p["id"] for p in mapa["paises"]
            if p["id"] != jugador and part["paises"][p["id"]]["ia"]
            and part["paises"][p["id"]]["vivo"]]
@@ -1333,8 +1439,10 @@ def _fin_de_turno(mapa, part):
     crec = 1 + part["ajustes"]["recup"] / 100
     for p in part["prov"].values():
         p["movida"] = False
+        p["agotado"] = 0                 # todas las tropas amanecen frescas
         for f in p.get("flotas", ()):    # cada flota de la cuenca vuelve a poder actuar
             f["m"] = False
+            f["a"] = 0
         p["pob"] = jround(p["pob"] * crec)
     part["turno"] += 1
     # los tratados de no agresion caducan: un turno global menos cada uno
@@ -1358,7 +1466,7 @@ def _registrar_historia(mapa, part):
                   if not mapa["prov"][i]["mar"] and pr["dueno"] == pid)
         _, ej = _resumen_pais(mapa, part, pid)
         datos[str(pid)] = {"pob": jround(pob), "mil": ej,
-                           "oro": _ingreso_pais(mapa, part, pid)}
+                           "oro": _ingreso_neto(mapa, part, pid)}
     part["historia"].append({"turno": part["turno"], "datos": datos})
 
 
@@ -1455,7 +1563,11 @@ def _estado_visible(mapa, part, con_eventos=False):
             item["dinero"] = pp["dinero"]
             item["puntos"] = pp["puntos"]
             item["puntosMax"] = _puntos_max(mapa, part, jugador)
-            item["ingreso"] = _ingreso_pais(mapa, part, jugador)
+            # ingreso NETO (ya con el mantenimiento de la milicia descontado);
+            # el desglose viaja aparte para rotular la barra
+            item["ingreso"] = _ingreso_neto(mapa, part, jugador)
+            item["ingresoBruto"] = _ingreso_pais(mapa, part, jugador)
+            item["mantenimiento"] = _mantenimiento_pais(mapa, part, jugador)
         paises.append(item)
     prov = []
     for i, p in part["prov"].items():
@@ -1467,7 +1579,9 @@ def _estado_visible(mapa, part, con_eventos=False):
         # de cada flota para que el front sepa cual ya actuo este turno
         flotas = None
         if es_mar and visible:
-            flotas = [{"p": f["p"], "n": f["n"], "m": f["m"]}
+            # `d` = tropas frescas de la flota (movimiento parcial)
+            flotas = [{"p": f["p"], "n": f["n"], "m": f["m"],
+                       "d": _disp_flota(f)}
                       for f in _flotas(part, i)]
         prov.append({
             "id": i, "dueno": p["dueno"],
@@ -1475,6 +1589,8 @@ def _estado_visible(mapa, part, con_eventos=False):
             # el mapa politico es publico, sus numeros no
             "pob": p["pob"] if visible else None,
             "ejercito": p["ejercito"] if visible else None,
+            # tropas FRESCAS que aun pueden salir (solo provincias propias)
+            "disp": _disp_tierra(p) if propia else None,
             "flotas": flotas,
             "movida": p["movida"], "bastion": p["bastion"],
             "torre": p["torre"], "puerto": p["puerto"], "visible": visible,
@@ -1519,7 +1635,7 @@ def _datos_mapa(mapa):
     navales = {str(k): sorted(v) for k, v in mapa["navales"].items()}
     # precios para ROTULAR los botones (no son la logica: solo etiquetas que
     # el front muestra; el servidor sigue siendo quien valida cada gasto)
-    precios = {"tropa": COSTO_TROPA,
+    precios = {"tropa": COSTO_TROPA, "manten": MANTEN_TROPA,
                "edif": {k: {"nombre": e["nombre"], "icono": e["icono"],
                             "costo": e["costo"]} for k, e in EDIF.items()},
                "pa": {"mov": PA_MOV, "naval": PA_NAVAL,
@@ -1570,6 +1686,7 @@ def manejar_get(handler, url):
                 handler._json({"existe": False})
                 return True
             _migrar_mar(mapa, part)      # compat: cuencas sin lista de flotas
+            _migrar_actuadas(mapa, part)  # compat: fatiga por provincia -> por tropa
             handler._json(_estado_visible(mapa, part))
         return True
     handler._json({"error": "no existe"}, 404)
@@ -1618,6 +1735,7 @@ def manejar_post(handler, ruta, datos):
             handler._json({"error": "no hay partida"}, 404)
             return True
         _migrar_mar(mapa, part)          # compat: cuencas sin lista de flotas
+        _migrar_actuadas(mapa, part)     # compat: fatiga por provincia -> por tropa
         part["_eventos"] = []
 
         if ruta == "/api/juego/orden":
@@ -1688,19 +1806,20 @@ def _procesar_orden(mapa, part, datos):
         A_mar = mapa["prov"][origen]["mar"]
         D_mar = mapa["prov"][destino]["mar"]
         # tropas propias en el origen: flota del jugador (mar) o guarnicion (tierra)
+        # MOVIMIENTO PARCIAL: solo cuenta la fuerza FRESCA (no agotada); una
+        # celda que ya actuo puede seguir ordenando con lo que le quede fresco
+        # (p. ej. tropas recien reclutadas o que no se enviaron antes)
         if A_mar:
             fa = _flota(part, origen, jugador)
-            if not fa or fa["m"]:
-                return False, "sin flota disponible aqui"
-            disp = fa["n"]
+            disp = _disp_flota(fa) if fa else 0
             if disp < 1:
-                return False, "sin flota disponible aqui"
+                return False, "sin flota fresca disponible aqui"
         else:
-            if A["dueno"] != jugador or A["movida"]:
+            if A["dueno"] != jugador:
                 return False, "origen invalido"
-            if A["ejercito"] < 2:
-                return False, "sin tropas para mover"
-            disp = A["ejercito"] - 1
+            disp = _disp_tierra(A)
+            if disp < 1:
+                return False, "sin tropas frescas para mover"
         es_vecino = destino in mapa["vecinos"].get(origen, set())
         es_naval_dest = destino in mapa["navales"].get(origen, set())
         if not es_vecino and not es_naval_dest:
@@ -1761,7 +1880,8 @@ def _procesar_orden(mapa, part, datos):
             return False, "no puedes reclutar tantas"
         yo["dinero"] -= costo
         yo["puntos"] -= PA_REC
-        p["ejercito"] += n
+        p["ejercito"] += n          # las reclutas entran FRESCAS: pueden moverse
+        _sinc_tierra(p)             # este mismo turno aunque la provincia actuara
         p["pob"] -= n * HAB_TROPA
         _anotar(part, f"reclutas {n} tropas en {mapa['prov'][pid]['nombre']}", pid)
         return True, "reclutado"
@@ -1779,6 +1899,7 @@ def _procesar_orden(mapa, part, datos):
             return False, "debe quedar al menos 1 tropa"
         yo["puntos"] -= PA_REC
         p["ejercito"] -= nn
+        _sinc_tierra(p)
         p["pob"] += nn * HAB_TROPA
         _anotar(part, f"disuelves {nn} tropas en {mapa['prov'][pid]['nombre']}", pid)
         return True, "disuelto"

@@ -303,7 +303,7 @@
 <header id="barra">
   <span class="pais" id="ui-pais">—</span>
   <span class="dinero">🪙 <span id="ui-dinero">0</span></span>
-  <span class="ingreso">+<span id="ui-ingreso">0</span>/turno</span>
+  <span class="ingreso" id="ui-ingreso-caja"><span id="ui-ingreso">+0</span>/turno</span>
   <span>⚔ <span id="ui-ejercito">0</span></span>
   <span title="puntos de acción: se gastan al mover, atacar, reclutar y construir">
     🏃 <span id="ui-pa">0</span></span>
@@ -553,8 +553,8 @@
   const veTropas = p => p.dueno === st.jugador || p.visible;
   const tropasTxt = p => p.ejercito == null ? "?" : String(p.ejercito);
   // ---- flotas del mar (coexistencia de países EN PAZ en la misma cuenca) ----
-  // el servidor manda p.flotas = [{p:pais, n:tropas, m:movida}] cuando la celda
-  // es visible; dueno/ejercito de la celda son la flota MAYORITARIA
+  // el servidor manda p.flotas = [{p:pais, n:tropas, m:movida, d:frescas}]
+  // cuando la celda es visible; dueno/ejercito son la flota MAYORITARIA
   const miFlota = p => (p.mar && p.flotas) ? p.flotas.find(f => f.p === st.jugador) : null;
   const miFlotaN = p => { const f = miFlota(p); return f ? f.n : 0; };
   // ¿hay una flota ENEMIGA (país en guerra conmigo) en esta cuenca?
@@ -562,9 +562,20 @@
       p.flotas.some(f => f.p !== st.jugador && enGuerra(st.jugador, f.p)));
   // ¿puedo dar órdenes desde esta celda? tierra propia o cuenca con flota mía
   const esMio = p => p ? (p.mar ? miFlotaN(p) > 0 : p.dueno === st.jugador) : false;
-  // tropas propias disponibles en la celda / si ya actuó mi fuerza este turno
+  // tropas propias en la celda / tropas FRESCAS que aún pueden salir este
+  // turno (movimiento parcial: las que llegan se agotan, las reclutas y las
+  // que no se enviaron siguen libres); si el servidor no manda disp/d
+  // (estado viejo en caché) se cae a la regla antigua por celda
   const misTropas = p => p.mar ? miFlotaN(p) : p.ejercito;
-  const yaMovi = p => p.mar ? (miFlota(p) ? !!miFlota(p).m : false) : p.movida;
+  const tropasLibres = p => {
+    if (p.mar) {
+      const f = miFlota(p);
+      return f ? (f.d != null ? f.d : (f.m ? 0 : f.n)) : 0;
+    }
+    if (p.disp != null) return p.disp;
+    return p.movida ? 0 : Math.max(0, (p.ejercito || 0) - 1);
+  };
+  const yaMovi = p => tropasLibres(p) < 1;
   // ¿el destino es un ataque (tierra enemiga/neutral con tropas, o flota enemiga
   // en el mar) o un movimiento (tierra propia, o entrar a un mar en paz)?
   const esAtaque = D => D.mar ? flotaEnemiga(D)
@@ -637,7 +648,7 @@
                           area: p.area, capital: !!p.capital,
                           costera: !!p.costera, cx: p.cx, cy: p.cy,
                           dueno: p.pais, pob: 0, ejercito: 0, movida: false,
-                          bastion: false, torre: false, puerto: false,
+                          disp: null, bastion: false, torre: false, puerto: false,
                           visible: true, ingreso: null, reclutable: null,
                           flotas: p.mar ? [] : null });
     for (const [k, arr] of Object.entries(mapa.vecinos))
@@ -698,12 +709,14 @@
       if (e.dinero != null) {              // solo llega para el jugador
         p.dinero = e.dinero; p.puntos = e.puntos;
         p.puntosMax = e.puntosMax; p.ingreso = e.ingreso;
+        p.ingresoBruto = e.ingresoBruto; p.mantenimiento = e.mantenimiento;
       }
     }
     for (const e of est.prov || []) {
       const p = st.prov.get(e.id);
       if (!p) continue;
       p.dueno = e.dueno; p.pob = e.pob; p.ejercito = e.ejercito;
+      p.disp = e.disp;   // tropas frescas propias (movimiento parcial)
       p.movida = e.movida; p.bastion = e.bastion; p.torre = e.torre;
       p.puerto = e.puerto; p.visible = e.visible;
       p.ingreso = e.ingreso; p.reclutable = e.reclutable;
@@ -903,8 +916,7 @@
     const p = st.prov.get(id);
     // celda propia con fuerza libre: tierra propia con guarnición, o cuenca
     // marina con flota mía (aunque coexista en paz con otro país)
-    if (!esMio(p) || misTropas(p) == null ||
-        yaMovi(p) || misTropas(p) < (p.mar ? 1 : 2))
+    if (!esMio(p) || misTropas(p) == null || tropasLibres(p) < 1)
       return new Set();
     const pa = st.paises.get(st.jugador).puntos;
     const c = st.precios.pa;
@@ -1095,7 +1107,14 @@
     $("ui-pais").innerHTML =
       `<i class="cuad" style="background:rgb(${yo.rgb.join(",")})"></i>${yo.nombre}`;
     $("ui-dinero").textContent = fmt(yo.dinero);
-    $("ui-ingreso").textContent = fmt(yo.ingreso || 0);
+    // ingreso NETO (ya descontado el mantenimiento de la milicia); en rojo si
+    // el ejército cuesta más de lo que producen las provincias
+    const ing = yo.ingreso || 0;
+    $("ui-ingreso").textContent = (ing >= 0 ? "+" : "−") + fmt(Math.abs(ing));
+    $("ui-ingreso-caja").style.color = ing < 0 ? "var(--rojo)" : "";
+    if (yo.ingresoBruto != null)
+      $("ui-ingreso-caja").title = `provincias +${fmt(yo.ingresoBruto)} · ` +
+        `mantener la milicia −${fmt(yo.mantenimiento || 0)}`;
     $("ui-ejercito").textContent = fmt(yo.ej || 0);
     $("ui-pa").textContent = `${yo.puntos}/${yo.puntosMax || yo.puntos}`;
     $("ui-provincias").textContent = yo.provs || 0;
@@ -1312,13 +1331,20 @@
         if (!pf) continue;
         const rel = f.p === st.jugador ? " (tú)"
           : enGuerra(st.jugador, f.p) ? " ⚔" : " 🕊";
+        const mfd = f.d != null ? f.d : (f.m ? 0 : f.n);   // frescas de la flota
+        const nota = f.p !== st.jugador ? ""
+          : mfd < 1 ? " (actuó)"
+          : mfd < f.n ? ` (${mfd} libres)` : "";
         h += `<div class="fila"><span><i class="cuad" ` +
           `style="background:rgb(${pf.rgb.join(",")})"></i>${pf.nombre}${rel}</span>` +
-          `<b>⚔ ${f.n}${f.p === st.jugador && f.m ? " (actuó)" : ""}</b></div>`;
+          `<b>⚔ ${f.n}${nota}</b></div>`;
       }
     } else {
-      h += `<div class="fila"><span>tropas</span><b>${tropasTxt(p)}` +
-           `${mia && !p.mar && p.movida ? " (ya actuó)" : ""}</b></div>`;
+      const libres = tropasLibres(p);
+      const nota = !mia || p.mar ? ""
+        : libres < 1 ? (p.movida ? " (ya actuó)" : "")
+        : libres < (p.ejercito || 0) - 1 ? ` (${libres} libres)` : "";
+      h += `<div class="fila"><span>tropas</span><b>${tropasTxt(p)}${nota}</b></div>`;
     }
     if (!p.mar && p.ingreso != null)
       h += `<div class="fila"><span>ingreso</span><b>+${p.ingreso.toFixed(1)}</b></div>`;
@@ -1361,7 +1387,7 @@
       else if (max < 5)
         h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
              `población insuficiente para reclutar más</div>`;
-      else if (p.ejercito >= 2 && !p.movida)
+      else if (tropasLibres(p) >= 1)
         h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
              `haz clic en una provincia resaltada y elige cuántas tropas enviar</div>`;
     } else if (mia && p.mar && st.fase === "jugando" && pre) {   // flota en el mar
@@ -1370,7 +1396,7 @@
       if (yo.puntos < pre.pa.mov)
         h += `<div style="color:var(--oro);font-size:12px;margin-top:6px">` +
              `sin puntos de acción 🏃 — termina el turno para renovarlos</div>`;
-      else if (miFlotaN(p) >= 1 && !yaMovi(p))
+      else if (tropasLibres(p) >= 1)
         h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
              `haz clic en una provincia resaltada para mover la flota o desembarcar</div>`;
     } else if (!mia && p.mar) {
@@ -1438,7 +1464,7 @@
       avisar(`No te quedan puntos de acción 🏃 para esa orden (cuesta ${costo}).`);
       return true;
     }
-    const max = A.mar ? miFlotaN(A) : A.ejercito - 1;
+    const max = tropasLibres(A);   // solo la fuerza fresca puede salir
     st.orden = { origen: st.sel, destino, naval, costo, n: max, max,
                  ataque: esAtaque(D) };
     pintarOrden(); pintarFlecha();

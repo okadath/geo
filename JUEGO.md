@@ -66,12 +66,21 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
 
 ### Economía
 - Cada provincia da ingreso `1 + población/45000` por turno.
-- El oro del país es la suma de sus provincias; se cobra al terminar el turno.
+- **Mantener la milicia cuesta oro**: cada tropa del país (guarniciones y
+  flotas) descuenta `MANTEN_TROPA = 0.1` de oro por turno del ingreso. El
+  ingreso NETO (el que muestra la barra, con desglose en el tooltip) puede ser
+  negativo si el ejército es desmedido; el oro nunca baja de 0 (no hay deuda).
+  La IA paga el mismo mantenimiento (su multiplicador `eco` solo ayuda al
+  ingreso bruto).
+- El oro del país es la suma de sus provincias menos el mantenimiento; se
+  cobra al terminar el turno.
 - **Reclutar** cuesta `3 de oro por tropa` (botones +5 / +25 en la ficha).
 
 ### Puntos de acción 🏃 (separados del oro)
-- Cada país tiene `min(30, 4 + provincias/2)` puntos por turno; se renuevan al
-  empezar tu turno. La IA juega con la misma regla.
+- Cada país tiene `min(30, 4 + provincias/2 + población/150000)` puntos por
+  turno: cuentan las provincias Y la población disponible (un punto extra por
+  cada 150 000 habitantes). Se renuevan al empezar tu turno; la IA juega con
+  la misma regla.
 - Costos: **mover/atacar** 1 punto (2 si es travesía naval), **reclutar** 1
   punto por orden, **construir** (bastión/torre/puerto) 2 puntos.
 - Sin puntos no hay órdenes: los objetivos dejan de resaltarse y los botones se
@@ -90,8 +99,17 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
   para elegir cuántas tropas enviar (siempre queda al menos 1 de guarnición).
 - Confirma (✔ mover / ⚔ atacar) para ejecutar y gastar los puntos, o cancela
   con ✕, `Esc` o clic en el mapa. Atacar a un país en paz **declara la guerra**.
-- Tras actuar, la provincia de origen queda marcada como «ya actuó» este turno
-  (borde tenue), aunque conserve tropas.
+- **Movimiento parcial (la fatiga es POR TROPA, no por provincia):** cada
+  provincia lleva la cuenta de sus tropas **agotadas** (`agotado`; en las
+  flotas, `f.a`). Las tropas que **llegan** a una celda (moviéndose,
+  conquistando u ocupando) quedan agotadas hasta el próximo turno — así no se
+  pueden encadenar movimientos larguísimos en un solo turno, ni por tierra ni
+  por mar. Pero las tropas **frescas** de esa misma celda sí pueden seguir
+  actuando: una provincia puede dar varias órdenes por turno (cada una paga
+  sus 🏃) mientras le quede fuerza fresca por encima de la guarnición, y las
+  **recién reclutadas entran frescas** (aunque la provincia ya haya actuado,
+  pueden moverse este mismo turno). El slider solo ofrece las frescas; la
+  ficha muestra «N libres» / «ya actuó». La IA juega con la misma regla.
 - **El mar es transitable:** las tropas pueden moverse a las cuencas marinas
   vecinas como si fueran provincias. El mar libre (sin flota) se **ocupa sin
   batalla**; una flota enemiga en el mar se combate con la lógica normal. En
@@ -188,6 +206,8 @@ inalcanzable/inconquistable. Los enlaces sintéticos son vecinos normales
 
 ```python
 COSTO_TROPA = 3       # oro por tropa reclutada
+MANTEN_TROPA = 0.1    # oro por tropa y turno (mantenimiento de la milicia)
+PA_POR_POB = 150000   # habitantes por punto de acción extra
 BONO_DEFENSA = 1.2    # ventaja del defensor
 PENA_NAVAL = 0.72     # penalización al desembarcar
 PA_MOV, PA_NAVAL = 1, 2   # puntos de acción por orden
