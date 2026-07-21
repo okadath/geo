@@ -57,13 +57,15 @@
 .ws-zoom .btn { min-width: 2.2em; padding-inline: 0.5em; }
 .ws-zoom-val { font-size: var(--txt-sm); color: var(--oro-claro); min-width: 3.2em; text-align: center; }
 
-/* --- barra de modos --- */
+/* --- barra de modos (barra de sección pegada bajo el nav) --- */
 .ws-modos {
   display: flex;
   align-items: center;
   gap: var(--e4);
   padding: var(--e3) var(--e5);
   flex-wrap: wrap;
+  background: var(--fondo-2);
+  border-bottom: 1px solid var(--borde-suave);
 }
 .ws-estado { font-size: var(--txt-sm); }
 .ws-estado.es-error { color: var(--rojo); }
@@ -102,10 +104,14 @@
   border: 1px solid var(--borde);
   background: #0a0d13;
   cursor: grab;
-  width: auto;
-  height: min(100%, calc(100vh - 62px - 150px));
-  aspect-ratio: var(--ar, 1);
+  /* mapas panorámicos 2:1: el ancho manda y el alto sale del aspecto real
+     (--ar lo fija el JS con nx/ny); max-height evita que un mapa casi
+     cuadrado (compatibilidad 1:1) desborde el alto de la ventana */
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--ar, 2 / 1);
   max-width: 100%;
+  max-height: calc(100vh - 62px - 150px);
   touch-action: none;
   box-shadow: var(--sombra);
 }
@@ -270,19 +276,6 @@ body[data-modo="battlemap"] .vs.puntear { cursor: crosshair; }
 
 .bm-export-botones { display: grid; grid-template-columns: 1fr 1fr; gap: var(--e2); }
 .bm-export-botones .btn { font-size: var(--txt-xs); }
-
-/* ==========================================================================
-   Modo Conquistar
-   ========================================================================== */
-.cq-caja { gap: var(--e4); }
-.cq-pitch { font-size: var(--txt-base); color: var(--tinta); }
-.cq-partida {
-  border: 1px solid var(--oro-hondo);
-  background: var(--oro-t);
-  border-radius: var(--radio);
-  padding: var(--e3);
-  font-size: var(--txt-sm);
-}
 
 /* ==========================================================================
    Responsive: en pantallas chicas el panel pasa debajo del mapa

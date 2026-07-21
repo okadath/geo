@@ -22,6 +22,10 @@ function _qs(params) {
 }
 
 // Lanza Error con el mensaje {error} del JSON del servidor si !res.ok.
+// Para 403 (requiere plan) y 429 (limite), ademas muestra un aviso no intrusivo
+// con enlace a /cuenta y marca el Error como `.manejado` para que el llamador
+// no duplique el mensaje. El gating es SIEMPRE del servidor (ADR-007): aqui solo
+// se reacciona a lo que el servidor niega, nunca se bloquea nada en JS.
 async function _revisar(res) {
   if (res.ok) return res;
   let msg = `HTTP ${res.status}`;
@@ -31,7 +35,44 @@ async function _revisar(res) {
   } catch (_) {
     /* respuesta no-JSON: se queda el "HTTP N" */
   }
-  throw new Error(msg);
+  const err = new Error(msg);
+  err.status = res.status;
+  if (res.status === 403 || res.status === 429) {
+    err.manejado = true;
+    avisarLimite(res.status, msg);
+  }
+  throw err;
+}
+
+// avisarLimite(status, mensaje) — banner/toast efímero del estilo de ui.js
+// (clases .avisos/.aviso de base.css) con enlace a /cuenta. Autocontenido para
+// funcionar en cualquier página sin importar ui.js. Exportado por si mundo.js
+// necesita señalar un límite de una imagen que no pasa por _revisar.
+export function avisarLimite(status, mensaje) {
+  let caja = document.querySelector(".avisos");
+  if (!caja) {
+    caja = document.createElement("div");
+    caja.className = "avisos";
+    document.body.appendChild(caja);
+  }
+  const cta = status === 403
+    ? "Este mundo necesita un plan Pro."
+    : "Alcanzaste el límite de renders por ahora.";
+  const el = document.createElement("div");
+  el.className = "aviso aviso-info";
+  el.setAttribute("role", "status");
+  el.innerHTML =
+    `<span>${mensaje && mensaje !== `HTTP ${status}` ? mensaje : cta} ` +
+    `<a href="/cuenta">Ver mi cuenta</a></span>`;
+  caja.appendChild(el);
+  const quitar = () => {
+    el.classList.add("saliendo");
+    setTimeout(() => el.remove(), 300);
+  };
+  setTimeout(quitar, 7000);
+  el.addEventListener("click", (e) => {
+    if (e.target.tagName !== "A") quitar();
+  });
 }
 
 async function _getJSON(url) {

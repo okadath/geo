@@ -1,0 +1,38 @@
+# Caddyfile.ejemplo — reverse proxy con HTTPS automatico hacia el uvicorn local.
+#
+# Copia este archivo a /etc/caddy/Caddyfile (o usa `caddy run --config`) y
+# cambia el dominio. Caddy obtiene y renueva el certificado TLS solo (Let's
+# Encrypt), termina HTTPS y reenvia a la app que escucha en 127.0.0.1:8000.
+#
+# La app (uvicorn servidor.app:app) NO debe exponerse directo a internet: se
+# ata a 127.0.0.1 y solo Caddy la alcanza. Ver DESPLIEGUE.md y PLATAFORMA.md §2.
+
+mundaria.example.com {
+	# reverse proxy a la app local (uvicorn --host 127.0.0.1 --port 8000)
+	reverse_proxy 127.0.0.1:8000
+
+	# subir el limite de subida no hace falta: el front solo manda JSON chico;
+	# los PNG pesados los GENERA el servidor y los sirve el, no se suben.
+
+	# compresion de las respuestas de texto (HTML/JS/CSS/JSON)
+	encode zstd gzip
+
+	# cabeceras de seguridad basicas
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# la app ya manda Cache-Control: no-store en el JSON; aqui no se toca
+	}
+
+	# log de acceso a un archivo rotado por Caddy
+	log {
+		output file /var/log/caddy/mundaria.log
+		format console
+	}
+}
+
+# --- redireccion opcional de www -> apex (descomentar si se usa www) ---
+# www.mundaria.example.com {
+# 	redir https://mundaria.example.com{uri} permanent
+# }

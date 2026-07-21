@@ -4,3 +4,6 @@ salidas/
 semillas.json
 mundos/
 imgs_archivo/
+.venv/
+cuentas.db
+publicos.json

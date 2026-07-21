@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi cuenta — Mundaria</title>
+  <meta name="description" content="Tu sesión, tu plan y tu uso del día en Mundaria. Sube a Pro cuando quieras.">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/cuenta.css">
+</head>
+<body>
+  <main class="contenedor cta-main">
+    <!-- todo el contenido lo pinta cuenta.js según haya sesión o no -->
+    <div id="cuenta" class="cta-raiz" aria-busy="true">
+      <div class="cta-cargando tarjeta">
+        <span class="esqueleto esqueleto-titulo"></span>
+        <span class="esqueleto esqueleto-texto"></span>
+        <span class="esqueleto esqueleto-texto"></span>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="/app/js/cuenta.js"></script>
+</body>
+</html>

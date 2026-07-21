@@ -70,7 +70,7 @@ const DIALES_GEN = [
   ["tiempo", "Tiempo (pasos)", 50, 6000, 50],
   ["cada", "Frame cada N pasos", 1, 50, 1],
   ["ms", "ms por frame", 20, 300, 10],
-  ["resolucion", "Resolución (px)", 96, 512, 32],
+  ["resolucion", "Resolución (px de alto)", 96, 512, 32],
   ["detalle", "Detalle fractal", 0, 1.5, 0.1],
   ["velocidad", "Velocidad de deriva", 2, 40, 1],
   ["mar", "Nivel del mar", 0.35, 0.7, 0.01],
@@ -705,6 +705,9 @@ async function forjar(dlg, gen, det, tituloPreset) {
       aviso("Forja cancelada.", "info");
       return;
     }
+    // 403/429: api.js ya mostró el aviso con enlace a /cuenta; cerrar el
+    // asistente sin duplicar el mensaje (el gating es del servidor, ADR-007).
+    if (e.manejado) { limpiar(); dlg.close(); dlg.remove(); return; }
     fallar(`La forja falló: ${e.message}`);
   }
 }
@@ -810,6 +813,7 @@ async function terminarForja(corrida) {
   } catch (e) {
     limpiar();
     if (cancelado) { dlg.close(); dlg.remove(); aviso("Forja cancelada.", "info"); return; }
+    if (e.manejado) { dlg.close(); dlg.remove(); return; } // 403/429 ya avisado
     ui.zonaError.replaceChildren(h("div.aviso.aviso-error", { role: "alert" }, `Falló: ${e.message}`));
     ui.btnCancelar.textContent = "Cerrar";
     ui.btnCancelar.disabled = false;

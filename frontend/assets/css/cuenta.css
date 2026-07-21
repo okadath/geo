@@ -1,0 +1,185 @@
+/* cuenta.css — página «mi cuenta» (/cuenta). Depende de tokens.css y base.css;
+   aquí SOLO el layout propio (paneles de sesión y tabla de upgrade). Reutiliza
+   .tarjeta/.btn/.campo/.pestanas/.barra-progreso de los componentes comunes.
+   Español en clases y comentarios (ADR-008). */
+
+.cta-main {
+  padding-block: var(--e7) var(--e6);
+  max-width: 760px;
+}
+
+.cta-raiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e6);
+}
+
+/* estado de carga inicial */
+.cta-cargando {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e3);
+}
+
+/* ==========================================================================
+   Panel principal (entrar/registro o resumen de sesión)
+   ========================================================================== */
+.cta-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e4);
+  padding: var(--e6);
+}
+.cta-panel h1 { font-size: var(--txt-2xl); }
+.cta-intro { max-width: 52ch; }
+
+.cta-tabs { align-self: flex-start; }
+.cta-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e4);
+  margin-top: var(--e2);
+}
+.cta-precios-nota { margin-top: var(--e2); }
+
+/* ==========================================================================
+   Cabecera de la sesión: email + insignia de plan
+   ========================================================================== */
+.cta-cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--e4);
+  flex-wrap: wrap;
+}
+.cta-email { color: var(--tinta-suave); margin-top: var(--e1); }
+.cta-plan { align-self: center; }
+.cta-expira { margin-top: calc(-1 * var(--e2)); }
+
+/* uso del día */
+.cta-uso { display: flex; flex-direction: column; gap: var(--e2); }
+.cta-uso-cab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e3);
+}
+.cta-uso-cifra { color: var(--oro-claro); }
+.cta-uso-vacio { margin: 0; }
+
+.cta-acciones {
+  display: flex;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  margin-top: var(--e2);
+}
+
+/* ==========================================================================
+   Tabla de upgrade (precios de /api/pagos/config)
+   ========================================================================== */
+.cta-upgrade { display: flex; flex-direction: column; gap: var(--e3); }
+.cta-upgrade h2 { font-size: var(--txt-xl); }
+.cta-upgrade-intro { max-width: 60ch; margin: 0; }
+
+.cta-planes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--e4);
+  margin-top: var(--e2);
+}
+.cta-plan-tarjeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+  position: relative;
+  padding: var(--e5);
+}
+.cta-plan-destacado {
+  border-color: var(--oro);
+  box-shadow: var(--sombra-oro), var(--sombra-sm);
+}
+.cta-cinta {
+  position: absolute;
+  top: calc(-1 * var(--e3));
+  right: var(--e4);
+}
+.cta-plan-nombre {
+  font-family: var(--serif);
+  color: var(--pergamino);
+  font-size: var(--txt-lg);
+  font-weight: var(--peso-fuerte);
+}
+.cta-plan-ciclo { font-size: var(--txt-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.cta-plan-precio {
+  font-family: var(--serif);
+  font-size: var(--txt-2xl);
+  font-weight: var(--peso-fuerte);
+  color: var(--tinta);
+  margin-bottom: var(--e2);
+}
+.cta-plan-tarjeta .btn { margin-top: auto; }
+
+/* acciones del aviso beta dentro del modal */
+.cta-beta-acciones {
+  display: flex;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  margin-top: var(--e5);
+}
+
+/* ==========================================================================
+   Sección «Partidas» (historial del juego de conquista)
+   ========================================================================== */
+.cta-partidas { display: flex; flex-direction: column; gap: var(--e3); }
+.cta-partidas h2 { font-size: var(--txt-xl); }
+.cta-part-grupo {
+  font-size: var(--txt-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tinta-suave);
+  margin-top: var(--e2);
+}
+.cta-part-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+}
+.cta-part-fila {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  padding: var(--e3) var(--e4);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--panel);
+}
+.cta-part-fecha { font-size: var(--txt-xs); min-width: 8ch; }
+.cta-part-mundo { font-size: var(--txt-xs); color: var(--tinta-suave); }
+.cta-part-turno { font-size: var(--txt-xs); }
+.cta-part-dif {
+  font-size: var(--txt-xs);
+  text-transform: capitalize;
+  color: var(--oro-claro);
+}
+.cta-part-estado {
+  font-size: var(--txt-xs);
+  font-weight: var(--peso-fuerte);
+}
+.cta-part-estado.es-curso { color: var(--tinta-suave); }
+.cta-part-estado.es-victoria { color: var(--oro); }
+.cta-part-estado.es-derrota { color: var(--rojo); }
+.cta-part-abrir { margin-left: auto; }
+.cta-part-vacio { margin: 0; }
+
+/* ==========================================================================
+   Responsivo
+   ========================================================================== */
+@media (max-width: 560px) {
+  .cta-planes { grid-template-columns: 1fr; }
+  .cta-panel { padding: var(--e5); }
+  .cta-part-abrir { margin-left: 0; }
+}

@@ -32,7 +32,7 @@ export function crearVisor({ sello, d, elVisor }) {
   // ---- estado (solo presentación) ----
   const st = {
     scale: 1, tx: 0, ty: 0,
-    nx: 1536, ny: 1536,            // resolución (coords de mundo del detalle)
+    nx: 1536, ny: 768,             // resolución (coords de mundo del detalle; 2:1 por defecto)
     semilla: d,
     paleta: "claro",
     calidad: 1,
@@ -246,12 +246,15 @@ export function crearVisor({ sello, d, elVisor }) {
     ctx.clearRect(0, 0, pin.width, pin.height);
     if (!st.punto) return;
     const z = Math.max(1, st.scale);       // tamaño constante en pantalla
-    const r = Math.max(3, st.nx / 90 / z);
+    // los símbolos se derivan del eje menor para que un mundo 2:1 tenga pines
+    // proporcionados al alto, no al doble de ancho
+    const m = Math.min(st.nx, st.ny);
+    const r = Math.max(3, m / 90 / z);
     ctx.lineCap = "round";
     for (let paso = 0; paso < 2; paso++) {
       ctx.strokeStyle = paso === 0 ? "rgba(0,0,0,0.6)" : "#d4a94e";
-      ctx.lineWidth = paso === 0 ? Math.max(1, st.nx / 300 / z)
-                                 : Math.max(0.6, st.nx / 600 / z);
+      ctx.lineWidth = paso === 0 ? Math.max(1, m / 300 / z)
+                                 : Math.max(0.6, m / 600 / z);
       ctx.beginPath();
       ctx.moveTo(st.punto.rx - r, st.punto.ry - r);
       ctx.lineTo(st.punto.rx + r, st.punto.ry + r);
@@ -270,7 +273,7 @@ export function crearVisor({ sello, d, elVisor }) {
   return Object.assign(api, {
     // arranca el visor con la resolución del detalle (de _capas.json).
     cargar(resolucion) {
-      [st.nx, st.ny] = resolucion || [1536, 1536];
+      [st.nx, st.ny] = resolucion || [1536, 768];
       elVisor.style.setProperty("--ar", `${st.nx} / ${st.ny}`);
       st.listo = true;
       aplicar();

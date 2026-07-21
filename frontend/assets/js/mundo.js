@@ -6,7 +6,7 @@
 
 import { montarNav, montarPie } from "./nav.js";
 import {
-  RE_SELLO, RE_STEM, capas, rotulos, guardarRotulos,
+  RE_SELLO, RE_STEM, capas, rotulos, guardarRotulos, avisarLimite,
 } from "./api.js";
 import { crearVisor } from "./visor.js";
 import { crearBattlemap } from "./battlemap.js";
@@ -18,12 +18,10 @@ const TXT = {
   errCapas: "No se pudo leer el detalle de este mundo (¿fue borrado?). Vuelve al Estudio.",
   pistaExplorar: "rueda = zoom · arrastrar = paneo · +/− = zoom · 0 = restablecer",
   pistaBattlemap: "clic en el mapa = elegir el lugar del encuentro · rueda = zoom · arrastrar = paneo",
-  pistaConquistar: "el mundo completo se juega por turnos",
   rotCargando: "cargando rótulos…",
   rotVacio: "este detalle no tiene rótulos.",
   rotGuardados: (n) => `rótulos guardados (${n} cambios).`,
   rotRestaurados: "rótulos restaurados.",
-  partidaEnCurso: (t) => `Partida en curso — turno ${t}`,
 };
 const TIPO_NOMBRE = { asent: "Asentamientos", pais: "Países", mar: "Mares", rio: "Ríos" };
 
@@ -66,7 +64,6 @@ async function arrancar() {
   $(".ws-mundo").textContent = nombreMundo(d);
   $("#ws-sello").textContent = `${sello} · ${d}`;
   document.title = `${nombreMundo(d)} — Mundaria`;
-  $(".cq-jugar").href = `/juego?sello=${encodeURIComponent(sello)}&d=${encodeURIComponent(d)}`;
 
   // resolución del detalle: la necesita el visor y la conversión de coordenadas.
   let info;
@@ -104,11 +101,17 @@ function cablearModos(visor, battlemap) {
   const pestanas = document.querySelectorAll(".pestanas .pestana");
   const paneles = document.querySelectorAll(".ws-modo-panel");
   const pistas = {
-    explorar: TXT.pistaExplorar, battlemap: TXT.pistaBattlemap, conquistar: TXT.pistaConquistar,
+    explorar: TXT.pistaExplorar, battlemap: TXT.pistaBattlemap,
   };
   let actual = "explorar";
 
   function ir(modo) {
+    // conquistar ya no es un panel: es el videojuego, otra página (misma
+    // pestaña del navegador). Salimos de aquí sin marcar pestaña activa.
+    if (modo === "conquistar") {
+      location.href = `/juego?sello=${encodeURIComponent(sello)}&d=${encodeURIComponent(d)}`;
+      return;
+    }
     if (modo === actual) return;
     // salir del modo anterior
     if (actual === "battlemap") battlemap.desactivar();
@@ -123,16 +126,15 @@ function cablearModos(visor, battlemap) {
     document.body.dataset.modo = modo;
     $("#vs-pista").textContent = pistas[modo] || "";
     if (modo === "battlemap") battlemap.activar();
-    if (modo === "conquistar") revisarPartida();
   }
 
   for (const p of pestanas) p.addEventListener("click", () => ir(p.dataset.modo));
   document.body.dataset.modo = "explorar";
 
-  // deep-link: ?modo=battlemap|conquistar abre el workspace en ese modo
-  // (destino de las redirecciones de /batalla y de los accesos directos)
+  // deep-link: ?modo=battlemap abre el workspace en ese modo; ?modo=conquistar
+  // redirige al videojuego (así los enlaces viejos siguen funcionando)
   const inicial = q.get("modo");
-  if (inicial in pistas) ir(inicial);
+  if (inicial === "conquistar" || inicial in pistas) ir(inicial);
 }
 
 // ============================================================================
@@ -278,6 +280,14 @@ function cablearExport(visor) {
     const cerrar = aviso(`horneando PNG en el servidor (${px} px)… los grandes tardan`, "info", 0);
     try {
       const r = await fetch(url);
+      if (r.status === 403 || r.status === 429) {
+        // gating del servidor (ADR-007): aviso no intrusivo con enlace a /cuenta
+        cerrar();
+        let msg = "";
+        try { msg = (await r.json()).error || ""; } catch (_) { /* */ }
+        avisarLimite(r.status, msg);
+        return;
+      }
       if (!r.ok) throw new Error("HTTP " + r.status);
       const blob = await r.blob();
       const sem = (visor.semilla || d).replace(/[^0-9a-zA-Z_-]+/g, "_").slice(0, 24);
@@ -293,31 +303,6 @@ function cablearExport(visor) {
       aviso("no se pudo exportar: " + e.message, "error");
     } finally { exportando = false; }
   });
-}
-
-// ============================================================================
-//  MODO CONQUISTAR: pitch + jugar + partida existente
-//  El botón «Jugar» es un enlace normal a /juego?sello&d (misma pestaña); solo
-//  revisamos si ya existe una partida para ofrecer «Continuar».
-// ============================================================================
-let partidaRevisada = false;
-async function revisarPartida() {
-  if (partidaRevisada) return;
-  partidaRevisada = true;
-  try {
-    const p = new URLSearchParams({ sello, d });
-    const r = await fetch(`/api/juego/estado?${p}`, { headers: { Accept: "application/json" } });
-    if (!r.ok) return;
-    const est = await r.json();
-    if (est && est.existe) {
-      const caja = $(".cq-partida");
-      caja.classList.remove("oculto");
-      caja.innerHTML =
-        `<div class="cq-encurso"><b>${TXT.partidaEnCurso(est.turno)}</b>` +
-        (est.resultado ? ` <span class="tenue">(${est.resultado})</span>` : "") + `</div>`;
-      $(".cq-jugar").textContent = "▶ Continuar partida";
-    }
-  } catch (_) { /* sin partida: se queda el pitch */ }
 }
 
 // ============================================================================

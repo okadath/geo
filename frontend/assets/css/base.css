@@ -585,6 +585,23 @@ dialog.modal::backdrop { background: rgba(6, 10, 18, 0.72); backdrop-filter: blu
 .nav-enlace:hover { color: var(--tinta); background: var(--panel-2); }
 .nav-enlace.activa { color: var(--oro-claro); background: var(--oro-t); }
 
+/* estado de sesión en la barra (montado por nav.js tras GET /api/cuenta) */
+.nav-sesion-activa {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e2);
+}
+.nav-sesion-email {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-sesion-plan { text-transform: none; }
+@media (max-width: 640px) {
+  .nav-sesion-email { display: none; }
+}
+
 .pie {
   border-top: 1px solid var(--borde-suave);
   margin-top: var(--e8);

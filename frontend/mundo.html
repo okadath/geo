@@ -23,6 +23,16 @@
   <!-- workspace -->
   <div class="ws oculto" id="ws">
 
+    <!-- barra de modos -->
+    <div class="ws-modos">
+      <div class="pestanas" role="tablist" aria-label="modo del workspace">
+        <button class="pestana activa" data-modo="explorar" role="tab" aria-selected="true">🗺️ Explorar</button>
+        <button class="pestana" data-modo="battlemap" role="tab" aria-selected="false">⚔️ Battlemap</button>
+        <button class="pestana" data-modo="conquistar" role="tab" aria-selected="false">👑 Conquistar</button>
+      </div>
+      <span class="ws-estado tenue" id="ws-estado"></span>
+    </div>
+
     <!-- cabecera compacta del mundo -->
     <header class="ws-cab">
       <a class="ws-volver" href="/estudio" title="volver a la galería">← Estudio</a>
@@ -37,16 +47,6 @@
         <button class="btn btn-sm" id="z-reset" title="restablecer zoom (tecla 0)" aria-label="restablecer zoom">⟲</button>
       </div>
     </header>
-
-    <!-- barra de modos -->
-    <div class="ws-modos">
-      <div class="pestanas" role="tablist" aria-label="modo del workspace">
-        <button class="pestana activa" data-modo="explorar" role="tab" aria-selected="true">🗺️ Explorar</button>
-        <button class="pestana" data-modo="battlemap" role="tab" aria-selected="false">⚔️ Battlemap</button>
-        <button class="pestana" data-modo="conquistar" role="tab" aria-selected="false">👑 Conquistar</button>
-      </div>
-      <span class="ws-estado tenue" id="ws-estado"></span>
-    </div>
 
     <!-- cuerpo: lienzo + panel lateral -->
     <div class="ws-cuerpo">
@@ -254,18 +254,6 @@
               <button class="btn bm-foundry">🎲 Foundry</button>
               <button class="btn bm-roll20">🎲 Roll20</button>
             </div>
-          </section>
-        </div>
-
-        <!-- ============ MODO CONQUISTAR ============ -->
-        <div class="ws-modo-panel oculto" data-panel="conquistar">
-          <section class="panel-bloque cq-caja">
-            <h3 class="panel-titulo">Conquistar este mundo</h3>
-            <p class="cq-pitch">
-              Todo mundo forjado se puede conquistar — juego de estrategia por turnos, gratis.
-            </p>
-            <div class="cq-partida oculto"></div>
-            <a class="btn btn-oro btn-lg btn-bloque cq-jugar" href="#">👑 Jugar en este mundo</a>
           </section>
         </div>
 

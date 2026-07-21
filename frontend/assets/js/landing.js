@@ -8,6 +8,29 @@ import { corridas, urlFantasiaRender } from "/app/js/api.js";
 montarNav("");
 montarPie({ lab: false });
 
+// --- botones de plan: intentan el checkout; hoy siempre 503 (modo beta) y se
+// cae al mailto de lista de espera que ya trae el propio <a> (ADR-007: nunca un
+// checkout falso). Sin JS, el enlace mailto funciona igual (mejora progresiva).
+for (const a of document.querySelectorAll(".plan [data-plan]")) {
+  a.addEventListener("click", async (e) => {
+    const plan_id = a.dataset.plan;
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/pagos/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id }),
+      });
+      if (res.ok) {
+        const j = await res.json().catch(() => ({}));
+        if (j && j.url) { location.href = j.url; return; } // pasarela activa
+      }
+    } catch (_) { /* sin API: cae al mailto */ }
+    // 503 modo beta o cualquier fallo -> el mailto de lista de espera del <a>
+    location.href = a.href;
+  });
+}
+
 // --- fade-in por scroll (IntersectionObserver) ------------------------------
 const animables = document.querySelectorAll(".aparece");
 if ("IntersectionObserver" in window && animables.length) {

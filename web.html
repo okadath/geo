@@ -161,9 +161,9 @@
       </div>
 
       <div class="control">
-        <label>Resolución (px) <output id="v-resolucion"></output></label>
+        <label>Resolución (px de alto) <output id="v-resolucion"></output></label>
         <input type="range" id="resolucion" min="96" max="512" step="32" value="256">
-        <div class="pista">el costo crece con el cuadrado</div>
+        <div class="pista">es el ALTO del mapa; el ancho es 2× (mundos 2:1). El costo crece con el cuadrado del alto</div>
       </div>
 
       <div class="control">
@@ -500,7 +500,9 @@ function refrescar() {
   const p = parametros();
   const frames = Math.ceil(p.tiempo / p.cada);
   const dur = (frames * p.ms / 1000).toFixed(1);
-  const computo = Math.ceil(p.tiempo / 28 * (p.resolucion / 256) ** 2);
+  // el mapa es 2:1 (ancho = 2× alto), así que el costo es ~2× el de un mundo
+  // cuadrado del mismo alto (resolucion = alto en px)
+  const computo = Math.ceil(p.tiempo / 28 * 2 * (p.resolucion / 256) ** 2);
   $("estimacion").textContent =
     `GIF: ~${frames} frames ≈ ${dur} s · cómputo estimado ~${computo} s`;
 }

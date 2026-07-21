@@ -159,19 +159,23 @@ def simular_clima(elev, temperatura=0.0, precipitaciones=1.0, humedad=None,
                   solo_corrientes=False):
     """Calcula el clima snapshot de una geografia.
 
-    elev: array (n,n) float en -1..1 (0 = linea de costa, ya con eustasia).
+    elev: array (ny,nx) float en -1..1 (0 = linea de costa, ya con eustasia).
+    Mapa equirrectangular 2:1 (nx = 2*ny): filas = latitud, columnas = longitud
+    periodica; no se asume ny == nx.
     precipitaciones: dial 0.2 (arido) .. 1 (normal) .. 2 (muy humedo); escala
     la evaporacion/lluvia. `humedad` es el alias retrocompatible del mismo
     dial (nombre viejo): si se pasa, manda.
     solo_corrientes: corta tras la circulacion oceanica y devuelve solo
     {cu, cv, sst, sst_anom, psi} (lo usa `detallar` para reutilizar las
     corrientes del cuadro original sin pagar lluvia/drenaje/biomas).
-    Devuelve dict de campos (n,n) segun el contrato del plan.
+    Devuelve dict de campos (ny,nx) segun el contrato del plan.
     """
     if humedad is not None:
         precipitaciones = humedad
     elev = np.asarray(elev, np.float64)
-    n = elev.shape[0]
+    # mapa equirrectangular 2:1: filas = latitud (ny), columnas = longitud (nx,
+    # periodica). No se asume ny == nx.
+    ny, nx = elev.shape
     tierra = elev > 0.0
     mar = ~tierra
     # rng LOCAL de semilla fija: solo para romper empates del drenaje. JAMAS el
@@ -179,11 +183,11 @@ def simular_clima(elev, temperatura=0.0, precipitaciones=1.0, humedad=None,
     rng_local = np.random.default_rng(12345)
 
     # mallas base para la adveccion (una sola vez)
-    yy, xx = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+    yy, xx = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
     yy = yy.astype(np.float64); xx = xx.astype(np.float64)
 
     # latitud por fila: 1 = polo N .. 0 = ecuador .. -1 = polo S
-    lat_norm = np.linspace(1.0, -1.0, n)[:, None]      # (n,1)
+    lat_norm = np.linspace(1.0, -1.0, ny)[:, None]      # (ny,1)
     lat_abs = np.abs(lat_norm)
     lat_deg = lat_norm * 90.0                          # grados con signo
     alat = np.abs(lat_deg)
@@ -480,10 +484,10 @@ def simular_clima(elev, temperatura=0.0, precipitaciones=1.0, humedad=None,
     kmin = np.argmin(vecinos, axis=0)                         # dir del mas bajo
     vmin = np.take_along_axis(vecinos, kmin[None], 0)[0]      # su elevacion
     dyv = np.array([o[0] for o in offs]); dxv = np.array([o[1] for o in offs])
-    ry = np.clip(yy.astype(np.intp) + dyv[kmin], 0, n - 1)    # Y no envuelve
-    rx = (xx.astype(np.intp) + dxv[kmin]) % n
-    receptor = ry * n + rx                                    # indice destino plano
-    idx = (yy.astype(np.intp) * n + xx.astype(np.intp))
+    ry = np.clip(yy.astype(np.intp) + dyv[kmin], 0, ny - 1)   # Y no envuelve
+    rx = (xx.astype(np.intp) + dxv[kmin]) % nx                # X periodica
+    receptor = ry * nx + rx                                   # indice destino plano
+    idx = (yy.astype(np.intp) * nx + xx.astype(np.intp))
     # Pozo (minimo local) o celda de mar: el agua se detiene aqui (receptor=self).
     pozo = (vmin >= elev_h) | mar
     receptor = np.where(pozo, idx, receptor)
@@ -634,7 +638,7 @@ def render_clima(campos, elev):
     banquisa, biomas con sombreado por pendiente, rios/lagos/estuarios y flechas
     de corrientes tintadas calida/fria."""
     elev = np.asarray(elev, np.float64)
-    n = elev.shape[0]
+    ny, nx = elev.shape
     tierra = elev > 0.0
     mar = ~tierra
     tair = campos["tair"]; precip = campos["precip"]
@@ -692,10 +696,10 @@ def render_clima(campos, elev):
         d.point((x, y), fill=(70, 200, 220, 255))
 
     # --- flechas de corrientes sobre el mar, tintadas por anomalia de SST ---
-    _flechas_corriente(d, cu, cv, sst_anom, mar, n)
+    _flechas_corriente(d, cu, cv, sst_anom, mar, ny, nx)
     # --- circuitos cerrados (giros oceanicos) donde la corriente es marcada ---
     circ = circuitos_corriente(cu, cv, sst_anom, mar, campos.get("psi"))
-    _dibuja_circuitos(d, circ, n, n)
+    _dibuja_circuitos(d, circ, ny, nx)
 
     return im
 
@@ -855,7 +859,7 @@ def render_clima_detalle(campos, elev_detalle, elev_c, temperatura=0.0):
     cu = campos["cu"]; cv = campos["cv"]
     sst_anom = campos.get("sst_anom", np.zeros_like(elev_c))
     mar_c = ~(elev_c > 0.0)
-    _flechas_corriente(d, cu, cv, sst_anom, mar_c, nc_x, escala=(kx + ky) * 0.5)
+    _flechas_corriente(d, cu, cv, sst_anom, mar_c, nc_y, nc_x, escala=(kx + ky) * 0.5)
     # circuitos cerrados (giros) escalados al lienzo grande
     circ = circuitos_corriente(cu, cv, sst_anom, mar_c, campos.get("psi"))
     _dibuja_circuitos(d, circ, nc_y, nc_x, escala=(kx + ky) * 0.5)
@@ -863,21 +867,22 @@ def render_clima_detalle(campos, elev_detalle, elev_c, temperatura=0.0):
     return im
 
 
-def _flechas_corriente(d, cu, cv, sst_anom, mar, n, escala=1.0):
+def _flechas_corriente(d, cu, cv, sst_anom, mar, ny, nx, escala=1.0):
     """Flechas de corriente en malla gruesa sobre el mar, tintadas por la
     anomalia de SST: calida (rojo) / fria (azul). Adaptado de tecto._flechas.
 
-    Los campos (cu,cv,sst_anom,mar) se muestrean en la malla de resolucion `n`,
-    pero el DIBUJO se escala x`escala` al lienzo final: con escala=1 (default)
-    pinta a la resolucion de los campos (render_clima clasico) y con escala=k
-    posiciona las mismas flechas sobre el mapa detallado a plena resolucion, con
-    grosor y punta proporcionales para que se lean igual de nitidas."""
+    Los campos (cu,cv,sst_anom,mar) se muestrean en la malla (ny, nx), pero el
+    DIBUJO se escala x`escala` al lienzo final: con escala=1 (default) pinta a
+    la resolucion de los campos (render_clima clasico) y con escala=k posiciona
+    las mismas flechas sobre el mapa detallado a plena resolucion, con grosor y
+    punta proporcionales para que se lean igual de nitidas. El paso de la malla
+    gruesa se fija por el eje menor -> celdas cuadradas en un mapa 2:1."""
     calida = np.array([230, 80, 60]); fria = np.array([90, 150, 235])
-    paso = max(16, n // 12)
+    paso = max(16, ny // 12)
     s = float(escala)
     w = max(2, int(round(1.8 * s)))           # trazo grueso escalado (legible)
-    for y in range(paso // 2, n - 2, paso):
-        for x in range(paso // 2, n - 2, paso):
+    for y in range(paso // 2, ny - 2, paso):
+        for x in range(paso // 2, nx - 2, paso):
             sub = mar[y - 2:y + 3, x - 2:x + 3]
             if sub.mean() < 0.75:            # celda gruesa mayormente tierra
                 continue
@@ -1792,18 +1797,21 @@ def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
     "tam": int 0 auto | 1 grandes | 2 chicos} (0 = auto)."""
     import zlib
     civ_dials = civ_dials or {}
-    # malla de civilizacion: acotada para que el A*/Dijkstra en Python sea barato
-    ncw = int(min(nx, 200))
-    m = _campos_en_malla(campos, elev2, elev_c, ncw, ncw)
-    elev_w = _malla_bloques(elev2, ncw, ncw)
+    # malla de civilizacion: acotada para que el A*/Dijkstra en Python sea
+    # barato. 2:1 (ncw_x = 2*ncw_y) con presupuesto de celdas ~ al viejo tope
+    # cuadrado 200x200 (40000): 141x282 ~= 39762
+    ncw_y = int(min(ny, 141))
+    ncw_x = int(min(nx, 2 * ncw_y))
+    m = _campos_en_malla(campos, elev2, elev_c, ncw_y, ncw_x)
+    elev_w = _malla_bloques(elev2, ncw_y, ncw_x)
     # rios/caudal/cuenca desde la hidrologia fina (max/any/nearest -> no se borran)
-    caudal_w = _bloque_max(hidro["caudal"], ncw, ncw).astype(np.float32)
+    caudal_w = _bloque_max(hidro["caudal"], ncw_y, ncw_x).astype(np.float32)
     cmax = float(caudal_w.max()) + 1e-9
     caudal_w = np.clip(caudal_w / cmax, 0.0, 1.0)
-    rio_w = _bloque_max((hidro["rios"] | hidro["lagos"]).astype(np.uint8), ncw, ncw) > 0
+    rio_w = _bloque_max((hidro["rios"] | hidro["lagos"]).astype(np.uint8), ncw_y, ncw_x) > 0
     hy, hx = hidro["root"].shape
-    yi = (np.arange(ncw) * hy / ncw).astype(np.intp)
-    xi = (np.arange(ncw) * hx / ncw).astype(np.intp)
+    yi = (np.arange(ncw_y) * hy / ncw_y).astype(np.intp)
+    xi = (np.arange(ncw_x) * hx / ncw_x).astype(np.intp)
     cuenca_w = hidro["root"][np.ix_(yi, xi)]
 
     campo = {
@@ -1822,7 +1830,7 @@ def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
                        n_paises=int(civ_dials.get("paises", 0)),
                        tam_paises=int(civ_dials.get("tam", 0)))
 
-    kx = nx / ncw; ky = ny / ncw
+    kx = nx / ncw_x; ky = ny / ncw_y
     tierra_f = elev2 > 0.0                     # costa FINA (la malla civ es gruesa)
 
     def esc_polis(polis):
@@ -1860,11 +1868,11 @@ def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
                 "a": r["a"], "b": r["b"]} for r in civd["rutas"]]
 
     # ---- overlay de paises (RGBA) a res_koppen, con fronteras remarcadas ----
-    idmap = civd["paises"]["idmap"]           # (ncw,ncw) int, -1 mar/inalcanzable
+    idmap = civd["paises"]["idmap"]           # (ncw_y,ncw_x) int, -1 mar/inalcanzable
     lista = civd["paises"]["lista"]
     nky, nkx = res_koppen
-    yk = (np.arange(nky) * ncw / nky).astype(np.intp)
-    xk = (np.arange(nkx) * ncw / nkx).astype(np.intp)
+    yk = (np.arange(nky) * ncw_y / nky).astype(np.intp)
+    xk = (np.arange(nkx) * ncw_x / nkx).astype(np.intp)
     pmap = idmap[np.ix_(yk, xk)]
     pal = np.zeros((max(1, len(lista)), 3), np.uint8)
     for p in lista:
@@ -1908,7 +1916,7 @@ def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
     if lt or lm:
         it = (subr.get("tierra") or {}).get("idmap")
         im2 = (subr.get("mar") or {}).get("idmap")
-        vacio = np.full((ncw, ncw), -1, np.int32)
+        vacio = np.full((ncw_y, ncw_x), -1, np.int32)
         it_k = (it if it is not None else vacio)[np.ix_(yk, xk)]
         im_k = (im2 if im2 is not None else vacio)[np.ix_(yk, xk)]
         ty = (np.arange(nky) * elev2.shape[0] / nky).astype(np.intp)
@@ -1965,7 +1973,7 @@ def _capa_civilizacion(campos, elev2, elev_c, hidro, nx, ny, res_koppen, salida,
         subregiones_j = {
             "png": Path(salida).name + "_regiones.png",
             "res": [int(nkx), int(nky)],
-            "res_civ": [int(ncw), int(ncw)],
+            "res_civ": [int(ncw_x), int(ncw_y)],
             "tierra": [{"id": r["id"] + 1, "nombre": r["nombre"],
                         "pais": r["pais"], "asentamiento": r["asent"],
                         "rgb": r["rgb"], "area": r["area"]} for r in lt],
@@ -2205,15 +2213,20 @@ if __name__ == "__main__":
     SALIDA = str(Path(__file__).resolve().parent / "salidas" / "autoprueba")
     Path(SALIDA).mkdir(parents=True, exist_ok=True)
 
-    def _elev_sintetico(n):
+    def _elev_sintetico(ny):
         """Un continente central (oceano al este y al oeste) con una CORDILLERA
         MERIDIANA (norte-sur) en su eje: sirve para ver la sombra de lluvia a
         sotavento de los westerlies. El continente baja en pendiente suave hacia
         ambas costas para que los rios drenen al mar (estuarios). Casquetes
-        implicitos por latitud."""
-        xs = np.linspace(0, 1, n)[None, :] * np.ones((n, 1))
-        elev = np.full((n, n), -0.5)                 # oceano de fondo
-        lo, hi = 0.30, 0.72
+        implicitos por latitud. Mapa equirrectangular 2:1 (nx = 2*ny)."""
+        nx = 2 * ny
+        xs = np.linspace(0, 1, nx)[None, :] * np.ones((ny, 1))
+        elev = np.full((ny, nx), -0.5)               # oceano de fondo
+        # el mapa es 2:1: las extensiones EN X se expresan a media escala (mitad
+        # de la fraccion que en el test cuadrado) para que el continente y la
+        # cordillera conserven su ancho EN PIXELES y las invariantes climaticas
+        # (sombra de lluvia, sesgo desertico) sigan calibradas igual
+        lo, hi = 0.405, 0.615
         cont = (xs >= lo) & (xs <= hi)
         # pendiente regional: alta en el interior, ~0 en la costa -> los rios
         # corren al mar en vez de estancarse (distancia normalizada a la costa)
@@ -2221,21 +2234,23 @@ if __name__ == "__main__":
         base = 0.02 + 0.20 * np.clip(dcosta, 0, 1)
         # cordillera meridiana centrada en col ~0.51, gaussiana en x
         cx = 0.51
-        ridge = 0.72 * np.exp(-((xs - cx) / 0.05) ** 2)
+        ridge = 0.72 * np.exp(-((xs - cx) / 0.025) ** 2)
         elev = np.where(cont, base + ridge, elev)
         # una peninsula/isla secundaria para variedad de costas
-        yy2, xx2 = np.mgrid[0:n, 0:n] / n
-        isla = 0.35 * np.exp(-(((xx2 - 0.85) / 0.06) ** 2 + ((yy2 - 0.4) / 0.10) ** 2))
+        yy2 = np.mgrid[0:ny, 0:nx][0] / ny
+        xx2 = np.mgrid[0:ny, 0:nx][1] / nx
+        isla = 0.35 * np.exp(-(((xx2 - 0.85) / 0.03) ** 2 + ((yy2 - 0.4) / 0.10) ** 2))
         elev = elev + np.where(isla > 0.12, isla, 0.0)
         return np.clip(elev, -1, 1)
 
-    def _fila_de_lat(n, lat):
+    def _fila_de_lat(ny, lat):
         """Fila mas cercana a la latitud dada (lat en -1..1, +1 = polo N)."""
-        return int(round((1.0 - lat) / 2.0 * (n - 1)))
+        return int(round((1.0 - lat) / 2.0 * (ny - 1)))
 
-    n = 200
-    elev = _elev_sintetico(n)
-    xs = np.linspace(0, 1, n)
+    ny = 200
+    nx = 2 * ny
+    elev = _elev_sintetico(ny)
+    xs = np.linspace(0, 1, nx)
     col_cresta = int(np.argmin(np.abs(xs - 0.51)))
 
     escenarios = [
@@ -2262,9 +2277,9 @@ if __name__ == "__main__":
 
     # (a) sombra de lluvia: en una banda de westerlies (|lat|~45), el lado
     #     BARLOVENTO (oeste de la cresta) llueve mas que el SOTAVENTO (este).
-    banda = np.zeros(n, bool)
+    banda = np.zeros(ny, bool)
     for lat in (0.45, 0.50, 0.55, -0.45, -0.50, -0.55):
-        banda[_fila_de_lat(n, lat)] = True
+        banda[_fila_de_lat(ny, lat)] = True
     oeste = slice(col_cresta - 12, col_cresta - 3)
     este = slice(col_cresta + 3, col_cresta + 12)
     p = tmpl["precip"]
@@ -2275,9 +2290,9 @@ if __name__ == "__main__":
 
     # (b) conveccion ecuatorial: precip en el ecuador > precip en el interior a
     #     lat ~25 (desiertos subtropicales).
-    filas_ec = [_fila_de_lat(n, l) for l in (-0.05, 0.0, 0.05)]
-    filas_25 = [_fila_de_lat(n, l) for l in (0.25, -0.25)]
-    interior = slice(int(0.34 * n), int(0.68 * n))
+    filas_ec = [_fila_de_lat(ny, l) for l in (-0.05, 0.0, 0.05)]
+    filas_25 = [_fila_de_lat(ny, l) for l in (0.25, -0.25)]
+    interior = slice(int(0.34 * nx), int(0.68 * nx))
     p_ec = p[filas_ec][:, interior]
     p_25 = p[filas_25][:, interior]
     m_ec = p_ec[tierra[filas_ec][:, interior]].mean()
@@ -2310,13 +2325,13 @@ if __name__ == "__main__":
     print(f"fraccion de desierto (templado) = {frac_des:.3f}")
     assert frac_des < 0.35, "demasiado desierto en un mundo templado"
 
-    # ---- rendimiento a 256^2 ----
-    elev256 = _elev_sintetico(256)
-    simular_clima(elev256, 0.0, 1.0)          # calentar (compilar rutas numpy)
+    # ---- rendimiento a 512x256 (2:1) ----
+    elev_perf = _elev_sintetico(256)          # 256 alto -> 512x256
+    simular_clima(elev_perf, 0.0, 1.0)        # calentar (compilar rutas numpy)
     t0 = time.perf_counter()
     NREP = 5
     for _ in range(NREP):
-        simular_clima(elev256, 0.0, 1.0)
+        simular_clima(elev_perf, 0.0, 1.0)
     dt = (time.perf_counter() - t0) / NREP
     print(f"\nOK: todas las invariantes pasan. "
-          f"simular_clima a 256^2: {dt*1000:.1f} ms/llamada")
+          f"simular_clima a 512x256: {dt*1000:.1f} ms/llamada")

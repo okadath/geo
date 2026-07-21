@@ -32,6 +32,12 @@
           margin-right: 7px; vertical-align: -1.5px;
           border: 1px solid rgba(255,255,255,.3); }
 
+  /* ---- barra de modos del workspace (bajo el nav de plataforma) ---- */
+  #modos-barra {
+    display: flex; align-items: center; padding: 6px 16px;
+    background: var(--fondo-2); border-bottom: 1px solid var(--borde);
+  }
+
   /* ---- barra superior (país · dinero · turno) ---- */
   #barra {
     display: flex; align-items: center; gap: 16px; padding: 8px 16px;
@@ -220,6 +226,14 @@
   .lista-p .item.hl { background: rgba(212,169,78,.22);
                       outline: 1px solid var(--acento); }
 
+  /* ---- cabecera de la pantalla inicial: subsección «Conquistar» ---- */
+  .cq-titulo {
+    font-family: var(--serif); color: var(--pergamino); font-size: 20px;
+    margin: 0 0 8px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--oro);
+  }
+  .cq-sub { font-size: 13px; color: var(--tenue); margin: 0 0 12px; }
+
   /* ---- ajustes de partida (pantalla de inicio) ---- */
   #ajustes-toggle { color: var(--tenue); font-size: 13px; cursor: pointer;
                     user-select: none; margin: 0 0 8px; }
@@ -234,6 +248,38 @@
   #ajustes-cuerpo select { background: var(--fondo); color: var(--texto);
                           border: 1px solid var(--borde); border-radius: 6px;
                           padding: 3px 6px; font: inherit; font-size: 12px; }
+
+  /* ---- partidas previas (pantalla de inicio) ---- */
+  #previas { margin: 14px 0 0; padding-top: 10px;
+             border-top: 1px solid var(--borde); }
+  #previas-toggle { color: var(--tenue); font-size: 13px; cursor: pointer;
+                    user-select: none; margin: 0 0 8px; }
+  #previas-hint { color: var(--tenue); font-size: 12px; margin: 0 0 8px; }
+  #previas-lista { display: flex; flex-direction: column; gap: 4px;
+                   max-height: min(340px, 38vh); overflow-y: auto; }
+  .prev-grupo { color: var(--tenue); font-size: 11.5px; text-transform: uppercase;
+                letter-spacing: .04em; margin: 6px 0 1px; }
+  .prev-grupo:first-child { margin-top: 0; }
+  #previas-lista .prev { display: flex; align-items: center; gap: 8px;
+                         width: 100%; text-align: left; font-size: 12.5px;
+                         padding: 5px 9px; }
+  #previas-lista .prev:disabled { opacity: .55; cursor: default; }
+  .prev .p-fecha { color: var(--tenue); white-space: nowrap; }
+  .prev .p-mundo { font-family: ui-monospace, monospace; font-size: 11.5px;
+                   color: var(--tenue); white-space: nowrap; }
+  .prev .p-turno { color: var(--tenue); white-space: nowrap; }
+  .prev .p-dif { white-space: nowrap; }
+  .prev .p-estado { margin-left: auto; white-space: nowrap; }
+  .prev .p-estado.es-curso { color: var(--acento); }
+  .prev .p-estado.es-victoria { color: #e8c15a; }
+  .prev .p-estado.es-derrota { color: #e07a6a; }
+  /* fila previsualizándose (resaltada) y barra de confirmación */
+  .prev.sel { background: rgba(212,169,78,.18); outline: 1px solid var(--acento); }
+  #previas-confirmar { display: flex; align-items: center; flex-wrap: wrap;
+                       gap: 6px; margin: 8px 0 4px; font-size: 12px;
+                       color: var(--tenue); }
+  #previas-confirmar button { font-size: 12px; padding: 3px 8px; }
+  #previas-entrar { border-color: var(--acento); color: var(--acento); }
 
   /* ---- botones de vista del mapa ---- */
   #ui-vistas { display: inline-flex; gap: 4px; }
@@ -303,10 +349,24 @@
   #replay-turno { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; }
   #replay-hud input[type="range"] { width: 100%; accent-color: var(--oro); margin: 2px 0 6px; }
   #replay-controles { display: flex; gap: 6px; align-items: center; justify-content: center; }
-  #replay-controles .vel.activo { border-color: var(--oro); background: rgba(212,169,78,.18); }
+  #replay-controles .vel.activo,
+  #replay-controles #replay-loop.activo { border-color: var(--oro); background: rgba(212,169,78,.18); }
+  #replay-gif[disabled] { opacity: .55; }
 </style>
 </head>
 <body>
+<!-- barra de modos del workspace: explorar/battlemap vuelven al visor del
+     mundo; conquistar es esta misma página -->
+<div id="modos-barra">
+  <div class="pestanas" id="modos-juego" role="tablist" aria-label="modo del mundo">
+    <button type="button" class="pestana" data-ir="explorar"
+            title="ver el mundo como mapa de fantasía">🗺️ Explorar</button>
+    <button type="button" class="pestana" data-ir="battlemap"
+            title="encuentros tácticos en cualquier punto del mapa">⚔️ Battlemap</button>
+    <button type="button" class="pestana activa" aria-selected="true"
+            title="estás aquí: el juego de conquista">👑 Conquistar</button>
+  </div>
+</div>
 <header id="barra">
   <span class="pais" id="ui-pais">—</span>
   <span class="dinero">🪙 <span id="ui-dinero">0</span></span>
@@ -325,7 +385,7 @@
   <button type="button" id="b-replay" title="repasa la partida turno a turno" disabled>▶ replay</button>
   <button type="button" id="b-reset">⟲ zoom</button>
   <span class="turno">Turno: <span id="ui-turno">1</span></span>
-  <a href="#" id="a-volver">← volver al mundo</a>
+  <a href="#" id="a-inicio" title="volver a la pantalla de elegir partida: empezar una nueva o abrir una guardada (la actual se guarda sola)">🎮 elegir partida</a>
 </header>
 
 <div id="visor">
@@ -371,6 +431,8 @@
       <button type="button" class="vel" data-vel="1">1×</button>
       <button type="button" class="vel" data-vel="2">2×</button>
       <button type="button" class="vel" data-vel="4">4×</button>
+      <button type="button" id="replay-loop" title="repetir en bucle">🔁 bucle</button>
+      <button type="button" id="replay-gif" title="exportar la partida como GIF animado">💾 GIF</button>
       <button type="button" id="replay-salir">✕ salir</button>
     </div>
   </div>
@@ -391,12 +453,15 @@
         <button type="button" id="orden-no">✕ cancelar</button>
       </div>
     </div>
-    <button type="button" id="b-turno">Terminar turno ▶</button>
+    <button type="button" id="b-turno" hidden>Terminar turno ▶</button>
   </div>
 
   <div class="velo" id="velo-inicio">
     <div class="caja">
-      <h2>elige tu país</h2>
+      <h2 class="cq-titulo">👑 Conquistar</h2>
+      <p class="cq-sub">estás en el juego de conquista de este mundo —
+        <b>elige tu país</b> para empezar una partida nueva, o abre una guardada
+        al final del panel</p>
       <p>Conquista el mundo provincia a provincia: recluta tropas con tu oro
          (consumen población), muévelas entre provincias vecinas y ataca a tus
          rivales. Las <b>cuencas marinas</b> también se transitan: tus tropas
@@ -408,15 +473,12 @@
          Cada acción (mover, atacar, reclutar, construir) gasta
          <b>puntos de acción</b> 🏃, que se renuevan cada turno:
          adminístralos bien. La partida se guarda sola en el servidor.</p>
-      <div id="continuar" hidden style="margin:0 0 12px">
-        <button type="button" id="b-continuar"
-                style="width:100%;border-color:var(--acento)"></button>
-      </div>
       <div id="dificultad">
         <span style="color:var(--tenue);font-size:13px">dificultad:</span>
         <button type="button" data-dif="facil">😌 fácil</button>
-        <button type="button" data-dif="normal" class="activo">⚖ normal</button>
-        <button type="button" data-dif="dificil">🔥 difícil</button>
+        <button type="button" data-dif="medio" class="activo">⚖ normal</button>
+        <button type="button" data-dif="normal">🔥 difícil</button>
+        <button type="button" data-dif="dificil">💀 experto</button>
       </div>
       <div id="ajustes-toggle">⚙ ajustes ▾</div>
       <div id="ajustes-cuerpo" hidden>
@@ -434,6 +496,17 @@
           <input type="number" id="aj-recup" min="0" max="10" step="0.1" value="0.6"></label>
       </div>
       <div class="lista-p" id="lista-paises"></div>
+      <div id="previas" hidden>
+        <div id="previas-toggle">💾 partidas guardadas ▾</div>
+        <div id="previas-hint">continúa una partida <b>en curso</b> o abre una
+          <b>terminada</b> para ver su resultado y el replay</div>
+        <div id="previas-confirmar" hidden>
+          <span id="previas-confirmar-txt"></span>
+          <button type="button" id="previas-entrar">✔ entrar a esta partida</button>
+          <button type="button" id="previas-quitar">✕ quitar</button>
+        </div>
+        <div id="previas-lista"></div>
+      </div>
     </div>
   </div>
 
@@ -505,14 +578,27 @@
       "válidos en la URL (abre el juego desde la página de regiones).</p>";
     return;
   }
+  // partida concreta (?p=<pid>): con varias partidas por mundo identifica
+  // sobre cuál se opera; vacío = la más reciente (lo decide el servidor).
+  // Se actualiza con cada estado que llega (p.ej. al crear una nueva).
+  let partidaId = q.get("p") || "";
+  let preview = null;         // estado precargado en el mapa aún sin entrar
+  let snapInicial = null;     // foto del estado inicial del mundo (para «quitar»)
   const RUTA = `/salidas/${sello}/detalles/${stem}`;
   const API = "/api/juego";
-  $("a-volver").href = `/estudio/mundo?sello=${sello}&d=${stem}&modo=conquistar`;
+  // vuelve a la pantalla inicial (selector de país + partidas); url limpia, la
+  // partida ya está guardada en el servidor tras cada acción
+  $("a-inicio").href = `/juego?sello=${sello}&d=${stem}`;
+  // pestañas de modo del inicio: explorar/battlemap llevan al workspace del
+  // mundo en ese modo (conquistar es esta página y no navega)
+  document.querySelectorAll("#modos-juego [data-ir]").forEach(b => b.onclick = () => {
+    location.href = `/estudio/mundo?sello=${sello}&d=${stem}&modo=${b.dataset.ir}`;
+  });
 
   // ================= estado (espejo de lo que manda el servidor) ==========
   const st = {
     scale: 1, tx: 0, ty: 0,
-    ids: null, rw: 0, rh: 0, nx: 1024, ny: 1024,
+    ids: null, rw: 0, rh: 0, nx: 1024, ny: 512,
     prov: new Map(),        // id -> provincia: estáticos del mapa + estado visible
     paises: new Map(),      // pid -> país {nombre, rgb, vivo, provs, ej, ...}
     vecinos: new Map(),     // id -> Set(ids adyacentes) — del servidor
@@ -530,7 +616,7 @@
     // inicio | jugando | fin | espectador | replay — "espectador" y "replay"
     // son modos locales de presentación; "jugando"/"fin" los fija el servidor
     fase: "inicio",
-    difKey: "normal",
+    difKey: "medio",
     ajustes: { bastion: 50, naval: 7, recup: 0.6, vision: "parcial" },
     vista: "paises",        // paises|poblacion|militares|diplomacia
     paisInfo: null,         // pid a inspeccionar en la vista diplomacia (clic)
@@ -543,6 +629,11 @@
     graf: { metrica: "pob", i0: 0, i1: 0, ult: 0, fijo: null, hover: null },
   };
   const NEUTRAL = -1;
+  // etiquetas visibles de cada difKey interno (las claves NO cambian; solo el
+  // rotulo que ve el jugador). Ver DIFS en juego_srv.py.
+  const DIF_ETIQUETAS = { facil: "😌 fácil", medio: "⚖ normal",
+                          normal: "🔥 difícil", dificil: "💀 experto" };
+  const difEtiqueta = k => DIF_ETIQUETAS[k] || k;
 
   const visor = $("visor"), cinta = $("cinta"), tip = $("tip");
   const mapaO = $("mapa-o"), mapaC = $("mapa-c"), mapaE = $("mapa-e");
@@ -555,10 +646,19 @@
   // turnos restantes del tratado de no agresion entre dos países (0 = ninguno)
   const tratadoTurnos = (a, b) => st.tratados[parGuerra(a, b)] || 0;
   const fmt = n => Math.round(n).toLocaleString("es");
+  // FACTOR de PRESENTACIÓN: el oro y las tropas viven internamente en unidades
+  // chicas (estado, órdenes y API), pero al USUARIO se le muestran x1000 con
+  // separador de miles (es-MX), igual que la población. fmtOro()/fmtTropas() son
+  // los ÚNICOS puntos de escalado: nunca multiplicar a mano. Al teclear/elegir
+  // cantidades (reclutar, mover N) se muestra la cifra escalada pero se envía la
+  // chica (p. ej. el selector marca "3,000" y la orden manda 3).
+  const FACTOR_PRES = 1000;
+  const fmtOro = n => Math.round(n * FACTOR_PRES).toLocaleString("es-MX");
+  const fmtTropas = n => Math.round(n * FACTOR_PRES).toLocaleString("es-MX");
   // niebla de guerra: la calcula el SERVIDOR; si no ves la provincia, sus
   // tropas llegan como null y aquí se muestran como "?"
   const veTropas = p => p.dueno === st.jugador || p.visible;
-  const tropasTxt = p => p.ejercito == null ? "?" : String(p.ejercito);
+  const tropasTxt = p => p.ejercito == null ? "?" : fmtTropas(p.ejercito);
   // ---- flotas del mar (coexistencia de países EN PAZ en la misma cuenca) ----
   // el servidor manda p.flotas = [{p:pais, n:tropas, m:movida}] cuando la celda
   // es visible; dueno/ejercito de la celda son la flota MAYORITARIA
@@ -580,7 +680,8 @@
 
   // ================= API =================
   async function apiGet(ruta) {
-    const r = await fetch(`${API}/${ruta}?sello=${sello}&d=${stem}`);
+    const r = await fetch(`${API}/${ruta}?sello=${sello}&d=${stem}` +
+                          (partidaId ? `&p=${partidaId}` : ""));
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     return j;
@@ -589,7 +690,8 @@
     const r = await fetch(`${API}/${ruta}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ sello, d: stem }, datos || {})),
+      body: JSON.stringify(Object.assign(
+        { sello, d: stem, p: partidaId || undefined }, datos || {})),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -669,10 +771,29 @@
     for (let i = 0, o = 0; i < ids.length; i++, o += 4) ids[i] = d[o] | (d[o + 1] << 8);
     st.ids = ids;
 
+    capturarInicial();          // foto del estado virgen del mundo (para «quitar»)
     encajarVisor();
     pintarDuenos(); pintarSel(); pintarRotulos();
     pintarListaPaises(mapa.paises);
-    ofrecerContinuar(est0);
+    const previasListo = montarPrevias();
+    // llegada desde «partidas previas»:
+    //   &ver=1   -> previsualiza la partida en el mapa y se confirma con «entrar»
+    //   &cargar=1 -> carga directa (compat), sin pasar por elegir país
+    if (est0 && est0.existe !== false) {
+      if (q.get("ver") === "1") {
+        preview = est0;
+        aplicarEstado(est0, true);
+        repintar();
+        // la fila del historial se resalta cuando montarPrevias termina de pintar
+        previasListo.then(() => {
+          const btn = document.querySelector(
+            `#previas-lista .prev[data-pid="${partidaId}"]`);
+          mostrarConfirmar(est0, btn || null);
+        });
+      } else if (q.get("cargar") === "1") {
+        cargarPartida();
+      }
+    }
   }).catch(e => {
     document.body.innerHTML = `<p style='padding:30px'>No se pudo cargar: ${e.message}</p>`;
   });
@@ -687,7 +808,10 @@
   }
 
   // ================= aplicar el estado visible del servidor =================
-  function aplicarEstado(est) {
+  // previsualizar=true: solo pinta los datos en `st` (para verlos en el mapa de
+  // fondo) sin tocar el log/avisos ni cambiar de fase — la pantalla de inicio
+  // sigue abierta y st.fase se queda en "inicio" hasta pulsar «entrar»
+  function aplicarEstado(est, previsualizar) {
     if (!est || est.existe === false) return;
     st.turno = est.turno;
     st.jugador = est.jugador;
@@ -695,6 +819,7 @@
     if (est.ajustes) st.ajustes = est.ajustes;
     st.guerras = new Set(est.guerras || []);
     st.tratados = est.tratados || {};
+    if ("pid" in est) partidaId = est.pid || "";  // fija la partida en uso
     st.historia = Array.isArray(est.historia) ? est.historia : st.historia;
     st.replay = Array.isArray(est.replay) ? est.replay : st.replay;
     for (const e of est.paises || []) {
@@ -716,31 +841,35 @@
       p.ingreso = e.ingreso; p.reclutable = e.reclutable;
       if (p.mar) p.flotas = e.flotas || null;   // flotas coexistiendo (o niebla)
     }
-    // eventos del servidor -> log (y aviso si involucra al jugador)
-    const yo = st.paises.get(st.jugador);
-    for (const ev of est.eventos || []) {
-      anotar(ev.msj, ev.prov);
-      if (yo && (ev.msj.includes(yo.nombre) || ev.msj.includes("eliminado")))
-        avisar(ev.msj, true);
-    }
-    // fases del servidor: jugando | fin (espectador/replay son locales)
-    if (est.fase === "fin" && st.fase !== "fin" &&
-        st.fase !== "espectador" && st.fase !== "replay") {
-      st.fase = "fin";
-      st.sel = 0; st.orden = null; $("orden").hidden = true;
-      if (est.resultado === "victoria") {
-        $("fin-titulo").textContent = "👑 ¡victoria!";
-        $("fin-texto").textContent =
-          `Has conquistado el mundo entero en ${st.turno} turnos.`;
-      } else {
-        $("fin-titulo").textContent = "💀 derrota";
-        $("fin-texto").textContent =
-          `Tu país ha sido borrado del mapa en el turno ${st.turno}.`;
+    // en previsualización no se registran eventos ni se cambia de fase: solo
+    // se muestran los datos en el mapa con la pantalla de inicio abierta
+    if (!previsualizar) {
+      // eventos del servidor -> log (y aviso si involucra al jugador)
+      const yo = st.paises.get(st.jugador);
+      for (const ev of est.eventos || []) {
+        anotar(ev.msj, ev.prov);
+        if (yo && (ev.msj.includes(yo.nombre) || ev.msj.includes("eliminado")))
+          avisar(ev.msj, true);
       }
-      $("velo-fin").hidden = false;
-    } else if (est.fase === "jugando" &&
-               (st.fase === "inicio" || st.fase === "jugando")) {
-      st.fase = "jugando";
+      // fases del servidor: jugando | fin (espectador/replay son locales)
+      if (est.fase === "fin" && st.fase !== "fin" &&
+          st.fase !== "espectador" && st.fase !== "replay") {
+        st.fase = "fin";
+        st.sel = 0; st.orden = null; $("orden").hidden = true;
+        if (est.resultado === "victoria") {
+          $("fin-titulo").textContent = "👑 ¡victoria!";
+          $("fin-texto").textContent =
+            `Has conquistado el mundo entero en ${st.turno} turnos.`;
+        } else {
+          $("fin-titulo").textContent = "💀 derrota";
+          $("fin-texto").textContent =
+            `Tu país ha sido borrado del mapa en el turno ${st.turno}.`;
+        }
+        $("velo-fin").hidden = false;
+      } else if (est.fase === "jugando" &&
+                 (st.fase === "inicio" || st.fase === "jugando")) {
+        st.fase = "jugando";
+      }
     }
     actualizarControles();
   }
@@ -751,10 +880,53 @@
     if (st.vista === "diplomacia") pintarDiplomacia();
   }
 
+  // ================= foto del estado inicial (para «quitar» la vista previa) =
+  // guarda lo que aplicarEstado muta, para poder restaurar el mapa virgen del
+  // mundo tras previsualizar una partida guardada sin recargar la página
+  function capturarInicial() {
+    const prov = new Map();
+    for (const [id, p] of st.prov)
+      prov.set(id, { dueno: p.dueno, pob: p.pob, ejercito: p.ejercito,
+                     movida: p.movida, bastion: p.bastion, torre: p.torre,
+                     puerto: p.puerto, visible: p.visible, ingreso: p.ingreso,
+                     reclutable: p.reclutable,
+                     flotas: p.flotas ? p.flotas.slice() : p.flotas });
+    const paises = new Map();
+    for (const [id, p] of st.paises)
+      paises.set(id, { vivo: p.vivo, provs: p.provs, provsVis: p.provsVis,
+                       ej: p.ej, dinero: p.dinero, puntos: p.puntos,
+                       puntosMax: p.puntosMax, ingreso: p.ingreso });
+    snapInicial = { prov, paises };
+  }
+  function restaurarInicial() {
+    if (!snapInicial) return;
+    for (const [id, s] of snapInicial.prov)
+      Object.assign(st.prov.get(id), s,
+        { flotas: s.flotas ? s.flotas.slice() : s.flotas });
+    for (const [id, s] of snapInicial.paises)
+      Object.assign(st.paises.get(id), s);
+    st.guerras = new Set(); st.tratados = {};
+    st.historia = []; st.replay = [];
+    st.jugador = 0; st.sel = 0; st.orden = null; st.fase = "inicio";
+    // la dificultad vuelve a la del selector de la pantalla de inicio
+    const bDif = document.querySelector("#dificultad [data-dif].activo");
+    st.difKey = bDif ? bDif.dataset.dif : "medio";
+    partidaId = "";
+    actualizarControles();
+  }
+
   // ================= capas de pintura =================
   function colorDe(pid) {
     const p = st.paises.get(pid);
     return p ? p.rgb : [110, 112, 118];
+  }
+  const cssRGB = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+  // escala de rótulos/símbolos: se deriva del eje MENOR (no solo de nx) para
+  // que en mapas 2:1 los símbolos queden proporcionados igual que en los
+  // cuadrados. Para un mapa 2:1 equivale a nx/1024; en no-2:1 los normaliza.
+  function escRotulos() {
+    return Math.max(1, Math.min(st.nx || 1024, st.ny || 512) / 512);
   }
 
   // copia el contenido pintado (imagen base + canvases) a las dos réplicas
@@ -894,7 +1066,8 @@
       el.innerHTML =
         `<div>${esMil ? "⚔ militares por región" : "👥 población por región"}</div>` +
         `<div class="grad" style="background:linear-gradient(90deg, rgb(${c1.join(",")}), rgb(${c2.join(",")}))"></div>` +
-        `<div class="rango"><span>${fmt(min)}</span><span>${fmt(max)}</span></div>` +
+        `<div class="rango"><span>${esMil ? fmtTropas(min) : fmt(min)}</span>` +
+        `<span>${esMil ? fmtTropas(max) : fmt(max)}</span></div>` +
         `<div class="rango" style="margin-top:4px">gris = niebla de guerra</div>`;
       el.hidden = false;
     } else {
@@ -1004,7 +1177,7 @@
     st.pastillas = [];          // rects para el hit-test del ratón (se rellenan aquí)
     if (st.fase === "inicio") { sincronizarEspejos(); return; }
     const ctx = cvR.getContext("2d");
-    const esc = Math.max(1, st.nx / 1024);
+    const esc = escRotulos();
     const fs = 9 * esc;
     ctx.font = `700 ${fs}px system-ui, sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -1101,9 +1274,9 @@
     if (!yo) return;
     $("ui-pais").innerHTML =
       `<i class="cuad" style="background:rgb(${yo.rgb.join(",")})"></i>${yo.nombre}`;
-    $("ui-dinero").textContent = fmt(yo.dinero);
-    $("ui-ingreso").textContent = fmt(yo.ingreso || 0);
-    $("ui-ejercito").textContent = fmt(yo.ej || 0);
+    $("ui-dinero").textContent = fmtOro(yo.dinero);
+    $("ui-ingreso").textContent = fmtOro(yo.ingreso || 0);
+    $("ui-ejercito").textContent = fmtTropas(yo.ej || 0);
     $("ui-pa").textContent = `${yo.puntos}/${yo.puntosMax || yo.puntos}`;
     $("ui-provincias").textContent = yo.provs || 0;
     $("ui-turno").textContent = st.turno;
@@ -1222,7 +1395,7 @@
       : `${pais.provs}`;
     h += `<div class="fila"><span>provincias</span><b>${provTxt}</b></div>`;
     h += `<div class="fila"><span>${yo ? "ejército" : "ejército visible"}</span>` +
-         `<b>⚔ ${fmt(pais.ej)}${parcial ? " " + desc : ""}</b></div>`;
+         `<b>⚔ ${fmtTropas(pais.ej)}${parcial ? " " + desc : ""}</b></div>`;
     h += `<div class="fila"><span>${yo ? "población" : "población visible"}</span>` +
          `<b>${fmt(pob)}${incompleto ? " " + desc : ""}</b></div>`;
     if (!yo)
@@ -1321,56 +1494,94 @@
           : enGuerra(st.jugador, f.p) ? " ⚔" : " 🕊";
         h += `<div class="fila"><span><i class="cuad" ` +
           `style="background:rgb(${pf.rgb.join(",")})"></i>${pf.nombre}${rel}</span>` +
-          `<b>⚔ ${f.n}${f.p === st.jugador && f.m ? " (actuó)" : ""}</b></div>`;
+          `<b>⚔ ${fmtTropas(f.n)}${f.p === st.jugador && f.m ? " (actuó)" : ""}</b></div>`;
       }
     } else {
       h += `<div class="fila"><span>tropas</span><b>${tropasTxt(p)}` +
            `${mia && !p.mar && p.movida ? " (ya actuó)" : ""}</b></div>`;
     }
     if (!p.mar && p.ingreso != null)
-      h += `<div class="fila"><span>ingreso</span><b>+${p.ingreso.toFixed(1)}</b></div>`;
+      h += `<div class="fila"><span>ingreso</span><b>+${fmtOro(p.ingreso)}</b></div>`;
     const pre = st.precios;
-    if (mia && !p.mar && st.fase === "jugando" && pre) {
+    // ---- provincia de TIERRA: la interacción (reclutar / disolver / construir)
+    // se muestra SIEMPRE; cuando una acción no procede (no es tu turno, no es tu
+    // provincia, sin población, sin tropas, ya construido, sin oro, sin puntos…)
+    // el control sale DESHABILITADO con el mismo tratamiento visual que "sin oro"
+    // (atributo disabled) y un title que explica el motivo. Antes estas secciones
+    // DESAPARECÍAN si la provincia no era tuya, en el mar, fuera de turno, o el
+    // edificio ya existía / no aplicaba.
+    if (!p.mar && pre) {
       const cT = pre.tropa, cPA = pre.pa;
-      const max = p.reclutable || 0;
-      const puede = n => yo.dinero >= n * cT && max >= n && yo.puntos >= cPA.rec;
+      const max = p.reclutable || 0, ejer = p.ejercito || 0;
+      const jugando = st.fase === "jugando";
+      // motivo GENERAL por el que ninguna acción de tropas/edificio procede
+      const motivoGen = !jugando ? "solo disponible en tu turno"
+                      : !mia ? "no es tu provincia" : "";
+      // reclutar (exige además oro, cupo de población y puntos de acción)
+      const recPuede = n => !motivoGen && yo.dinero >= n * cT && max >= n && yo.puntos >= cPA.rec;
+      const recMotivo = n => motivoGen
+        || (max < n ? "población insuficiente"
+          : yo.dinero < n * cT ? "oro insuficiente"
+          : yo.puntos < cPA.rec ? "sin puntos de acción" : "reclutar tropas");
       h += `<div class="acciones">` +
-        `<button data-rec="5" ${puede(5) ? "" : "disabled"}>reclutar +5 (🪙${5 * cT} · 🏃${cPA.rec})</button>` +
-        `<button data-rec="25" ${puede(25) ? "" : "disabled"}>+25 (🪙${25 * cT} · 🏃${cPA.rec})</button>` +
+        `<button data-rec="5" ${recPuede(5) ? "" : "disabled"} title="${recMotivo(5)}">reclutar +${fmtTropas(5)} (🪙${fmtOro(5 * cT)} · 🏃${cPA.rec})</button>` +
+        `<button data-rec="25" ${recPuede(25) ? "" : "disabled"} title="${recMotivo(25)}">+${fmtTropas(25)} (🪙${fmtOro(25 * cT)} · 🏃${cPA.rec})</button>` +
         `</div>`;
       // disolver: convierte tropas en población; siempre queda 1 de guarnición
-      const puedeDis = n => p.ejercito - n >= 1 && yo.puntos >= cPA.rec;
+      const disPuede = n => !motivoGen && ejer - n >= 1 && yo.puntos >= cPA.rec;
+      const disMotivo = n => motivoGen
+        || (ejer - n < 1 ? "sin tropas suficientes"
+          : yo.puntos < cPA.rec ? "sin puntos de acción" : "disolver tropas");
       h += `<div class="acciones">` +
-        `<button data-dis="5" ${puedeDis(5) ? "" : "disabled"}>disolver −5 (🏃${cPA.rec})</button>` +
-        `<button data-dis="25" ${puedeDis(25) ? "" : "disabled"}>−25 (🏃${cPA.rec})</button>` +
+        `<button data-dis="5" ${disPuede(5) ? "" : "disabled"} title="${disMotivo(5)}">disolver −${fmtTropas(5)} (🏃${cPA.rec})</button>` +
+        `<button data-dis="25" ${disPuede(25) ? "" : "disabled"} title="${disMotivo(25)}">−${fmtTropas(25)} (🏃${cPA.rec})</button>` +
         `</div>`;
+      // construir: SIEMPRE se listan TODOS los edificios. Los ya construidos, los
+      // no aplicables (puerto sin costa, torre inútil) y los inasequibles salen
+      // DESHABILITADOS con el motivo en el tooltip (antes desaparecían).
       let cons = "";
       for (const [k, e] of Object.entries(pre.edif)) {
-        if (p[k]) continue;
-        if (k === "puerto" && !p.costera) continue;
-        // las torres no aportan con visión total ni oculta: se ofrecen
-        // DESHABILITADAS con una nota (tooltip) en vez de dejarlas comprar
+        const yaTiene = !!p[k];
+        const noCostera = k === "puerto" && !p.costera;
         const torreInutil = k === "torre" &&
           (st.ajustes.vision === "total" || st.ajustes.vision === "oculta");
-        const ok = !torreInutil && yo.dinero >= e.costo && yo.puntos >= cPA.edif;
-        const titulo = torreInutil
-          ? (st.ajustes.vision === "total"
-              ? "con visión total la torre no aporta nada"
-              : "con visión oculta las torres no tienen efecto")
-          : e.nombre;
+        const ok = !motivoGen && !yaTiene && !noCostera && !torreInutil &&
+                   yo.dinero >= e.costo && yo.puntos >= cPA.edif;
+        const titulo = motivoGen
+          || (yaTiene ? "ya construido"
+            : noCostera ? "la provincia no es costera"
+            : torreInutil ? (st.ajustes.vision === "total"
+                ? "con visión total la torre no aporta nada"
+                : "con visión oculta las torres no tienen efecto")
+            : yo.dinero < e.costo ? "oro insuficiente"
+            : yo.puntos < cPA.edif ? "sin puntos de acción" : e.nombre);
         cons += `<button data-edif="${k}" ${ok ? "" : "disabled"} title="${titulo}">` +
-                `${e.icono} ${e.nombre} (🪙${e.costo} · 🏃${cPA.edif})</button>`;
+                `${e.icono} ${e.nombre} (🪙${fmtOro(e.costo)} · 🏃${cPA.edif})</button>`;
       }
       if (cons) h += `<div class="acciones">${cons}</div>`;
-      if (yo.puntos < cPA.mov)
-        h += `<div style="color:var(--oro);font-size:12px;margin-top:6px">` +
-             `sin puntos de acción 🏃 — termina el turno para renovarlos</div>`;
-      else if (max < 5)
+      // notas contextuales (solo aportan cuando la provincia es tuya y es tu turno)
+      if (mia && jugando) {
+        if (yo.puntos < cPA.mov)
+          h += `<div style="color:var(--oro);font-size:12px;margin-top:6px">` +
+               `sin puntos de acción 🏃 — termina el turno para renovarlos</div>`;
+        else if (max < 5)
+          h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
+               `población insuficiente para reclutar más</div>`;
+        else if (p.ejercito >= 2 && !p.movida)
+          h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
+               `haz clic en una provincia resaltada y elige cuántas tropas enviar</div>`;
+      } else if (!mia && jugando && p.dueno !== NEUTRAL &&
+                 !enGuerra(st.jugador, p.dueno)) {   // provincia ajena en paz
+        const t = tratadoTurnos(st.jugador, p.dueno);
+        if (t > 0)
+          h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
+               `🕊 tratado de no agresión (${t} turno${t > 1 ? "s" : ""})</div>`;
+        else
+          h += `<div class="acciones"><button data-guerra="${p.dueno}">` +
+               `declarar la guerra a ${pais.nombre}</button></div>`;
+      } else if (!jugando)
         h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
-             `población insuficiente para reclutar más</div>`;
-      else if (p.ejercito >= 2 && !p.movida)
-        h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
-             `haz clic en una provincia resaltada y elige cuántas tropas enviar</div>`;
+             `modo espectador: sin órdenes disponibles</div>`;
     } else if (mia && p.mar && st.fase === "jugando" && pre) {   // flota en el mar
       h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
            `en el mar no se puede reclutar ni construir</div>`;
@@ -1380,22 +1591,10 @@
       else if (miFlotaN(p) >= 1 && !yaMovi(p))
         h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
              `haz clic en una provincia resaltada para mover la flota o desembarcar</div>`;
-    } else if (!mia && p.mar) {
-      // cuenca ajena (sin flota mía): solo informativa
+    } else if (p.mar) {
+      // cuenca ajena (sin flota mía) o mar fuera de turno: solo informativa
       caja.innerHTML = h;
       return;
-    } else if (!mia && p.dueno !== NEUTRAL && !enGuerra(st.jugador, p.dueno) &&
-               st.fase === "jugando") {
-      const t = tratadoTurnos(st.jugador, p.dueno);
-      if (t > 0)
-        h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
-             `🕊 tratado de no agresión (${t} turno${t > 1 ? "s" : ""})</div>`;
-      else
-        h += `<div class="acciones"><button data-guerra="${p.dueno}">` +
-             `declarar la guerra a ${pais.nombre}</button></div>`;
-    } else if (st.fase !== "jugando" && (mia || (!mia && p.dueno !== NEUTRAL))) {
-      h += `<div style="color:var(--tenue);font-size:12px;margin-top:6px">` +
-           `modo espectador: sin órdenes disponibles</div>`;
     }
     caja.innerHTML = h;
     caja.querySelectorAll("[data-rec]").forEach(b => b.onclick = () => {
@@ -1415,6 +1614,8 @@
   // habilita/deshabilita los controles según fase y peticiones en vuelo
   function actualizarControles() {
     const activo = st.fase === "jugando" && !st.ocupado;
+    // en la pantalla de inicio (y previsualizando) no hay turno que terminar
+    $("b-turno").hidden = st.fase === "inicio";
     $("b-turno").disabled = !activo;
     $("b-replay").disabled = !(st.replay && st.replay.length > 0);
   }
@@ -1426,9 +1627,11 @@
     pintarFicha();
     avisar("Modo espectador: puedes explorar el mapa, la diplomacia y los gráficos, pero no dar órdenes.");
   };
-  $("b-fin-otra").onclick = async () => {
-    try { await apiPost("borrar", {}); } catch (e) {}
-    location.reload();
+  $("b-fin-otra").onclick = () => {
+    // la partida terminada se CONSERVA en el historial: empezar otra crea una
+    // partida aparte (ya no se borra ni sobrescribe). URL limpia, sin ?p=
+    location.href = `/juego?sello=${encodeURIComponent(sello)}` +
+                    `&d=${encodeURIComponent(stem)}`;
   };
 
   // clic del jugador sobre un objetivo válido: abre la orden pendiente
@@ -1492,8 +1695,9 @@
     }
     const e = estimarBajas(o);
     if (!e) { el.hidden = true; return; }
-    const rango = e.min === e.max ? `~${e.min}` : `${e.min}–${e.max}`;
-    let txt = `bajas estimadas: <b>${rango}</b> de ${o.n}`;
+    const rango = e.min === e.max ? `~${fmtTropas(e.min)}`
+                                  : `${fmtTropas(e.min)}–${fmtTropas(e.max)}`;
+    let txt = `bajas estimadas: <b>${rango}</b> de ${fmtTropas(o.n)}`;
     if (!e.ganaTal) txt += ` · <span style="color:var(--rojo)">probable derrota</span>`;
     else if (!e.ganaSeguro) txt += ` · resultado incierto`;
     el.innerHTML = txt;
@@ -1510,9 +1714,9 @@
       (o.naval ? " (por mar)" : "");
     $("orden-ruta").textContent = `${A.nombre} → ${D.nombre}`;
     const sl = $("orden-slider");
-    sl.max = o.max; sl.value = o.n;
-    $("orden-n").textContent = o.n;
-    $("orden-quedan").textContent = A.ejercito - o.n;
+    sl.max = o.max; sl.value = o.n;               // el slider trabaja en unidades chicas
+    $("orden-n").textContent = fmtTropas(o.n);    // ...pero se MUESTRA escalado
+    $("orden-quedan").textContent = fmtTropas(A.ejercito - o.n);
     $("orden-costo").textContent =
       `cuesta ${o.costo} punto${o.costo > 1 ? "s" : ""} de acción 🏃` +
       (o.naval ? ` (travesía naval)` : "");
@@ -1530,9 +1734,9 @@
   $("orden-slider").oninput = () => {
     if (!st.orden) return;
     st.orden.n = parseInt($("orden-slider").value) || 1;
-    $("orden-n").textContent = st.orden.n;
+    $("orden-n").textContent = fmtTropas(st.orden.n);
     $("orden-quedan").textContent =
-      st.prov.get(st.orden.origen).ejercito - st.orden.n;
+      fmtTropas(st.prov.get(st.orden.origen).ejercito - st.orden.n);
     pintarBajas();
     pintarFlecha();
   };
@@ -1554,64 +1758,73 @@
   // flechas sobre el mapa (con copias envueltas por el borde, porque el
   // mundo es periódico en x): flecha única de la orden pendiente, o abanico
   // semitransparente hacia todos los destinos posibles de la selección
+  // dibuja una flecha A->D en `ctx` (coords nx×ny). Reutilizable: la usan la
+  // capa de órdenes en vivo, el replay y el exportador de GIF. Maneja el wrap
+  // horizontal del mundo cilíndrico dibujando la copia envuelta si hace falta.
+  // `ataque` (opcional): distingue un ATAQUE de un movimiento SIN usar el color
+  // (en el replay todas las flechas van del color del país que mueve): el ataque
+  // se dibuja con trazo más grueso y punta mayor. `naval` => trazo discontinuo.
+  function dibujarFlecha(ctx, esc, A, D, color, naval, alfa, texto, ataque) {
+    if (!A || !D) return;
+    let x1 = A.cx, y1 = A.cy, x2 = D.cx, y2 = D.cy;
+    const dx = x2 - x1;                          // camino más corto (solo x envuelve)
+    if (dx > st.nx / 2) x2 -= st.nx;
+    else if (dx < -st.nx / 2) x2 += st.nx;
+    const dib = off => {
+      let ax = x1 + off, ay = y1, bx = x2 + off, by = y2;
+      const ang = Math.atan2(by - ay, bx - ax);
+      if (alfa < 1) {                            // retrae extremos del abanico
+        const r = 9 * esc, largo = Math.hypot(bx - ax, by - ay);
+        const rec = Math.min(r, largo * 0.28);
+        ax += Math.cos(ang) * rec; ay += Math.sin(ang) * rec;
+        bx -= Math.cos(ang) * rec * 0.7; by -= Math.sin(ang) * rec * 0.7;
+      }
+      const cab = (ataque ? 9.5 : 7) * esc;      // punta de la flecha (mayor si ataca)
+      const fx = bx - Math.cos(ang) * cab * 0.8;
+      const fy = by - Math.sin(ang) * cab * 0.8;
+      ctx.globalAlpha = alfa;
+      ctx.strokeStyle = color; ctx.fillStyle = color;
+      ctx.lineWidth = (ataque ? 3.4 : 2.2) * esc; ctx.lineCap = "round";
+      ctx.setLineDash(naval ? [5 * esc, 4 * esc] : []);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(fx, fy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx - Math.cos(ang - 0.45) * cab, by - Math.sin(ang - 0.45) * cab);
+      ctx.lineTo(bx - Math.cos(ang + 0.45) * cab, by - Math.sin(ang + 0.45) * cab);
+      ctx.closePath(); ctx.fill();
+      if (texto != null) {                       // rótulo en el punto medio
+        const mx = (ax + bx) / 2, my = (ay + by) / 2;
+        const t = String(texto), fs = 10 * esc;
+        ctx.font = `700 ${fs}px system-ui, sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        const w = ctx.measureText(t).width + 8 * esc, h = fs + 5 * esc;
+        ctx.fillStyle = "rgba(10,13,19,.92)";
+        ctx.beginPath();
+        ctx.roundRect(mx - w / 2, my - h / 2, w, h, 3 * esc);
+        ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = esc; ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.fillText(t, mx, my);
+      }
+      ctx.globalAlpha = 1;
+    };
+    dib(0);
+    if (Math.min(x1, x2) < 0) dib(st.nx);        // copia envuelta
+    else if (Math.max(x1, x2) > st.nx) dib(-st.nx);
+  }
+
   function pintarFlecha() {
     cvF.width = st.nx; cvF.height = st.ny;
     const ctx = cvF.getContext("2d");
-    const esc = Math.max(1, st.nx / 1024);
-
-    const flechaEntre = (A, D, color, naval, alfa, texto) => {
-      let x1 = A.cx, y1 = A.cy, x2 = D.cx, y2 = D.cy;
-      const dx = x2 - x1;                        // camino más corto (solo x envuelve)
-      if (dx > st.nx / 2) x2 -= st.nx;
-      else if (dx < -st.nx / 2) x2 += st.nx;
-      const dib = off => {
-        let ax = x1 + off, ay = y1, bx = x2 + off, by = y2;
-        const ang = Math.atan2(by - ay, bx - ax);
-        if (alfa < 1) {                          // retrae extremos del abanico
-          const r = 9 * esc, largo = Math.hypot(bx - ax, by - ay);
-          const rec = Math.min(r, largo * 0.28);
-          ax += Math.cos(ang) * rec; ay += Math.sin(ang) * rec;
-          bx -= Math.cos(ang) * rec * 0.7; by -= Math.sin(ang) * rec * 0.7;
-        }
-        const cab = 7 * esc;                     // punta de la flecha
-        const fx = bx - Math.cos(ang) * cab * 0.8;
-        const fy = by - Math.sin(ang) * cab * 0.8;
-        ctx.globalAlpha = alfa;
-        ctx.strokeStyle = color; ctx.fillStyle = color;
-        ctx.lineWidth = 2.2 * esc; ctx.lineCap = "round";
-        ctx.setLineDash(naval ? [5 * esc, 4 * esc] : []);
-        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(fx, fy); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(bx, by);
-        ctx.lineTo(bx - Math.cos(ang - 0.45) * cab, by - Math.sin(ang - 0.45) * cab);
-        ctx.lineTo(bx - Math.cos(ang + 0.45) * cab, by - Math.sin(ang + 0.45) * cab);
-        ctx.closePath(); ctx.fill();
-        if (texto != null) {                     // rótulo en el punto medio
-          const mx = (ax + bx) / 2, my = (ay + by) / 2;
-          const t = String(texto), fs = 10 * esc;
-          ctx.font = `700 ${fs}px system-ui, sans-serif`;
-          ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          const w = ctx.measureText(t).width + 8 * esc, h = fs + 5 * esc;
-          ctx.fillStyle = "rgba(10,13,19,.92)";
-          ctx.beginPath();
-          ctx.roundRect(mx - w / 2, my - h / 2, w, h, 3 * esc);
-          ctx.fill();
-          ctx.strokeStyle = color; ctx.lineWidth = esc; ctx.stroke();
-          ctx.fillStyle = color;
-          ctx.fillText(t, mx, my);
-        }
-        ctx.globalAlpha = 1;
-      };
-      dib(0);
-      if (Math.min(x1, x2) < 0) dib(st.nx);      // copia envuelta
-      else if (Math.max(x1, x2) > st.nx) dib(-st.nx);
-    };
+    const esc = escRotulos();
+    const flechaEntre = (A, D, color, naval, alfa, texto) =>
+      dibujarFlecha(ctx, esc, A, D, color, naval, alfa, texto);
 
     const o = st.orden;
     if (o) {                                     // orden pendiente: flecha única
       const A = st.prov.get(o.origen), D = st.prov.get(o.destino);
-      flechaEntre(A, D, o.ataque ? "#ff6a50" : "#5ee6a0", o.naval, 1, o.n);
+      flechaEntre(A, D, o.ataque ? "#ff6a50" : "#5ee6a0", o.naval, 1, fmtTropas(o.n));
     } else if (st.sel) {                         // abanico de destinos posibles
       const A = st.prov.get(st.sel);
       for (const id of objetivos(st.sel)) {
@@ -1714,7 +1927,7 @@
       // vista, se marca con +? (el total real nunca viaja al front)
       const parcial = !yo && p.provsVis != null && p.provsVis < p.provs;
       div.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>` +
-        `${p.nombre}<span class="dato">${p.provs} · ⚔${fmt(p.ej)}${parcial ? "+?" : ""}</span>${badge}`;
+        `${p.nombre}<span class="dato">${p.provs} · ⚔${fmtTropas(p.ej)}${parcial ? "+?" : ""}</span>${badge}`;
       div.onclick = () => { st.paisInfo = p.id; pintarDuenos(); pintarDiplomacia(); pintarFicha(); };
       div.onmouseenter = () => { resaltarPais(p.id); pintarPaisInfo(p.id); };
       // al salir de la fila NO se oculta la ficha si no hay país fijado: así el
@@ -1808,10 +2021,13 @@
     ctx.fillStyle = tenue; ctx.font = "10.5px system-ui, sans-serif";
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
     const TICKS = 4;
+    // el eje se rotula en unidades de PRESENTACIÓN: militares y economía van x1000
+    // (como el HUD); la población ya es un número grande y no se escala.
+    const factorEje = metrica === "pob" ? 1 : FACTOR_PRES;
     for (let k = 0; k <= TICKS; k++) {
       const v = lo + (hi - lo) * k / TICKS, y = yDe(v);
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + W, y); ctx.stroke();
-      ctx.fillText(fmtCorto(v), pad.l - 6, y);
+      ctx.fillText(fmtCorto(v * factorEje), pad.l - 6, y);
     }
     // cotas del eje X: turno inicial/final del rango + intermedios
     ctx.fillStyle = tenue; ctx.textBaseline = "top";
@@ -1953,14 +2169,56 @@
     sincronizarEspejos();
   }
 
-  let replayEst = null;   // {turno, playing, vel, timer}
+  let replayEst = null;   // {turno, playing, vel, loop, timer}
+  let replayLoopPref = false;   // se recuerda entre sesiones de replay
   const maxTurnoReplay = () => st.replay.length ? st.replay[st.replay.length - 1].turno : st.turno;
+
+  // movs (movimientos/ataques de tropas) registrados para un turno del replay.
+  // Partidas viejas no traen "movs": se tolera devolviendo lista vacía.
+  function movsDeTurno(turno) {
+    const e = st.replay.find(d => d.turno === turno);
+    return (e && e.movs) || [];
+  }
+  // pinta en #cv-flecha las flechas de los movs de ese turno. TODAS van del color
+  // del país que ejecuta el mov (campo "p"; en partidas viejas sin "p" se usa el
+  // dueño del origen reconstruido AL INICIO del turno). El ataque se distingue
+  // por trazo grueso/punta mayor (no por color) y lo naval por trazo discontinuo.
+  //  `hasta` (opcional): reproducción SECUENCIAL — pinta solo los primeros
+  //   `hasta` movs; el último (el "actual") va a plena opacidad y los previos del
+  //   mismo turno atenuados. Si se omite, pinta TODOS a opacidad plena (salto por
+  //   slider y cuadro del GIF).
+  function pintarFlechasReplay(turno, duenos, hasta) {
+    cvF.width = st.nx; cvF.height = st.ny;
+    const ctx = cvF.getContext("2d");
+    const esc = escRotulos();
+    // dueños AL INICIO del turno (fallback de color para movs viejos sin "p")
+    const ini = reconstruirDuenosHasta(turno - 1);
+    const duenoIni = id => ini.has(id) ? ini.get(id)
+                        : (duenos && duenos.has(id) ? duenos.get(id)
+                        : (st.prov.get(id) ? st.prov.get(id).dueno : NEUTRAL));
+    const movs = movsDeTurno(turno);
+    const secuencial = hasta != null;
+    const n = secuencial ? Math.min(hasta, movs.length) : movs.length;
+    for (let i = 0; i < n; i++) {
+      const m = movs[i];
+      const A = st.prov.get(m.o), D = st.prov.get(m.d);
+      if (!A || !D) continue;
+      const ataque = m.t === "a";
+      const pais = (m.p != null) ? m.p : duenoIni(m.o);
+      const color = cssRGB(colorDe(pais));
+      const base = ataque ? 0.95 : 0.6;
+      // en modo secuencial solo el último mov (el actual) va a plena opacidad
+      const alfa = (!secuencial || i === n - 1) ? base : base * 0.4;
+      dibujarFlecha(ctx, esc, A, D, color, !!m.n, alfa, null, ataque);
+    }
+  }
 
   function iniciarReplay() {
     if (!st.replay || !st.replay.length) return;
     cancelarOrden();
     const M = maxTurnoReplay();
-    replayEst = { turno: 1, playing: true, vel: 1 };
+    replayEst = { turno: 1, mov: 0, playing: true, vel: 1, loop: replayLoopPref };
+    $("replay-loop").classList.toggle("activo", replayEst.loop);
     st._fasePrevia = st.fase; st._vistaPrevia = st.vista;
     st.fase = "replay"; st.vista = "paises";
     document.querySelectorAll("#ui-vistas .vista")
@@ -1975,25 +2233,48 @@
       .forEach(b => b.classList.toggle("activo", parseFloat(b.dataset.vel) === 1));
     $("replay-pausa").textContent = "⏸ pausar";
     $("replay-hud").hidden = false;
-    pintarCuadroReplay();
+    pintarCuadroReplay(0);                      // turno 1 (estado inicial), sin flechas
     correrReplay();
   }
-  function pintarCuadroReplay() {
+  // `hasta` (opcional): nº de movs del turno a mostrar (undefined => todos, para
+  // el salto directo por slider). En reproducción secuencial se pasa el conteo
+  // actual para revelar las flechas una a una.
+  function pintarCuadroReplay(hasta) {
     const M = maxTurnoReplay();
     $("replay-turno").textContent = `turno ${replayEst.turno}/${M}`;
     $("replay-slider").value = replayEst.turno;
-    pintarDuenos(reconstruirDuenosHasta(replayEst.turno));
+    const duenos = reconstruirDuenosHasta(replayEst.turno);
+    pintarDuenos(duenos);                      // pinta cvD + sincroniza espejos
+    pintarFlechasReplay(replayEst.turno, duenos, hasta);
+    sincronizarEspejos();                      // arrastra cvF a los espejos
   }
+  // Reproducción SECUENCIAL: dentro de cada turno se revelan sus movs uno a uno
+  // en el orden registrado (jugador y luego IA). El tiempo total del turno es
+  // ~base/vel y se reparte entre sus movs (cada mov = durTurno/n con un mínimo
+  // legible), de modo que un turno con muchos movs no dura N× uno sin movs.
   function correrReplay() {
     clearTimeout(replayEst.timer);
     if (!replayEst.playing) return;
     const M = maxTurnoReplay();
-    if (replayEst.turno >= M) { replayEst.playing = false; $("replay-pausa").textContent = "▶ reanudar"; return; }
+    const n = movsDeTurno(replayEst.turno).length;
+    const durTurno = 300 / replayEst.vel;                 // duración base del turno
+    const paso = n ? Math.max(90 / replayEst.vel, durTurno / n) : durTurno;
     replayEst.timer = setTimeout(() => {
-      replayEst.turno++;
-      pintarCuadroReplay();
+      if (replayEst.mov < n) {                            // revelar el siguiente mov
+        replayEst.mov++;
+        pintarCuadroReplay(replayEst.mov);
+        correrReplay();
+        return;
+      }
+      // turno completo mostrado -> avanzar de turno (o bucle / fin)
+      if (replayEst.turno >= M && !replayEst.loop) {
+        replayEst.playing = false; $("replay-pausa").textContent = "▶ reanudar"; return;
+      }
+      replayEst.turno = replayEst.turno >= M ? 1 : replayEst.turno + 1;
+      replayEst.mov = 0;
+      pintarCuadroReplay(0);                              // nuevo turno, aún sin flechas
       correrReplay();
-    }, 300 / replayEst.vel);
+    }, paso);
   }
   function salirReplay() {
     if (!replayEst) return;
@@ -2023,6 +2304,9 @@
     replayEst.playing = false; $("replay-pausa").textContent = "▶ reanudar";
     clearTimeout(replayEst.timer);
     replayEst.turno = parseInt($("replay-slider").value) || 1;
+    // salto directo: pinta el turno COMPLETO con todas sus flechas y deja el
+    // contador de movs al final (si se reanuda, avanza al siguiente turno)
+    replayEst.mov = movsDeTurno(replayEst.turno).length;
     pintarCuadroReplay();
   };
   document.querySelectorAll("#replay-controles .vel").forEach(b => b.onclick = () => {
@@ -2032,29 +2316,408 @@
     replayEst.vel = parseFloat(b.dataset.vel) || 1;
     if (replayEst.playing) correrReplay();
   });
+  $("replay-loop").onclick = () => {
+    if (!replayEst) return;
+    replayEst.loop = !replayEst.loop;
+    replayLoopPref = replayEst.loop;
+    $("replay-loop").classList.toggle("activo", replayEst.loop);
+    // si estaba detenido en el final y se activa el bucle, reanuda
+    if (replayEst.loop && replayEst.playing) correrReplay();
+  };
+  $("replay-gif").onclick = () => exportarGIF();
+
+  // ============ exportador de GIF (100% cliente, sin dependencias) ==========
+  // rasteriza cada turno del replay a un canvas offscreen (base + dueños +
+  // flechas + rótulo) y codifica un GIF89a animado con paleta global por
+  // median-cut y compresión LZW propias. No congela la UI: cede el hilo por
+  // cuadro con setTimeout(0).
+  // DECISIÓN: el GIF sigue siendo UN CUADRO POR TURNO, con TODAS las flechas del
+  // turno de golpe (pintarFlechasReplay sin `hasta`), ya coloreadas por país. NO
+  // se despliega mov a mov como la reproducción en vivo: multiplicar los cuadros
+  // por el nº de movs de cada turno haría explotar el tamaño del GIF sin aportar
+  // claridad en un formato que no se puede pausar.
+  function rotuloGIF(ctx, w, h, texto) {
+    const fs = Math.max(11, Math.round(h / 22));
+    ctx.font = `700 ${fs}px system-ui, sans-serif`;
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    const tw = ctx.measureText(texto).width, pad = fs * 0.45;
+    ctx.fillStyle = "rgba(10,13,19,.82)";
+    ctx.fillRect(6, 6, tw + pad * 2, fs + pad * 2);
+    ctx.fillStyle = "#e8dfc8";
+    ctx.fillText(texto, 6 + pad, 6 + pad);
+  }
+
+  async function exportarGIF() {
+    if (!replayEst || replayEst._gif) return;
+    replayEst._gif = true;
+    const btn = $("replay-gif"), txt0 = "💾 GIF";
+    btn.disabled = true;
+    const eraPlaying = replayEst.playing, turnoPrev = replayEst.turno;
+    replayEst.playing = false; clearTimeout(replayEst.timer);
+    try {
+      const M = maxTurnoReplay();
+      const anchoG = Math.min(720, st.nx || 720);
+      const altoG = Math.max(1, Math.round(anchoG * (st.ny || 360) / (st.nx || 720)));
+      const g = document.createElement("canvas");
+      g.width = anchoG; g.height = altoG;
+      const gx = g.getContext("2d", { willReadFrequently: true });
+      const cuadros = [];
+      for (let t = 1; t <= M; t++) {
+        const duenos = reconstruirDuenosHasta(t);
+        pintarDuenos(duenos);
+        pintarFlechasReplay(t, duenos);
+        gx.clearRect(0, 0, anchoG, altoG);
+        gx.fillStyle = "#0a0d13"; gx.fillRect(0, 0, anchoG, altoG);
+        if (base.complete && base.naturalWidth)
+          gx.drawImage(base, 0, 0, anchoG, altoG);
+        gx.drawImage(cvD, 0, 0, anchoG, altoG);
+        gx.drawImage(cvF, 0, 0, anchoG, altoG);
+        rotuloGIF(gx, anchoG, altoG, `turno ${t}/${M}`);
+        cuadros.push(new Uint8Array(gx.getImageData(0, 0, anchoG, altoG).data));
+        btn.textContent = `⏳ ${t}/${M}`;
+        await new Promise(r => setTimeout(r, 0));
+      }
+      btn.textContent = "⏳ paleta…";
+      await new Promise(r => setTimeout(r, 0));
+      const paleta = construirPaleta(cuadros);
+      const delayCs = Math.max(2, Math.round(30 / replayEst.vel));
+      const bytes = await codificarGIF(cuadros, anchoG, altoG, paleta, delayCs,
+        (i, n) => { btn.textContent = `⏳ gif ${i}/${n}`; });
+      const url = URL.createObjectURL(new Blob([bytes], { type: "image/gif" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `replay_${stem}.gif`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      anotar(`⚠ no se pudo generar el GIF: ${e.message}`);
+    } finally {
+      btn.textContent = txt0; btn.disabled = false;
+      replayEst._gif = false;
+      replayEst.turno = turnoPrev;
+      pintarCuadroReplay();
+      replayEst.playing = eraPlaying;
+      if (eraPlaying) correrReplay();
+    }
+  }
+
+  // paleta global (<=256) por median-cut sobre una muestra de píxeles de todos
+  // los cuadros (submuestreo para no procesar millones de píxeles).
+  function construirPaleta(cuadros) {
+    const muestras = [];
+    const totalPx = cuadros.reduce((s, c) => s + c.length / 4, 0);
+    const paso = Math.max(1, Math.floor(totalPx / 30000));   // ~30k muestras
+    let cont = 0;
+    for (const data of cuadros)
+      for (let o = 0; o < data.length; o += 4, cont++)
+        if (cont % paso === 0) muestras.push([data[o], data[o + 1], data[o + 2]]);
+    return medianCut(muestras, 256);
+  }
+  function medianCut(muestras, maxCol) {
+    if (!muestras.length) return [[0, 0, 0]];
+    let cajas = [muestras];
+    while (cajas.length < maxCol) {
+      let mejor = -1, mejorRango = -1, mejorCanal = 0;
+      for (let i = 0; i < cajas.length; i++) {
+        const c = cajas[i];
+        if (c.length < 2) continue;
+        const mn = [255, 255, 255], mx = [0, 0, 0];
+        for (const p of c) for (let k = 0; k < 3; k++) {
+          if (p[k] < mn[k]) mn[k] = p[k];
+          if (p[k] > mx[k]) mx[k] = p[k];
+        }
+        for (let k = 0; k < 3; k++) {
+          const r = mx[k] - mn[k];
+          if (r > mejorRango) { mejorRango = r; mejor = i; mejorCanal = k; }
+        }
+      }
+      if (mejor < 0 || mejorRango <= 0) break;
+      const caja = cajas[mejor];
+      caja.sort((a, b) => a[mejorCanal] - b[mejorCanal]);
+      const mid = caja.length >> 1;
+      cajas.splice(mejor, 1, caja.slice(0, mid), caja.slice(mid));
+    }
+    return cajas.map(c => {
+      const s = [0, 0, 0];
+      for (const p of c) for (let k = 0; k < 3; k++) s[k] += p[k];
+      return c.length ? s.map(v => Math.round(v / c.length)) : [0, 0, 0];
+    });
+  }
+
+  // asigna a cada píxel el índice de paleta más cercano (con caché por color).
+  function indexarCuadro(data, paleta, cache) {
+    const n = data.length / 4, idx = new Uint8Array(n);
+    for (let i = 0, o = 0; i < n; i++, o += 4) {
+      const key = (data[o] << 16) | (data[o + 1] << 8) | data[o + 2];
+      let pi = cache.get(key);
+      if (pi === undefined) {
+        let best = 0, bd = Infinity;
+        for (let p = 0; p < paleta.length; p++) {
+          const c = paleta[p];
+          const dr = data[o] - c[0], dg = data[o + 1] - c[1], db = data[o + 2] - c[2];
+          const dd = dr * dr + dg * dg + db * db;
+          if (dd < bd) { bd = dd; best = p; }
+        }
+        pi = best; cache.set(key, pi);
+      }
+      idx[i] = pi;
+    }
+    return idx;
+  }
+
+  // buffer de bytes crecible
+  class BufBytes {
+    constructor() { this.a = new Uint8Array(1 << 16); this.n = 0; }
+    _cap(extra) {
+      if (this.n + extra <= this.a.length) return;
+      let cap = this.a.length; while (cap < this.n + extra) cap *= 2;
+      const na = new Uint8Array(cap); na.set(this.a); this.a = na;
+    }
+    b(v) { this._cap(1); this.a[this.n++] = v & 0xff; }
+    short(v) { this.b(v); this.b(v >> 8); }
+    str(s) { for (let i = 0; i < s.length; i++) this.b(s.charCodeAt(i)); }
+    arr(bytes) { this._cap(bytes.length); for (let i = 0; i < bytes.length; i++) this.a[this.n++] = bytes[i]; }
+    out() { return this.a.subarray(0, this.n); }
+  }
+
+  // LZW GIF: devuelve un array de bytes ya comprimidos (sin sub-bloquear).
+  function lzwGIF(indices, minCode) {
+    const clearCode = 1 << minCode, endCode = clearCode + 1;
+    let codeSize = minCode + 1, nextCode = endCode + 1;
+    let dict = new Map();
+    const bytes = [];
+    let acc = 0, accBits = 0;
+    const emit = code => {
+      acc |= code << accBits; accBits += codeSize;
+      while (accBits >= 8) { bytes.push(acc & 0xff); acc >>>= 8; accBits -= 8; }
+    };
+    emit(clearCode);
+    let prefix = indices[0];
+    for (let i = 1; i < indices.length; i++) {
+      const k = indices[i], key = prefix * 4096 + k;
+      const found = dict.get(key);
+      if (found !== undefined) { prefix = found; continue; }
+      emit(prefix);
+      if (nextCode < 4096) {
+        dict.set(key, nextCode++);
+        // sube el ancho de código igual que giflib: cuando el siguiente código
+        // a asignar excede 2^codeSize (con "===" subiría un código antes y el
+        // decodificador se desincronizaría).
+        if (nextCode > (1 << codeSize) && codeSize < 12) codeSize++;
+      } else {
+        emit(clearCode);
+        dict = new Map(); nextCode = endCode + 1; codeSize = minCode + 1;
+      }
+      prefix = k;
+    }
+    emit(prefix);
+    emit(endCode);
+    if (accBits > 0) bytes.push(acc & 0xff);
+    return bytes;
+  }
+
+  async function codificarGIF(cuadros, w, h, paleta, delayCs, progreso) {
+    // bits necesarios para la paleta (>=2), tabla rellenada a potencia de 2
+    let bits = 1; while ((1 << bits) < paleta.length) bits++;
+    bits = Math.max(2, bits);
+    const sizeField = bits - 1, tablaN = 1 << bits;
+    const buf = new BufBytes();
+    buf.str("GIF89a");
+    buf.short(w); buf.short(h);
+    buf.b(0x80 | (sizeField << 4) | sizeField);   // GCT presente, resolución, tamaño
+    buf.b(0); buf.b(0);                            // color de fondo, aspect ratio
+    for (let i = 0; i < tablaN; i++) {             // tabla de color global
+      const c = paleta[i] || [0, 0, 0];
+      buf.b(c[0]); buf.b(c[1]); buf.b(c[2]);
+    }
+    // extensión de aplicación NETSCAPE2.0 -> bucle infinito
+    buf.b(0x21); buf.b(0xFF); buf.b(0x0B); buf.str("NETSCAPE2.0");
+    buf.b(0x03); buf.b(0x01); buf.short(0); buf.b(0);
+    const cache = new Map();
+    for (let f = 0; f < cuadros.length; f++) {
+      const idx = indexarCuadro(cuadros[f], paleta, cache);
+      // control gráfico (retardo)
+      buf.b(0x21); buf.b(0xF9); buf.b(0x04); buf.b(0x00);
+      buf.short(delayCs); buf.b(0); buf.b(0);
+      // descriptor de imagen
+      buf.b(0x2C); buf.short(0); buf.short(0); buf.short(w); buf.short(h); buf.b(0);
+      buf.b(bits);                                 // LZW minimum code size
+      const comp = lzwGIF(idx, bits);
+      for (let p = 0; p < comp.length; p += 255) { // sub-bloques de <=255 bytes
+        const n = Math.min(255, comp.length - p);
+        buf.b(n);
+        for (let q = 0; q < n; q++) buf.b(comp[p + q]);
+      }
+      buf.b(0);                                    // fin de datos de imagen
+      if (progreso) progreso(f + 1, cuadros.length);
+      await new Promise(r => setTimeout(r, 0));
+    }
+    buf.b(0x3B);                                   // trailer
+    return buf.out();
+  }
 
   // ================= continuar partida guardada (en el SERVIDOR) ===========
   // la partida se guarda sola en el servidor tras cada acción; aquí solo se
   // ofrece retomarla si el GET /estado inicial dice que existe y sigue viva
-  function ofrecerContinuar(est0) {
-    if (!est0 || est0.existe === false || est0.fase !== "jugando") return;
-    const pais = st.paises.get(est0.jugador);
-    if (!pais) return;
-    const b = $("b-continuar");
-    $("continuar").hidden = false;
-    b.textContent = `▶ continuar partida guardada — ` +
-      `${pais.nombre}, turno ${est0.turno}`;
-    b.onclick = async () => {
-      resaltarPais(null);
-      let est = est0;
-      try { est = await apiGet("estado"); } catch (e) {}
-      aplicarEstado(est);
-      $("velo-inicio").hidden = true;
-      anotar(`💾 partida cargada — sigues como <b>${st.paises.get(st.jugador).nombre}</b>`);
-      repintar();
-      avisar(`Partida cargada: turno ${st.turno}, dificultad ${st.difKey}.`);
-    };
+  // carga la partida guardada de ESTE mundo, en curso o terminada: si sigue
+  // jugando se retoma; si ya acabó, aplicarEstado muestra el velo de fin
+  // (victoria/derrota) con espectador y replay para visualizarla
+  async function cargarPartida(idPartida) {
+    if (idPartida !== undefined) partidaId = idPartida || "";
+    resaltarPais(null);
+    let est = null;
+    try { est = await apiGet("estado"); } catch (e) {}
+    if (!est || est.existe === false) {
+      avisar("No hay partida guardada en este mundo.");
+      return;
+    }
+    entrarConEstado(est);
   }
+
+  // entra de verdad a una partida con su estado ya en la mano (sin re-fetch):
+  // aplica el estado completo (una partida terminada muestra su velo de fin),
+  // cierra la pantalla de inicio y anota/avisa según esté en curso o terminada
+  function entrarConEstado(est) {
+    aplicarEstado(est);
+    $("velo-inicio").hidden = true;
+    $("previas-confirmar").hidden = true;
+    document.querySelectorAll("#previas-lista .prev.sel")
+      .forEach(o => o.classList.remove("sel"));
+    preview = null;
+    const yo = st.paises.get(st.jugador);
+    if (est.fase === "jugando") {
+      anotar(`💾 partida cargada — sigues como <b>${yo ? yo.nombre : "?"}</b>`);
+      repintar();
+      avisar(`Partida cargada: turno ${st.turno}, dificultad ${difEtiqueta(st.difKey)}.`);
+    } else {
+      anotar(`💾 partida terminada — ${yo ? yo.nombre : "?"}, ` +
+             `turno ${st.turno}; replay y espectador disponibles`);
+      repintar();
+    }
+  }
+
+  // precarga una partida guardada EN EL MAPA de fondo sin entrar: pinta sus
+  // dueños/estado, resalta su fila y ofrece la barra de confirmación
+  async function previsualizarPartida(p, btn) {
+    resaltarPais(null);
+    partidaId = p.pid || "";
+    let est = null;
+    try { est = await apiGet("estado"); } catch (e) {}
+    if (!est || est.existe === false) {
+      avisar("No se pudo previsualizar esta partida.");
+      preview = null; partidaId = "";
+      return;
+    }
+    preview = est;
+    aplicarEstado(est, true);
+    repintar();
+    mostrarConfirmar(est, btn);
+  }
+  // barra «previsualizando … / entrar / quitar»; resalta la fila elegida
+  function mostrarConfirmar(p, btn) {
+    document.querySelectorAll("#previas-lista .prev.sel")
+      .forEach(o => o.classList.remove("sel"));
+    if (btn) btn.classList.add("sel");
+    const t = p && p.turno != null ? p.turno : "?";
+    $("previas-confirmar-txt").textContent =
+      `previsualizando — turno ${t}, ${difEtiqueta(p && p.difKey)}`;
+    $("previas-confirmar").hidden = false;
+  }
+  // «✔ entrar»: con la partida ya previsualizada, entra de verdad sin re-fetch
+  $("previas-entrar").onclick = () => {
+    if (!preview) return;
+    const est = preview;          // entrarConEstado pone preview = null
+    entrarConEstado(est);
+  };
+  // «✕ quitar»: cierra la vista previa y devuelve el mapa al mundo virgen
+  $("previas-quitar").onclick = () => {
+    $("previas-confirmar").hidden = true;
+    document.querySelectorAll("#previas-lista .prev.sel")
+      .forEach(o => o.classList.remove("sel"));
+    preview = null;
+    restaurarInicial();
+    repintar();
+  };
+
+  // ================= partidas previas (historial del servidor) =============
+  // lista /api/juego/partidas en la pantalla de inicio (el back filtra por
+  // identidad: con sesión, las del email; anónimo, las locales sin dueño).
+  // La partida EN CURSO de este mismo mundo se retoma en el sitio (mismo
+  // camino que «continuar»); las de otros mundos navegan a su /juego?sello=&d=.
+  const fechaCorta = iso => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    try {
+      // con varias partidas por mundo la HORA distingue las del mismo día
+      return d.toLocaleString("es-MX",
+        { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return d.toISOString().slice(0, 10); }
+  };
+  // «mundo» abreviado: AAAAMMDD del sello + hash del detalle (como en cuenta)
+  const mundoBreve = (se, st_) => {
+    const s = String(se || "").slice(0, 8);
+    const hash = String(st_ || "").split("_").pop() || "";
+    return hash ? `${s}·${hash}` : s;
+  };
+  async function montarPrevias() {
+    let partidas = [];
+    try {
+      const r = await fetch(`${API}/partidas`);
+      const j = await r.json();
+      partidas = Array.isArray(j.partidas) ? j.partidas : [];
+    } catch (e) { return; }
+    if (!partidas.length) return;
+    const lista = $("previas-lista");
+    lista.textContent = "";
+    const fila = (p) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "prev";
+      b.dataset.pid = p.pid || "";
+      const celda = (cls, txt) => {
+        const s = document.createElement("span");
+        s.className = cls; s.textContent = txt; b.appendChild(s);
+      };
+      const enCurso = p.fase === "jugando";
+      celda("p-fecha", fechaCorta(p.actualizado || p.creado));
+      celda("p-mundo", mundoBreve(p.sello, p.stem));
+      celda("p-turno", `turno ${p.turno}`);
+      celda("p-dif", difEtiqueta(p.difKey));
+      // la última celda es la ACCIÓN del renglón: continuar o ver
+      celda("p-estado " + (p.resultado === "victoria" ? "es-victoria"
+              : p.resultado === "derrota" ? "es-derrota" : "es-curso"),
+            enCurso ? "▶ continuar"
+              : p.resultado === "victoria" ? "🏆 ver" : "💀 ver");
+      const esEste = p.sello === sello && p.stem === stem;
+      b.title = (enCurso ? "continuar esta partida"
+                         : "ver el mapa final y el replay de esta partida") +
+                (esEste ? "" : " (abre su mundo)");
+      // este mundo: previsualiza en el mapa (aún sin entrar); otro mundo: navega
+      // con &ver=1 para que al llegar se previsualice su partida
+      b.onclick = () => {
+        if (esEste) { previsualizarPartida(p, b); return; }
+        location.href = `/juego?sello=${encodeURIComponent(p.sello)}` +
+                        `&d=${encodeURIComponent(p.stem)}` +
+                        (p.pid ? `&p=${encodeURIComponent(p.pid)}` : "") +
+                        `&ver=1`;
+      };
+      lista.appendChild(b);
+    };
+    const grupo = (titulo) => {
+      const h = document.createElement("div");
+      h.className = "prev-grupo"; h.textContent = titulo;
+      lista.appendChild(h);
+    };
+    const enJuego = partidas.filter(p => p.fase === "jugando");
+    const acabadas = partidas.filter(p => p.fase !== "jugando");
+    if (enJuego.length) { grupo("▶ en curso"); enJuego.forEach(fila); }
+    if (acabadas.length) { grupo("🏁 terminadas"); acabadas.forEach(fila); }
+    $("previas").hidden = false;
+  }
+  $("previas-toggle").onclick = () => {
+    const oculto = $("previas-lista").hidden = !$("previas-lista").hidden;
+    $("previas-hint").hidden = oculto;
+    $("previas-toggle").textContent = `💾 partidas guardadas ${oculto ? "▸" : "▾"}`;
+  };
 
   // ================= inicio: elegir país y dificultad =================
   document.querySelectorAll("#dificultad [data-dif]").forEach(b => b.onclick = () => {
@@ -2098,7 +2761,7 @@
       div.className = "item";
       div.dataset.pais = p.id;
       div.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>` +
-        `${p.nombre}<span class="dato">${p.provs} provincias · ⚔${fmt(p.ej)}</span>`;
+        `${p.nombre}<span class="dato">${p.provs} provincias · ⚔${fmtTropas(p.ej)}</span>`;
       div.onclick = () => empezar(p.id);
       // hover en la lista -> resalta ese país en el mapa
       div.onmouseenter = () => resaltarPais(p.id);
@@ -2155,6 +2818,10 @@
     return { mx, my, rx: wx * st.nx / st._lw, ry: wy * st.ny / st._lh };
   }
   visor.addEventListener("wheel", e => {
+    // rueda sobre un overlay (inicio, velos, log, paneles): scroll nativo del
+    // overlay, no zoom del mapa que queda debajo (misma lista que mousedown)
+    if (e.target.closest("#panel, #log, .velo, #aviso, #dip-dock, #leyenda"))
+      return;
     e.preventDefault();
     if (!st.ids) return;
     const r = visor.getBoundingClientRect();
@@ -2236,7 +2903,7 @@
             : enGuerra(st.jugador, f.p) ? " ⚔" : "";
           extra += `<div class="mini"><i class="cuad" ` +
             `style="background:rgb(${pais.rgb.join(",")})"></i>${pais.nombre}` +
-            ` · ⚔ ${f.n}${rel}</div>`;
+            ` · ⚔ ${fmtTropas(f.n)}${rel}</div>`;
         }
       } else if (p.dueno !== NEUTRAL && p.visible) {
         const pais = st.paises.get(p.dueno);
@@ -2306,6 +2973,13 @@
     pintarSel(); pintarFlecha(); pintarFicha();
   }
 })();
+</script>
+<script type="module">
+  // cabecera común de la plataforma (marca, Estudio, Precios, Cuenta): la
+  // misma de las demás páginas; se inserta al inicio del body, encima de la
+  // barra del juego (base.css ya está cargado, trae sus estilos .nav)
+  import { montarNav } from "/app/js/nav.js";
+  montarNav("estudio");
 </script>
 </body>
 </html>

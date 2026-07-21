@@ -27,6 +27,7 @@ Se enchufa en web.py por el hook de modulos: expone
     manejar_post(handler, ruta, datos) -> bool
 Solo biblioteca estandar + numpy + Pillow (ver requirements.txt).
 """
+import datetime
 import json
 import math
 import random
@@ -54,6 +55,18 @@ BONO_DEFENSA = 1.2       # ventaja del defensor
 PENA_NAVAL = 0.72        # penalizacion al desembarcar / cruzar el mar
 HAB_TROPA = 150          # habitantes que consume cada tropa
 DINERO_INICIAL = 120
+
+# Factor de PRESENTACION (solo cosmetico): el estado interno, las ordenes y la
+# API siguen en unidades chicas; oro y tropas se MUESTRAN al usuario x1000 con
+# separador de miles. El front usa fmtOro()/fmtTropas(); en el backend solo se
+# aplica a los textos de eventos (_anotar) que citan cifras de tropas/oro.
+FACTOR_PRES = 1000
+
+
+def _fmt_tropas(n):
+    """Formatea un conteo de tropas para MOSTRARLO al usuario: x1000 con
+    separador de miles estilo es-MX (coma). Solo presentacion."""
+    return f"{int(n) * FACTOR_PRES:,}"
 
 # ---- poblacion inicial (rebalanceo: piso mas alto, picos mas bajos) ----
 POB_BASE_PROV = 6000     # habitantes minimos por provincia de tierra
@@ -113,10 +126,21 @@ PA_PAZ, PA_TRATADO = 2, 2
 #   minAtq    tropas minimas para lanzar un ataque (dificil arriesga con menos).
 #   pazFacil  probabilidad de pedir la paz cuando va perdiendo claro (dificil es
 #             pragmatica y corta perdidas; facil es cabezona y se desangra).
+#   Las claves internas ("facil"/"medio"/"normal"/"dificil") NO cambian de valor
+#   ni de significado (hay partidas persistidas con ese difKey); son las ETIQUETAS
+#   visibles del selector las que se rebautizaron. "medio" es un peldano
+#   intermedio entre "facil" y "normal": parametros numericos a mitad de camino y
+#   comportamiento discreto como termino medio sensato -> ya DEFIENDE (como
+#   "normal", deja de regalar huecos) pero sigue eligiendo blanco por debilidad y
+#   reclutando en una sola provincia (como "facil"), asi que ataca con menos
+#   punteria y desperdicia oro: un rival que se defiende pero aun torpe atacando.
 DIFS = {
     "facil":   {"eco": 0.7,  "gasto": 0.45, "agresion": 0.10, "margen": 1.7,
                 "edif": 0.12, "reclutas": 1, "objetivo": "debil", "concentra": False,
                 "defiende": False, "cazaLider": False, "minAtq": 6, "pazFacil": 0.3},
+    "medio":   {"eco": 0.85, "gasto": 0.6,  "agresion": 0.19, "margen": 1.45,
+                "edif": 0.26, "reclutas": 1, "objetivo": "debil", "concentra": False,
+                "defiende": True,  "cazaLider": False, "minAtq": 6, "pazFacil": 0.4},
     "normal":  {"eco": 1.0,  "gasto": 0.8,  "agresion": 0.28, "margen": 1.2,
                 "edif": 0.4,  "reclutas": 2, "objetivo": "mixto", "concentra": False,
                 "defiende": True,  "cazaLider": False, "minAtq": 5, "pazFacil": 0.5},
@@ -248,7 +272,7 @@ def _cargar_mapa(sello, stem):
     sr = capas.get("subregiones")
     if not sr or not sr.get("png"):
         return None
-    nx, ny = capas.get("resolucion", [1024, 1024])
+    nx, ny = capas.get("resolucion", [2048, 1024])
 
     im = Image.open(fpng).convert("RGB")
     arr = np.asarray(im, dtype=np.uint32)          # (H, W, 3)
@@ -499,11 +523,39 @@ def _conectar_componentes(mapa):
 # ===================================================================
 #  ESTADO DE PARTIDA  (mutable, persistido en disco)
 # ===================================================================
-def _ruta_partida(sello, stem):
-    return SALIDAS / sello / "partidas" / f"{stem}.json"
+def _ruta_partida(sello, stem, pid=None):
+    """Archivo de UNA partida. Cada partida nueva lleva un `pid` propio y vive
+    en <stem>__<pid>.json, asi se ACUMULAN (rejugar un mundo ya no sobrescribe
+    la partida anterior). Los archivos legado <stem>.json (sin pid) siguen
+    siendo validos: son partidas con pid None."""
+    nombre = f"{stem}__{pid}.json" if pid else f"{stem}.json"
+    return SALIDAS / sello / "partidas" / nombre
 
 
-def _nueva_partida(mapa, sello, stem, jugador, dif_key, ajustes):
+# id de partida: fecha-hora de creacion + 2 hex de azar (colisiones en el
+# mismo segundo). Es parte del NOMBRE de archivo: se valida al recibirlo.
+RE_PID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{2}$")
+
+
+def _nuevo_pid():
+    return (datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            + f"-{random.randrange(256):02x}")
+
+
+def _pid_de_ruta(ruta):
+    """pid segun el nombre de archivo (fuente de verdad, no el JSON):
+    <stem>__<pid>.json -> pid; <stem>.json legado -> None."""
+    nombre = ruta.stem
+    return nombre.split("__", 1)[1] if "__" in nombre else None
+
+
+def _ahora_iso():
+    """Marca de tiempo local en ISO 8601 (segundos). Sirve para sellar cuando se
+    crea y cuando se toca por ultima vez una partida (ver historial de cuenta)."""
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _nueva_partida(mapa, sello, stem, jugador, dif_key, ajustes, usuario=None):
     prov = {}
     for pid, p in mapa["prov"].items():
         # las capitales nacen con BASTION; las capitales costeras, ademas, con
@@ -519,16 +571,23 @@ def _nueva_partida(mapa, sello, stem, jugador, dif_key, ajustes):
     for p in mapa["paises"]:
         # AGRESIVIDAD por pais: rasgo fijo en [0,1] sorteado al crear la partida.
         # Mide lo belicoso que es cada pais; se combina con las guerras que
-        # declara (guerrasDecl) para modular la duracion de los tratados de no
-        # agresion (mas agresivo -> tratado mas corto). Ver _agresividad().
+        # declara (guerrasDecl). Modula las probabilidades de aceptar paz o
+        # tratado (no la duracion, que hoy es fija). Ver _agresividad().
         paises[p["id"]] = {"dinero": DINERO_INICIAL, "puntos": 0,
                            "vivo": True, "ia": True,
                            "agresion": round(random.random(), 3),
                            "guerrasDecl": 0}
     paises[NEUTRAL] = {"dinero": 0, "puntos": 0, "vivo": True, "ia": False,
                        "agresion": 0.0, "guerrasDecl": 0}
+    ahora = _ahora_iso()
     part = {
-        "sello": sello, "stem": stem, "turno": 1, "jugador": jugador,
+        "sello": sello, "stem": stem, "pid": _nuevo_pid(),
+        "turno": 1, "jugador": jugador,
+        # DUEÑO Y FECHAS del historial de cuenta: `usuario` es el email de la
+        # sesion que la creo (None si anonima). `creado`/`actualizado` en ISO
+        # 8601. Las partidas viejas no los traen: al listar se usa mtime como
+        # respaldo y `usuario` ausente se interpreta como anonima.
+        "usuario": usuario or None, "creado": ahora, "actualizado": ahora,
         "difKey": dif_key if dif_key in DIFS else "normal",
         "ajustes": dict(ajustes), "fase": "jugando",
         "ganador": None, "resultado": None,
@@ -553,6 +612,7 @@ def _serializar(part):
     d["paises"] = {str(k): v for k, v in part["paises"].items()}
     d["prov"] = {str(k): v for k, v in part["prov"].items()}
     d.pop("_eventos", None)
+    d.pop("_movsTurno", None)     # buffer transitorio: nunca al disco (ver replay)
     return d
 
 
@@ -564,6 +624,8 @@ def _deserializar(d):
     part["paises"] = {int(k): v for k, v in d.get("paises", {}).items()}
     part["prov"] = {int(k): v for k, v in d.get("prov", {}).items()}
     part["_duenoPrev"] = {int(k): v for k, v in d.get("_duenoPrev", {}).items()}
+    # campos extra de versiones previas (p.ej. "_tropasPrev") se ignoran sin error
+    part.pop("_tropasPrev", None)
     part.setdefault("historia", [])
     part.setdefault("replay", [])
     part["_eventos"] = []
@@ -571,20 +633,106 @@ def _deserializar(d):
 
 
 def _guardar_partida(part):
-    ruta = _ruta_partida(part["sello"], part["stem"])
+    ruta = _ruta_partida(part["sello"], part["stem"], part.get("pid"))
     ruta.parent.mkdir(parents=True, exist_ok=True)
+    part["actualizado"] = _ahora_iso()   # se toca en cada accion persistida
     ruta.write_text(json.dumps(_serializar(part), ensure_ascii=False),
                     encoding="utf-8")
 
 
-def _cargar_partida(sello, stem):
-    ruta = _ruta_partida(sello, stem)
-    if not ruta.exists():
-        return None
+def _leer_partida(ruta):
     try:
-        return _deserializar(json.loads(ruta.read_text(encoding="utf-8")))
+        part = _deserializar(json.loads(ruta.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
+    part["pid"] = _pid_de_ruta(ruta)     # el nombre de archivo manda
+    return part
+
+
+def _cargar_partida(sello, stem, pid=None):
+    """Con `pid`, esa partida exacta; sin el, la MAS RECIENTE del mundo (por
+    mtime, entre las nuevas <stem>__<pid>.json y la legado <stem>.json), que
+    es la que retoman los flujos sin pid (boton continuar, GET /estado)."""
+    if pid:
+        ruta = _ruta_partida(sello, stem, pid)
+        return _leer_partida(ruta) if ruta.exists() else None
+    carpeta = SALIDAS / sello / "partidas"
+    cands = [r for r in ([_ruta_partida(sello, stem)]
+                         + list(carpeta.glob(f"{stem}__*.json")))
+             if r.exists()]
+    cands.sort(key=lambda r: r.stat().st_mtime, reverse=True)
+    for ruta in cands:                    # salta JSON corruptos
+        part = _leer_partida(ruta)
+        if part:
+            return part
+    return None
+
+
+def _resumen_resultado(fase, resultado, ganador, jugador):
+    """Traduce el estado de una partida a un veredicto simple para el historial:
+    "jugando" | "victoria" | "derrota". Sigue lo que fija `_comprobar_victoria`:
+    en juego -> "jugando"; al terminar, `resultado` ya trae victoria/derrota, y
+    de respaldo se deduce por el `ganador` (== jugador -> victoria)."""
+    if fase == "jugando":
+        return "jugando"
+    if resultado in ("victoria", "derrota"):
+        return resultado
+    if ganador is not None and ganador == jugador:
+        return "victoria"
+    return "derrota"
+
+
+def _listar_partidas(email):
+    """Historial de partidas del solicitante. LOCAL-FIRST: con sesion (email no
+    vacio) devuelve las que llevan SU email en `usuario` Y ADEMAS las anonimas
+    (sin `usuario`): las partidas creadas sin sesion en este mismo servidor
+    local siguen siendo de quien esta al teclado, y ocultarlas al iniciar
+    sesion las haria "desaparecer". Anonimo (sin email) ve solo las anonimas
+    (nunca las de una cuenta ajena).
+
+    Recorre salidas/<sello>/partidas/<stem>.json, tolera JSON corruptos (los
+    salta) y extrae SOLO el resumen de cada partida (no conserva replay/prov en
+    memoria). Ordena por fecha descendente (actualizado, luego creado, luego
+    mtime del archivo como respaldo para partidas viejas sin fechas)."""
+    out = []
+    if not SALIDAS.exists():
+        return out
+    for ruta in SALIDAS.glob("*/partidas/*.json"):
+        sello = ruta.parent.parent.name
+        nombre = ruta.stem                # <stem> legado o <stem>__<pid>
+        stem, _, pid = nombre.partition("__")
+        pid = pid or None
+        if not _valida(sello, stem) or (pid and not RE_PID.match(pid)):
+            continue
+        try:
+            d = json.loads(ruta.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(d, dict):
+            continue
+        dueno = d.get("usuario") or None
+        if dueno and dueno != email:      # de otra cuenta: nunca se lista
+            continue
+        try:
+            mtime = datetime.datetime.fromtimestamp(
+                ruta.stat().st_mtime).isoformat(timespec="seconds")
+        except OSError:
+            mtime = None
+        creado = d.get("creado") or mtime
+        actualizado = d.get("actualizado") or mtime
+        jugador = d.get("jugador")
+        out.append({
+            "sello": sello, "stem": stem, "pid": pid,
+            "creado": creado, "actualizado": actualizado,
+            "turno": d.get("turno", 1), "fase": d.get("fase", "jugando"),
+            "difKey": d.get("difKey", "normal"), "jugador": jugador,
+            "resultado": _resumen_resultado(
+                d.get("fase", "jugando"), d.get("resultado"),
+                d.get("ganador"), jugador),
+        })
+    out.sort(key=lambda r: (r.get("actualizado") or r.get("creado") or ""),
+             reverse=True)
+    return out
 
 
 # ===================================================================
@@ -665,11 +813,8 @@ def _hay_tratado(part, a, b):
     return part.get("tratados", {}).get(_par_guerra(a, b), 0) > 0
 
 
-def _dur_tratado(part, a, b):
-    """Duracion (1..3 turnos) del tratado de no agresion: cuanto mas agresivo
-    sea el mas belicoso del par, mas corto el tratado (paz fragil)."""
-    agr = max(_agresividad(part, a), _agresividad(part, b))
-    return max(1, min(3, jround(3 - 2 * agr)))
+DUR_TRATADO_GUERRA = 2   # paz firmada tras una guerra: tregua corta
+DUR_TRATADO_PAZ = 4      # pacto en frio entre paises en paz: mas duradero
 
 
 # ===================================================================
@@ -786,16 +931,16 @@ def _migrar_mar(mapa, part):
 
 def _hacer_paz(mapa, part, a, b):
     part["guerras"].discard(_par_guerra(a, b))
-    dur = _dur_tratado(part, a, b)
+    dur = DUR_TRATADO_GUERRA
     part.setdefault("tratados", {})[_par_guerra(a, b)] = dur
     _anotar(part, f"{_nombre_pais(mapa, a)} y {_nombre_pais(mapa, b)} firman la paz "
                   f"(no agresion: {dur} turno{'s' if dur != 1 else ''})")
 
 
 def _firmar_tratado(mapa, part, a, b):
-    """Tratado de no agresion en frio (sin guerra previa): misma regla de
-    duracion 1..3 turnos que la paz (_dur_tratado)."""
-    dur = _dur_tratado(part, a, b)
+    """Tratado de no agresion en frio (sin guerra previa): dura mas que la paz
+    firmada tras una guerra (DUR_TRATADO_PAZ turnos fijos)."""
+    dur = DUR_TRATADO_PAZ
     part.setdefault("tratados", {})[_par_guerra(a, b)] = dur
     _anotar(part, f"{_nombre_pais(mapa, a)} y {_nombre_pais(mapa, b)} firman un "
                   f"tratado de no agresion ({dur} turno{'s' if dur != 1 else ''})")
@@ -839,6 +984,9 @@ def _mover_a(mapa, part, origen, destino, actor, n):
     n = min(n, _tropas_disponibles(mapa, part, origen, actor))
     if n < 1:
         return False
+    _registrar_mov(part, origen, destino, "m",
+                   naval=mapa["prov"][origen]["mar"] or mapa["prov"][destino]["mar"],
+                   pais=actor)
     _quitar_origen(mapa, part, origen, actor, n)
     if mapa["prov"][destino]["mar"]:
         _flota_pon(part, destino, actor, n, True)
@@ -864,6 +1012,7 @@ def _atacar(mapa, part, origen, destino, naval, n=None, atacante=None):
     tropas = min(disp if n is None else n, disp)
     if tropas < 1:
         return False
+    _registrar_mov(part, origen, destino, "a", naval=naval, pais=atacante)
     nA = _nombre_pais(mapa, atacante)
     nD = mapa["prov"][destino]["nombre"]
 
@@ -1362,14 +1511,57 @@ def _registrar_historia(mapa, part):
     part["historia"].append({"turno": part["turno"], "datos": datos})
 
 
+def _entrada_replay_pend(part):
+    """Entrada de replay del turno EN CURSO (aun sin cerrar). Se rotula con el
+    turno DESTINO (turno actual + 1), igual que los "cambios" de dueno, que en
+    el cierre se etiquetan con el turno ya incrementado. Acumula los "movs" a
+    medida que ocurren -incluso ENTRE peticiones /orden del jugador-, porque
+    viaja dentro de `replay`, que si se persiste (a diferencia de un buffer
+    suelto en memoria, que se perderia al recargar la partida de disco cada
+    peticion). En el cierre de turno se le fusionan los cambios de dueno."""
+    objetivo = part["turno"] + 1
+    rep = part["replay"]
+    if rep and rep[-1].get("turno") == objetivo:
+        return rep[-1]
+    entrada = {"turno": objetivo, "cambios": {}, "movs": []}
+    rep.append(entrada)
+    return entrada
+
+
+def _registrar_mov(part, origen, destino, tipo, naval=False, pais=None):
+    """Anota un movimiento/ataque de tropas del turno en curso para el replay.
+    tipo: "m"=mover (sin combate), "a"=atacar. `naval` marca el salto por mar.
+    `pais`: id del pais que EJECUTA el movimiento (el que mueve/ataca), capturado
+    en el momento del registro para poder colorear cada flecha por su ejecutante
+    en la reproduccion secuencial. Puede faltar en partidas viejas (el front
+    reconstruye entonces el dueno del origen al inicio del turno)."""
+    m = {"o": int(origen), "d": int(destino), "t": tipo}
+    if naval:
+        m["n"] = True
+    if pais is not None:
+        m["p"] = int(pais)
+    _entrada_replay_pend(part).setdefault("movs", []).append(m)
+
+
 def _registrar_replay_diff(part):
     cambios = {}
     for pid, p in part["prov"].items():
         if part["_duenoPrev"].get(pid) != p["dueno"]:
             cambios[str(pid)] = p["dueno"]
             part["_duenoPrev"][pid] = p["dueno"]
-    if cambios:
-        part["replay"].append({"turno": part["turno"], "cambios": cambios})
+    rep = part["replay"]
+    # ¿hay ya una entrada pendiente (creada por los movs del turno)? -> se
+    # fusionan ahi los cambios de dueno; si no, se crea una nueva solo si hubo
+    # cambios (las partidas viejas ni tocan "movs").
+    if rep and rep[-1].get("turno") == part["turno"]:
+        entrada = rep[-1]
+        if cambios:
+            entrada.setdefault("cambios", {}).update(cambios)
+        if not entrada.get("movs"):
+            entrada.pop("movs", None)
+    elif cambios:
+        entrada = {"turno": part["turno"], "cambios": cambios}
+        rep.append(entrada)
 
 
 # ---- vision / niebla de guerra (para ocultar tropas enemigas al front) ----
@@ -1484,7 +1676,8 @@ def _estado_visible(mapa, part, con_eventos=False):
             "ingreso": round(_ingreso_prov(mapa, part, i), 1) if propia else None,
             "reclutable": _reclutable(mapa, part, i) if propia else None})
     est = {
-        "existe": True, "turno": part["turno"], "jugador": jugador,
+        "existe": True, "pid": part.get("pid"),
+        "turno": part["turno"], "jugador": jugador,
         "fase": part["fase"], "difKey": part["difKey"],
         "ajustes": part["ajustes"], "ganador": part["ganador"],
         "resultado": part["resultado"], "guerras": sorted(part["guerras"]),
@@ -1548,6 +1741,16 @@ def manejar_get(handler, url):
     q = parse_qs(url.query)
     sello = q.get("sello", [""])[0]
     stem = q.get("d", [""])[0]
+    if ruta == "/api/juego/partidas":
+        # historial de la identidad que hace la peticion: con sesion, su email;
+        # anonimo (sin sesion), las partidas locales sin dueno. No necesita
+        # sello/d: recorre todas las salidas.
+        usuario = getattr(handler, "usuario", None)
+        email = usuario.get("email") if isinstance(usuario, dict) else None
+        with _lock:
+            partidas = _listar_partidas(email)
+        handler._json({"partidas": partidas})
+        return True
     if ruta == "/api/juego/mapa":
         if not _valida(sello, stem):
             handler._json({"error": "sello/d invalidos"}, 400)
@@ -1563,9 +1766,13 @@ def manejar_get(handler, url):
         if not _valida(sello, stem):
             handler._json({"error": "sello/d invalidos"}, 400)
             return True
+        pid = q.get("p", [""])[0]
+        if pid and not RE_PID.match(pid):
+            handler._json({"error": "pid invalido"}, 400)
+            return True
         with _lock:
             mapa = _cargar_mapa(sello, stem)
-            part = _cargar_partida(sello, stem)
+            part = _cargar_partida(sello, stem, pid or None)
             if not mapa or not part:
                 handler._json({"existe": False})
                 return True
@@ -1584,6 +1791,11 @@ def manejar_post(handler, ruta, datos):
     if not _valida(sello, stem):
         handler._json({"error": "sello/d invalidos"}, 400)
         return True
+    # partida concreta sobre la que operar; sin `p` se usa la mas reciente
+    pid = str(datos.get("p", "") or "")
+    if pid and not RE_PID.match(pid):
+        handler._json({"error": "pid invalido"}, 400)
+        return True
 
     if ruta == "/api/juego/nueva":
         with _lock:
@@ -1597,14 +1809,16 @@ def manejar_post(handler, ruta, datos):
                 return True
             dif = str(datos.get("dificultad", "normal"))
             aj = _limpiar_ajustes(datos.get("ajustes") or {})
-            part = _nueva_partida(mapa, sello, stem, jugador, dif, aj)
+            usuario = getattr(handler, "usuario", None)
+            email = usuario.get("email") if isinstance(usuario, dict) else None
+            part = _nueva_partida(mapa, sello, stem, jugador, dif, aj, email)
             _guardar_partida(part)
             handler._json(_estado_visible(mapa, part))
         return True
 
     if ruta == "/api/juego/borrar":
         with _lock:
-            r = _ruta_partida(sello, stem)
+            r = _ruta_partida(sello, stem, pid or None)
             if r.exists():
                 r.unlink()
         handler._json({"ok": True})
@@ -1613,7 +1827,7 @@ def manejar_post(handler, ruta, datos):
     # el resto necesita partida cargada
     with _lock:
         mapa = _cargar_mapa(sello, stem)
-        part = _cargar_partida(sello, stem)
+        part = _cargar_partida(sello, stem, pid or None)
         if not mapa or not part:
             handler._json({"error": "no hay partida"}, 404)
             return True
@@ -1737,7 +1951,7 @@ def _procesar_orden(mapa, part, datos):
                     destino)
         elif not D_mar and D["dueno"] == jugador:  # reforzar tierra propia
             _mover_a(mapa, part, origen, destino, jugador, n)
-            _anotar(part, f"mueves {n} tropas de {mapa['prov'][origen]['nombre']} "
+            _anotar(part, f"mueves {_fmt_tropas(n)} tropas de {mapa['prov'][origen]['nombre']} "
                           f"a {mapa['prov'][destino]['nombre']}", destino)
         else:                                      # atacar (tierra o flota enemiga)
             if not D_mar and D["dueno"] != NEUTRAL \
@@ -1763,7 +1977,7 @@ def _procesar_orden(mapa, part, datos):
         yo["puntos"] -= PA_REC
         p["ejercito"] += n
         p["pob"] -= n * HAB_TROPA
-        _anotar(part, f"reclutas {n} tropas en {mapa['prov'][pid]['nombre']}", pid)
+        _anotar(part, f"reclutas {_fmt_tropas(n)} tropas en {mapa['prov'][pid]['nombre']}", pid)
         return True, "reclutado"
 
     if accion == "disolver":
@@ -1780,7 +1994,7 @@ def _procesar_orden(mapa, part, datos):
         yo["puntos"] -= PA_REC
         p["ejercito"] -= nn
         p["pob"] += nn * HAB_TROPA
-        _anotar(part, f"disuelves {nn} tropas en {mapa['prov'][pid]['nombre']}", pid)
+        _anotar(part, f"disuelves {_fmt_tropas(nn)} tropas en {mapa['prov'][pid]['nombre']}", pid)
         return True, "disuelto"
 
     if accion == "construir":
@@ -1829,7 +2043,7 @@ def _procesar_diplomacia(mapa, part, datos):
     # la IA rechace. La IA acepta con probabilidad = 0.15 + 0.6*(1-agresion),
     # y +0.40 si va perdiendo (su fuerza < la mia): pragmatica corta perdidas,
     # los mas agresivos son cabezones. Si acepta, la paz IMPONE un tratado de
-    # no agresion forzoso (_hacer_paz -> _dur_tratado, 1..3 turnos).
+    # no agresion forzoso (_hacer_paz, DUR_TRATADO_GUERRA = 2 turnos fijos).
     if accion == "paz":
         if not _en_guerra(part, jugador, otro):
             return False, "no estan en guerra"
@@ -1852,7 +2066,7 @@ def _procesar_diplomacia(mapa, part, datos):
     # SOLICITAR TRATADO DE NO AGRESION en frio (estando en paz y sin tratado).
     # Cuesta PA_TRATADO, cobrado aunque rechacen. La IA acepta con probabilidad
     # = 0.25 + 0.6*(1-agresion): los mas pacificos aceptan casi siempre, los
-    # belicosos rara vez. Al firmar usa la misma duracion 1..3 (_dur_tratado).
+    # belicosos rara vez. Al firmar dura DUR_TRATADO_PAZ = 4 turnos fijos.
     if accion == "tratado":
         if _en_guerra(part, jugador, otro):
             return False, "estan en guerra: pide antes la paz"

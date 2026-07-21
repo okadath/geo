@@ -188,7 +188,7 @@
   // ---------- estado ----------
   const st = {
     scale: 1, tx: 0, ty: 0,
-    nx: 1536, ny: 1536,
+    nx: 1536, ny: 768,          // 2:1 por defecto (ancho = 2× alto)
     temas: [], subAuto: "✨ automático",
     punto: null,          // {rx, ry} en px de render
     lugar: null,          // ficha JSON del servidor
@@ -217,7 +217,7 @@
     if (!r.ok) throw new Error("info");
     return r.json();
   }).then(inf => {
-    [st.nx, st.ny] = inf.resolucion || [1536, 1536];
+    [st.nx, st.ny] = inf.resolucion || [1536, 768];
     st.temas = inf.temas || [];
     st.subAuto = inf.sub_auto || st.subAuto;
     const s = $("sel-tema");
@@ -351,17 +351,20 @@
     const ctx = cvM.getContext("2d");
     ctx.clearRect(0, 0, cvM.width, cvM.height);
     if (!st.punto) return;
-    // tamaño constante en pantalla: compensar el zoom del visor
+    // tamaño constante en pantalla: compensar el zoom del visor. El símbolo se
+    // deriva del eje menor para que un mundo 2:1 tenga la marca proporcionada
+    // al alto, no al doble de ancho
     const z = Math.max(1, st.scale);
-    const r = Math.max(3, st.nx / 90 / z);
-    ctx.lineWidth = Math.max(1, st.nx / 300 / z); ctx.lineCap = "round";
+    const m = Math.min(st.nx, st.ny);
+    const r = Math.max(3, m / 90 / z);
+    ctx.lineWidth = Math.max(1, m / 300 / z); ctx.lineCap = "round";
     ctx.strokeStyle = "rgba(0,0,0,0.6)";
     for (let pass = 0; pass < 2; pass++) {
       ctx.beginPath();
       ctx.moveTo(st.punto.rx - r, st.punto.ry - r); ctx.lineTo(st.punto.rx + r, st.punto.ry + r);
       ctx.moveTo(st.punto.rx + r, st.punto.ry - r); ctx.lineTo(st.punto.rx - r, st.punto.ry + r);
       ctx.stroke();
-      ctx.strokeStyle = "#3fb8af"; ctx.lineWidth = Math.max(0.6, st.nx / 600 / z);
+      ctx.strokeStyle = "#3fb8af"; ctx.lineWidth = Math.max(0.6, m / 600 / z);
     }
   }
 

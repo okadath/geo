@@ -175,7 +175,7 @@
     reg: new Map(),         // id -> región {nombre, tipo, pais?, rgb, area}
     sel: new Set(),         // ids seleccionados
     hover: 0,               // id bajo el cursor (0 = nada)
-    nx: 1024, ny: 1024,
+    nx: 1024, ny: 512,      // 2:1 por defecto (ancho = 2× alto)
     asentPorReg: new Map(), // id región -> [asentamientos]
     totalCeldas: 1,
   };
@@ -198,7 +198,7 @@
     st.capas = c;
     const sr = c.subregiones;
     if (!sr || !sr.png) throw new Error("este detalle no trae subregiones (regenera el detalle)");
-    [st.nx, st.ny] = c.resolucion || [1024, 1024];
+    [st.nx, st.ny] = c.resolucion || [1024, 512];
     visor.style.aspectRatio = st.nx + " / " + st.ny;
     st.totalCeldas = (sr.res_civ ? sr.res_civ[0] * sr.res_civ[1] : 40000);
     for (const r of (sr.tierra || [])) st.reg.set(r.id, Object.assign({ tipo: "tierra" }, r));
@@ -319,7 +319,7 @@
         if (a) { a[0] += x; a[1] += y; a[2]++; }
       }
     }
-    const fs = Math.max(10, W / 90);
+    const fs = Math.max(10, Math.min(W, H) / 90);
     ctx.font = `600 ${fs}px system-ui, sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const [id, a] of acc) {
@@ -338,7 +338,9 @@
     cvC.hidden = !$("cb-asent").checked;
     if (cvC.hidden) return;
     const ctx = cvC.getContext("2d");
-    const esc = Math.max(1, st.nx / 1024);
+    // escala de símbolos por el eje menor: un mundo 2:1 mantiene los puntos
+    // proporcionados al alto, como los tenía uno cuadrado del mismo alto
+    const esc = Math.max(1, Math.min(st.nx, st.ny) / 1024);
     for (const a of (st.capas.asentamientos || [])) {
       const rr = (RANGO_R[a.rango] || 1.6) * esc;
       ctx.beginPath(); ctx.arc(a.x, a.y, rr, 0, 6.2832);
