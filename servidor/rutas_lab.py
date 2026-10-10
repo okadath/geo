@@ -14,7 +14,7 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .config import BASE, DETALLE, RE_SELLO, SALIDAS
+from .config import DETALLE, PUBLICOS, RE_SELLO, SALIDAS
 from .corridas import (cargar_corridas, correr, correr_detalle,
                        correr_extrapolacion, jobs, limpiar, lock, nuevo_sello,
                        procs)
@@ -25,7 +25,7 @@ router = APIRouter()
 
 # lista de corridas publicas (visibles para free/anonimo). Si el archivo NO
 # existe -> todas publicas (modo desarrollo).
-PUBLICOS = BASE / "publicos.json"
+# PUBLICOS viene de config (TECTO_PUBLICOS o BASE/publicos.json)
 
 
 def _sellos_publicos():
@@ -92,7 +92,7 @@ async def api_generar(request: Request):
     ctx, err = _requiere_pro(request)
     if err:
         return err
-    _usuario, plan, ident = ctx
+    usuario, plan, ident = ctx
     ok, motivo = permitir_render(ident, plan)
     if not ok:
         return JSONResponse(
@@ -100,6 +100,7 @@ async def api_generar(request: Request):
             status_code=429)
     datos = await _cuerpo(request)
     p = limpiar(datos)
+    dueno = (usuario or {}).get("email")
     incrementar(ident)
     job_id = uuid.uuid4().hex[:8]
     with lock:
@@ -107,7 +108,7 @@ async def api_generar(request: Request):
         jobs[job_id] = {"estado": "corriendo", "progreso": 0.0, "params": p,
                         "sello": sello, "mapa": None, "placas": None,
                         "manto": None, "clima": None, "png": None}
-    threading.Thread(target=correr, args=(job_id, p, sello),
+    threading.Thread(target=correr, args=(job_id, p, sello, dueno),
                      daemon=True).start()
     return {"id": job_id, "params": p, "sello": sello}
 

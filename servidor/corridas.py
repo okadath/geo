@@ -142,7 +142,7 @@ def _ejecutar(job_id, cmd, carpeta, sello, meta_json):
                             **datos)
 
 
-def correr(job_id, p, sello):
+def correr(job_id, p, sello, dueno=None):
     carpeta = SALIDAS / sello
     carpeta.mkdir(parents=True, exist_ok=True)   # por si se borro entre tanto
     # --reproductor: cuadros PNG por frame + repro.json (timeline) + mundo de
@@ -158,6 +158,8 @@ def correr(job_id, p, sello):
         cmd += [f"--{k}", str(p[k])]
     meta = {"sello": sello, "creado": datetime.now().isoformat(timespec="seconds"),
             "params": p}
+    if dueno:   # corridas de un Pro: privadas y con dueno (ver mundos.py)
+        meta.update(dueno=dueno, publico=False)
     _ejecutar(job_id, cmd, carpeta, sello, meta)
 
 

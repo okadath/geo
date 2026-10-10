@@ -22,7 +22,8 @@ if str(BASE) not in sys.path:
 # salidas/ debe existir antes de atender peticiones (igual que el viejo main)
 SALIDAS.mkdir(exist_ok=True)
 
-from . import rutas_paginas, rutas_lab, rutas_cuentas, rutas_pagos, rutas_modulos
+from . import (rutas_paginas, rutas_lab, rutas_cuentas, rutas_pagos,
+               rutas_mundos, rutas_modulos)
 
 app = FastAPI(title="tecto web", docs_url=None, redoc_url=None,
               openapi_url=None)
@@ -45,5 +46,6 @@ app.include_router(rutas_paginas.router)
 app.include_router(rutas_lab.router)
 app.include_router(rutas_cuentas.router)
 app.include_router(rutas_pagos.router)
+app.include_router(rutas_mundos.router)
 # catch-all de modulos _srv AL FINAL (tambien produce el 404 por defecto)
 app.include_router(rutas_modulos.router)
