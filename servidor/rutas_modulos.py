@@ -186,9 +186,12 @@ def modulos_get(ruta: str, request: Request):
     # los renders frios pasan por la cola acotada (prioridad segun plan)
     COLA.ejecutar(trabajo, prioridad=_prioridad(plan))
 
-    # contador + marca de agua solo sobre PNG de render efectivos
+    # contador solo sobre renders FRIOS (los servidos desde la cache de disco
+    # no cuestan CPU y no consumen cupo: miniaturas, teselas al panear, OG);
+    # la marca de agua se estampa igual sobre todo PNG de render
     if es_render and _es_png(h):
-        incrementar(ident)
+        if not h.desde_disco:
+            incrementar(ident)
         if limites_plan(plan)["marca_agua"]:
             h.cuerpo = estampar_marca(h.cuerpo)
             h.cache = False   # la version con marca no se comparte via cache

@@ -39,6 +39,7 @@ class HandlerCompat:
         self.cuerpo = b""
         self.cache = False          # False -> Cache-Control: no-store
         self.atendido = False       # ¿algun metodo escribio respuesta?
+        self.desde_disco = False    # True si _archivo sirvio un PNG ya cacheado
         # contexto de plan/usuario (enganche de la fase 2; hoy informativo)
         self.usuario = usuario
         self.plan = plan
@@ -61,6 +62,7 @@ class HandlerCompat:
         self.ctype = ctype
         self.cache = cache
         self.atendido = True
+        self.desde_disco = True
 
     def _bytes(self, datos, ctype="image/png", cache=False):
         """Respuesta binaria en memoria (PNG renderizados por los modulos)."""
