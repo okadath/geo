@@ -567,11 +567,21 @@
 // vive en el servidor (juego_srv.py) y se consume por /api/juego/*. Aquí solo
 // se dibuja el estado visible que manda el back y se envían las órdenes del
 // jugador; ninguna regla ni fórmula corre en el navegador.
-(function () {
+(async function () {
   "use strict";
   const $ = id => document.getElementById(id);
   const q = new URLSearchParams(location.search);
-  const sello = q.get("sello") || "", stem = q.get("d") || "";
+  // sello del path /w/<sello>/jugar (o ?sello= en la url vieja); d de ?d= o,
+  // si falta, el detalle resuelto del mundo (GET /api/w/<sello> → .d)
+  const mPath = location.pathname.match(/^\/w\/([^/]+)\/jugar\/?$/);
+  const sello = (mPath ? decodeURIComponent(mPath[1]) : q.get("sello")) || "";
+  let stem = q.get("d") || "";
+  if (!stem && /^[0-9]{8}-[0-9]{6}(?:-[0-9]+)?$/.test(sello)) {
+    try {
+      const r = await fetch(`/api/w/${sello}`);
+      if (r.ok) stem = (await r.json()).d || "";
+    } catch (e) { /* sin d: cae en el aviso de abajo */ }
+  }
   if (!/^[0-9]{8}-[0-9]{6}(?:-[0-9]+)?$/.test(sello) ||
       !/^d[0-9]{6}_f[0-9]+_[0-9a-f]{6}$/.test(stem)) {
     document.body.innerHTML = "<p style='padding:30px'>Falta ?sello=…&d=… " +
@@ -588,11 +598,11 @@
   const API = "/api/juego";
   // vuelve a la pantalla inicial (selector de país + partidas); url limpia, la
   // partida ya está guardada en el servidor tras cada acción
-  $("a-inicio").href = `/juego?sello=${sello}&d=${stem}`;
+  $("a-inicio").href = `/w/${sello}/jugar?d=${stem}`;
   // pestañas de modo del inicio: explorar/battlemap llevan al workspace del
   // mundo en ese modo (conquistar es esta página y no navega)
   document.querySelectorAll("#modos-juego [data-ir]").forEach(b => b.onclick = () => {
-    location.href = `/estudio/mundo?sello=${sello}&d=${stem}&modo=${b.dataset.ir}`;
+    location.href = `/w/${sello}/mapa`;
   });
 
   // ================= estado (espejo de lo que manda el servidor) ==========
@@ -1630,8 +1640,8 @@
   $("b-fin-otra").onclick = () => {
     // la partida terminada se CONSERVA en el historial: empezar otra crea una
     // partida aparte (ya no se borra ni sobrescribe). URL limpia, sin ?p=
-    location.href = `/juego?sello=${encodeURIComponent(sello)}` +
-                    `&d=${encodeURIComponent(stem)}`;
+    location.href = `/w/${encodeURIComponent(sello)}/jugar` +
+                    `?d=${encodeURIComponent(stem)}`;
   };
 
   // clic del jugador sobre un objetivo válido: abre la orden pendiente
@@ -2642,7 +2652,7 @@
   // lista /api/juego/partidas en la pantalla de inicio (el back filtra por
   // identidad: con sesión, las del email; anónimo, las locales sin dueño).
   // La partida EN CURSO de este mismo mundo se retoma en el sitio (mismo
-  // camino que «continuar»); las de otros mundos navegan a su /juego?sello=&d=.
+  // camino que «continuar»); las de otros mundos navegan a su /w/<sello>/jugar?d=.
   const fechaCorta = iso => {
     if (!iso) return "";
     const d = new Date(iso);
@@ -2695,8 +2705,8 @@
       // con &ver=1 para que al llegar se previsualice su partida
       b.onclick = () => {
         if (esEste) { previsualizarPartida(p, b); return; }
-        location.href = `/juego?sello=${encodeURIComponent(p.sello)}` +
-                        `&d=${encodeURIComponent(p.stem)}` +
+        location.href = `/w/${encodeURIComponent(p.sello)}/jugar` +
+                        `?d=${encodeURIComponent(p.stem)}` +
                         (p.pid ? `&p=${encodeURIComponent(p.pid)}` : "") +
                         `&ver=1`;
       };
@@ -2975,11 +2985,23 @@
 })();
 </script>
 <script type="module">
-  // cabecera común de la plataforma (marca, Estudio, Precios, Cuenta): la
-  // misma de las demás páginas; se inserta al inicio del body, encima de la
-  // barra del juego (base.css ya está cargado, trae sus estilos .nav)
+  // cabecera común en modo migas de pan (ADR-010): Mundaria › mundo › Conquista.
+  // La miga del mundo es el «volver a la ficha»; el nombre llega de /api/w.
   import { montarNav } from "/app/js/nav.js";
-  montarNav("estudio");
+  const m = location.pathname.match(/^\/w\/([^/]+)\/jugar\/?$/);
+  const selloNav = m ? m[1] : new URLSearchParams(location.search).get("sello");
+  if (!selloNav) {
+    montarNav({ activa: "explorar" });
+  } else {
+    const miga = { texto: "Mundo " + selloNav, href: "/w/" + selloNav };
+    const header = montarNav({ migas: [miga, { texto: "Conquista" }] });
+    fetch("/api/w/" + encodeURIComponent(selloNav), { headers: { Accept: "application/json" } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        const a = header && header.querySelector(".nav-miga[href]");
+        if (j && j.nombre && a) a.textContent = j.nombre;
+      }).catch(() => {});
+  }
 </script>
 </body>
 </html>
