@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapa — Mundaria</title>
+  <meta name="description" content="Explora el mundo como mapa de fantasía y haz clic en cualquier punto para abrir su battlemap. Del planeta al encuentro.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/mapa.css">
+</head>
+<body>
+
+  <!-- estado de error elegante (sello inexistente o detalle que no carga) -->
+  <div class="ws-error oculto" id="ws-error">
+    <div class="tarjeta ws-error-caja">
+      <h2>No pudimos abrir este mundo</h2>
+      <p class="tenue" id="ws-error-msg">El enlace no trae un mundo válido.</p>
+      <a class="btn btn-oro btn-lg" href="/">← Explorar mundos</a>
+    </div>
+  </div>
+
+  <!-- visor -->
+  <div class="ws oculto" id="ws">
+
+    <!-- cabecera compacta del mundo -->
+    <header class="ws-cab">
+      <div class="ws-titulo">
+        <span class="ws-mundo">Mundo</span>
+        <span class="ws-sello mono" id="ws-sello"></span>
+      </div>
+      <span class="ws-estado tenue" id="ws-estado"></span>
+      <div class="ws-zoom" role="group" aria-label="zoom">
+        <button class="btn btn-sm" id="z-menos" title="alejar (tecla −)" aria-label="alejar">−</button>
+        <span class="ws-zoom-val mono" id="z-val" title="zoom actual">×1.0</span>
+        <button class="btn btn-sm" id="z-mas" title="acercar (tecla +)" aria-label="acercar">+</button>
+        <button class="btn btn-sm" id="z-reset" title="restablecer zoom (tecla 0)" aria-label="restablecer zoom">⟲</button>
+      </div>
+      <button class="btn btn-sm btn-oro" id="guardar" title="guardar este mundo en tu cuenta">★ Guardar</button>
+    </header>
+
+    <!-- cuerpo: lienzo + panel lateral -->
+    <div class="ws-cuerpo">
+
+      <div class="ws-lienzo">
+        <div class="vs" id="visor">
+          <div class="vs-telon"></div>
+          <div class="vs-lienzo">
+            <img class="vs-mapa" alt="mapa de fantasía">
+            <canvas class="vs-pin" aria-hidden="true"></canvas>
+          </div>
+          <img class="vs-deco" alt="" aria-hidden="true">
+          <div class="vs-cargador">
+            <div class="vs-cargador-fila"><span class="vs-spin"></span> pintando el mapa…</div>
+            <div class="barra-progreso indeterminada"><div class="relleno"></div></div>
+          </div>
+          <div class="vs-pista tenue" id="vs-pista"></div>
+        </div>
+      </div>
+
+      <!-- panel de estilo -->
+      <aside class="ws-panel">
+
+        <section class="panel-bloque">
+          <h3 class="panel-titulo">Estilo del mapa</h3>
+          <div class="campo">
+            <label for="ex-paleta">Paleta</label>
+            <select id="ex-paleta" class="ex-paleta">
+              <option value="claro">pergamino claro</option>
+              <option value="sepia">sepia envejecido</option>
+              <option value="noche">noche azulada</option>
+              <option value="imprenta">tinta imprenta</option>
+              <option value="esmeralda">esmeralda</option>
+              <option value="carmesi">carmesí y oro</option>
+              <option value="oceanico">atlas oceánico</option>
+            </select>
+          </div>
+          <div class="campo">
+            <label for="ex-calidad">Calidad
+              <span class="insignia insignia-pro" title="disponible en el plan Pro">4× Pro</span>
+            </label>
+            <select id="ex-calidad" class="ex-calidad" title="mapas más grandes: detalles y rótulos más finos y densos">
+              <option value="1">normal</option>
+              <option value="2">alta (2×)</option>
+              <option value="3">ultra (3×)</option>
+              <option value="4">extrema (4×)</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel-bloque">
+          <h3 class="panel-titulo">Capas</h3>
+          <div class="ex-capas">
+            <label><input type="checkbox" class="ex-cap" data-capa="relieve" checked> relieve</label>
+            <label><input type="checkbox" class="ex-cap" data-capa="veg" checked> vegetación</label>
+            <label><input type="checkbox" class="ex-cap" data-capa="rios" checked> ríos</label>
+            <label><input type="checkbox" class="ex-cap" data-capa="caminos" checked> caminos / rutas</label>
+            <label><input type="checkbox" class="ex-cap" data-capa="asent" checked> asentamientos</label>
+            <label><input type="checkbox" class="ex-cap" data-capa="rotulos" checked> rótulos</label>
+            <label><input type="checkbox" class="ex-cap" data-capa="tinte"> tinte político</label>
+            <label><input type="checkbox" class="ex-deco" checked> decoración (marco / rosa)</label>
+          </div>
+          <div class="campo">
+            <label for="ex-paises">Rótulos de países</label>
+            <select id="ex-paises" class="ex-paises">
+              <option value="grandes">solo los más grandes</option>
+              <option value="todos">todos</option>
+            </select>
+          </div>
+          <div class="campo ex-npaises-caja">
+            <label for="ex-npaises">Cuántos países</label>
+            <input type="number" id="ex-npaises" class="ex-npaises" min="1" max="64" value="8">
+          </div>
+          <div class="campo">
+            <label class="campo-etiqueta">Tamaño nombres de países <span class="valor" id="ex-fspais-val">1.0×</span></label>
+            <input type="range" class="ex-fspais" min="0.4" max="2" step="0.1" value="1" aria-label="tamaño nombres de países">
+          </div>
+          <div class="campo">
+            <label class="campo-etiqueta">Tamaño nombres de ciudades <span class="valor" id="ex-fsciu-val">1.8×</span></label>
+            <input type="range" class="ex-fsciu" min="0.4" max="2.5" step="0.1" value="1.8" aria-label="tamaño nombres de ciudades">
+          </div>
+        </section>
+
+        <section class="panel-bloque">
+          <h3 class="panel-titulo">Semilla de estilo</h3>
+          <div class="fila">
+            <input type="text" class="entrada ex-semilla crece" spellcheck="false" title="cambia el ruido decorativo del mapa" aria-label="semilla de estilo">
+            <button class="btn btn-sm ex-dado" title="semilla aleatoria">🎲</button>
+          </div>
+        </section>
+
+        <section class="panel-bloque">
+          <div class="fila fila-sep">
+            <h3 class="panel-titulo" style="margin:0">Rótulos</h3>
+            <button class="btn btn-sm ex-rot-toggle">✏ editar</button>
+          </div>
+          <div class="ex-rot-panel oculto">
+            <p class="tenue" style="font-size:var(--txt-xs);margin:var(--e2) 0">
+              Renombra u oculta; al guardar se re-renderiza el mapa.</p>
+            <div class="ex-rot-lista">cargando rótulos…</div>
+            <div class="fila fila-fin" style="margin-top:var(--e3)">
+              <button class="btn btn-sm ex-rot-restaurar btn-peligro" title="borra todos los cambios">restaurar</button>
+              <button class="btn btn-sm btn-oro ex-rot-guardar">guardar y re-render</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-bloque">
+          <h3 class="panel-titulo">Descargar mapa</h3>
+          <div class="campo">
+            <label for="ex-px">Resolución PNG
+              <span class="insignia insignia-pro" title="disponible en el plan Pro">8K Pro</span>
+            </label>
+            <select id="ex-px" class="ex-px">
+              <option value="2048">2048 px</option>
+              <option value="4096" selected>4096 px</option>
+              <option value="8192">8192 px</option>
+            </select>
+          </div>
+          <button class="btn btn-oro btn-bloque ex-exportar">💾 Descargar PNG</button>
+        </section>
+
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="/app/js/mapa.js"></script>
+</body>
+</html>

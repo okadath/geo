@@ -1,40 +1,39 @@
-// mundo.js — orquestador del workspace unificado /estudio/mundo (ADR-006).
-// Un solo lienzo (el visor de fantasía) y tres modos: Explorar, Battlemap y
-// Conquistar. Valida ?sello&d, monta la navegación, arranca el visor con la
-// resolución de _capas.json y cablea los paneles laterales por modo.
-// Todo el render vive en el servidor; esto es presentación (ADR-001/003).
+// mapa.js — visor del mapa de fantasía en /w/<sello>/mapa (ESPECIFICACION_RUTAS
+// «Visor»). Heredero del workspace mundo.js sin modos: visor pan/zoom +
+// panel de estilo + descarga PNG + ★ Guardar. El clic en el mapa navega al
+// battlemap del punto (/w/<sello>/<x>,<y>) con la conversión fantasía→rejilla
+// del visor (modo puntería). Todo el render vive en el servidor (ADR-001/003).
 
 import { montarNav, montarPie } from "./nav.js";
 import {
-  RE_SELLO, RE_STEM, capas, rotulos, guardarRotulos, avisarLimite,
+  RE_SELLO, mundo, capas, rotulos, guardarRotulos, avisarLimite,
+  cuenta, conSesion, guardar, urlMundo, urlBattlemap,
 } from "./api.js";
 import { crearVisor } from "./visor.js";
-import { crearBattlemap } from "./battlemap.js";
-import { aviso } from "./ui.js";
+import { aviso, modal, cuadroCorreo } from "./ui.js";
 
 // ---- textos visibles agrupados (ADR-008) ----
 const TXT = {
-  errQuery: "El enlace no trae un mundo válido. Vuelve al Estudio y abre un mundo desde la galería.",
-  errCapas: "No se pudo leer el detalle de este mundo (¿fue borrado?). Vuelve al Estudio.",
-  pistaExplorar: "rueda = zoom · arrastrar = paneo · +/− = zoom · 0 = restablecer",
-  pistaBattlemap: "clic en el mapa = elegir el lugar del encuentro · rueda = zoom · arrastrar = paneo",
+  errSello: "El enlace no trae un mundo válido.",
+  errMundo: "Este mundo no existe o ya no está disponible.",
+  errCapas: "No se pudo leer el detalle de este mundo.",
+  pista: "clic = abrir el battlemap de ese punto · rueda = zoom · arrastrar = paneo · 0 = restablecer",
   rotCargando: "cargando rótulos…",
   rotVacio: "este detalle no tiene rótulos.",
   rotGuardados: (n) => `rótulos guardados (${n} cambios).`,
   rotRestaurados: "rótulos restaurados.",
+  guardado: "Mundo guardado en tu cuenta.",
+  yaGuardado: "Este mundo ya estaba en tus guardados.",
+  guardarTitulo: "Guarda este mundo",
+  guardarTexto: "Entra con tu correo para guardarlo; sin contraseñas.",
 };
 const TIPO_NOMBRE = { asent: "Asentamientos", pais: "Países", mar: "Mares", rio: "Ríos" };
 
 const $ = (sel) => document.querySelector(sel);
 
-montarNav("estudio");
-montarPie({ lab: false });
-
-// ============================================================================
-//  validación de la query (mismas reglas que el servidor, via api.js)
-// ============================================================================
-const q = new URLSearchParams(location.search);
-const sello = q.get("sello") || "", d = q.get("d") || "";
+// /w/<sello>/mapa -> sello (el servidor ya validó el path)
+const sello = decodeURIComponent((location.pathname.split("/")[2] || ""));
+const dQuery = new URLSearchParams(location.search).get("d") || "";
 
 function mostrarError(msg) {
   $("#ws").classList.add("oculto");
@@ -42,30 +41,32 @@ function mostrarError(msg) {
   $("#ws-error").classList.remove("oculto");
 }
 
-// ============================================================================
-// Nombre sintético del mundo — mismo generador determinista que la galería
-// (estudio.js), para que el usuario vea el mismo nombre en ambas páginas.
-const SIL_INI = ["Val", "Mor", "Thal", "Ker", "Ael", "Dun", "Bra", "Isla", "Or", "Vey", "Cal", "Nym", "Ther", "Gal", "Rho", "Zan"];
-const SIL_MED = ["do", "ra", "ve", "mi", "sha", "lu", "ta", "ri", "go", "en", "ka", "so", "dre", "va", "ni", "or"];
-const SIL_FIN = ["ria", "gard", "mar", "thia", "dor", "heim", "una", "eth", "os", "ara", "wyn", "il", "onte", "ath", "ur", "ia"];
-function nombreMundo(clave) {
-  let h = 0;
-  for (const c of clave) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return SIL_INI[h % 16] + SIL_MED[(h >>> 4) % 16] + SIL_FIN[(h >>> 8) % 16];
-}
-
-if (!RE_SELLO.test(sello) || !RE_STEM.test(d)) {
-  mostrarError(TXT.errQuery);
+montarPie({ lab: false });
+if (!RE_SELLO.test(sello)) {
+  montarNav({ migas: [{ texto: "Mapa" }] });
+  mostrarError(TXT.errSello);
 } else {
   arrancar();
 }
 
 async function arrancar() {
-  $(".ws-mundo").textContent = nombreMundo(d);
-  $("#ws-sello").textContent = `${sello} · ${d}`;
-  document.title = `${nombreMundo(d)} — Mundaria`;
+  let m;
+  try {
+    m = await mundo(sello, dQuery || undefined);
+  } catch (e) {
+    montarNav({ migas: [{ texto: "Mapa" }] });
+    mostrarError(e.status === 404 ? TXT.errMundo : `${TXT.errMundo} (${e.message})`);
+    return;
+  }
+  const d = m.d;
+  // d explícito en la URL -> se propaga a los enlaces; si no, URLs limpias
+  const qD = dQuery ? { d } : undefined;
+  montarNav({ migas: [{ texto: m.nombre, href: urlMundo(sello, qD) }, { texto: "Mapa" }] });
+  $(".ws-mundo").textContent = m.nombre;
+  $("#ws-sello").textContent = sello;
+  document.title = `${m.nombre} · mapa — Mundaria`;
 
-  // resolución del detalle: la necesita el visor y la conversión de coordenadas.
+  // resolución del detalle: la necesitan el visor y la conversión a rejilla.
   let info;
   try {
     info = await capas(sello, d);
@@ -75,8 +76,7 @@ async function arrancar() {
   }
   $("#ws").classList.remove("oculto");
 
-  const elVisor = $("#visor");
-  const visor = crearVisor({ sello, d, elVisor });
+  const visor = crearVisor({ sello, d, elVisor: $("#visor") });
   visor.onEstado = (txt, err) => {
     const el = $("#ws-estado");
     el.textContent = txt || "";
@@ -87,65 +87,49 @@ async function arrancar() {
   $(".ex-semilla").value = d;
   visor.cargar(info.resolucion);
 
-  cablearExplorar(visor);
-  const battlemap = crearBattlemap({ sello, d, panel: $('[data-panel="battlemap"]'), visor });
-  cablearModos(visor, battlemap);
-  cablearZoom(visor);
-  $("#vs-pista").textContent = TXT.pistaExplorar;
-}
-
-// ============================================================================
-//  modos (pestañas)
-// ============================================================================
-function cablearModos(visor, battlemap) {
-  const pestanas = document.querySelectorAll(".pestanas .pestana");
-  const paneles = document.querySelectorAll(".ws-modo-panel");
-  const pistas = {
-    explorar: TXT.pistaExplorar, battlemap: TXT.pistaBattlemap,
+  // clic (sin arrastre) -> battlemap del punto. El visor ya convierte la
+  // posición de pantalla a la rejilla (rx, ry) de /api/batalla/*.
+  visor.setPick(true);
+  visor.onPick = (rx, ry) => {
+    location.href = urlBattlemap(sello, Math.floor(rx), Math.floor(ry), qD);
   };
-  let actual = "explorar";
 
-  function ir(modo) {
-    // conquistar ya no es un panel: es el videojuego, otra página (misma
-    // pestaña del navegador). Salimos de aquí sin marcar pestaña activa.
-    if (modo === "conquistar") {
-      location.href = `/juego?sello=${encodeURIComponent(sello)}&d=${encodeURIComponent(d)}`;
-      return;
-    }
-    if (modo === actual) return;
-    // salir del modo anterior
-    if (actual === "battlemap") battlemap.desactivar();
-    actual = modo;
-    for (const p of pestanas) {
-      const on = p.dataset.modo === modo;
-      p.classList.toggle("activa", on);
-      p.setAttribute("aria-selected", on ? "true" : "false");
-    }
-    for (const pan of paneles)
-      pan.classList.toggle("oculto", pan.dataset.panel !== modo);
-    document.body.dataset.modo = modo;
-    $("#vs-pista").textContent = pistas[modo] || "";
-    if (modo === "battlemap") battlemap.activar();
-  }
-
-  for (const p of pestanas) p.addEventListener("click", () => ir(p.dataset.modo));
-  document.body.dataset.modo = "explorar";
-
-  // deep-link: ?modo=battlemap abre el workspace en ese modo; ?modo=conquistar
-  // redirige al videojuego (así los enlaces viejos siguen funcionando)
-  const inicial = q.get("modo");
-  if (inicial === "conquistar" || inicial in pistas) ir(inicial);
+  cablearEstilo(visor, d);
+  cablearRotulos(visor, d);
+  cablearExport(visor, d);
+  cablearZoom(visor);
+  $("#guardar").addEventListener("click", () => guardarMundo());
+  $("#vs-pista").textContent = TXT.pista;
 }
 
 // ============================================================================
-//  MODO EXPLORAR: estilo, capas, semilla, rótulos, export
+//  ★ Guardar (tipo mundo). Sin sesión -> cuadro de correo (enlace mágico).
 // ============================================================================
-function cablearExplorar(visor) {
+function pedirCorreo() {
+  const m = modal({ titulo: TXT.guardarTitulo });
+  cuadroCorreo({ montarEn: m.querySelector(".modal-cuerpo"), titulo: "", texto: TXT.guardarTexto });
+}
+async function guardarMundo() {
+  let c = null;
+  try { c = await cuenta(); } catch (_) { /* sin API: se pide correo */ }
+  if (!conSesion(c)) { pedirCorreo(); return; }
+  try {
+    const r = await guardar({ tipo: "mundo", sello });
+    aviso(r && r.nuevo === false ? TXT.yaGuardado : TXT.guardado, "ok");
+  } catch (e) {
+    if (e.status === 401) pedirCorreo();
+    else aviso("no se pudo guardar: " + e.message, "error");
+  }
+}
+
+// ============================================================================
+//  estilo: paleta, calidad, capas, países, tipografías, semilla
+// ============================================================================
+function cablearEstilo(visor, d) {
   $(".ex-paleta").addEventListener("change", (e) => visor.setEstilo({ paleta: e.target.value }));
   $(".ex-calidad").addEventListener("change", (e) => visor.setEstilo({ calidad: parseInt(e.target.value, 10) }));
 
-  const capasCbs = document.querySelectorAll(".ex-cap");
-  for (const cb of capasCbs) {
+  for (const cb of document.querySelectorAll(".ex-cap")) {
     cb.addEventListener("change", () => {
       visor.setEstilo({ capas: { [cb.dataset.capa]: cb.checked } });
     });
@@ -178,13 +162,10 @@ function cablearExplorar(visor) {
   });
   $(".ex-semilla").addEventListener("keydown", (e) => { if (e.key === "Enter") aplicarSemilla(); });
   $(".ex-semilla").addEventListener("change", aplicarSemilla);
-
-  cablearRotulos(visor);
-  cablearExport(visor);
 }
 
 // ---- rótulos editables (renombrar / ocultar; persistente en servidor) ----
-function cablearRotulos(visor) {
+function cablearRotulos(visor, d) {
   const panel = $(".ex-rot-panel"), lista = $(".ex-rot-lista");
   let rotOrig = [];
 
@@ -222,6 +203,7 @@ function cablearRotulos(visor) {
         inp.type = "text"; inp.maxLength = 60; inp.className = "entrada rot-nombre";
         inp.value = ov.nombre || it.nombre;
         inp.placeholder = it.nombre; inp.dataset.orig = it.nombre;
+        inp.setAttribute("aria-label", `nombre de ${it.nombre}`);
         const lab = document.createElement("label");
         const chk = document.createElement("input");
         chk.type = "checkbox"; chk.className = "rot-ocultar"; chk.checked = !!ov.oculto;
@@ -255,7 +237,7 @@ function cablearRotulos(visor) {
       cargar();
       visor.reRender();
       aviso(TXT.rotGuardados(j.n), "ok");
-    } catch (e) { aviso("no se pudo guardar: " + e.message, "error"); }
+    } catch (e) { if (!e.manejado) aviso("no se pudo guardar: " + e.message, "error"); }
   });
   $(".ex-rot-restaurar").addEventListener("click", async () => {
     try {
@@ -264,12 +246,12 @@ function cablearRotulos(visor) {
       cargar();
       visor.reRender();
       aviso(TXT.rotRestaurados, "ok");
-    } catch (e) { aviso("no se pudo restaurar: " + e.message, "error"); }
+    } catch (e) { if (!e.manejado) aviso("no se pudo restaurar: " + e.message, "error"); }
   });
 }
 
-// ---- export PNG del mapa completo ----
-function cablearExport(visor) {
+// ---- descarga PNG del mapa completo ----
+function cablearExport(visor, d) {
   let exportando = false;
   $(".ex-exportar").addEventListener("click", async () => {
     if (exportando) return;
@@ -281,7 +263,7 @@ function cablearExport(visor) {
     try {
       const r = await fetch(url);
       if (r.status === 403 || r.status === 429) {
-        // gating del servidor (ADR-007): aviso no intrusivo con enlace a /cuenta
+        // gating del servidor (ADR-007): aviso no intrusivo con enlace a /yo
         cerrar();
         let msg = "";
         try { msg = (await r.json()).error || ""; } catch (_) { /* */ }
@@ -297,10 +279,10 @@ function cablearExport(visor) {
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
       cerrar();
-      aviso(`PNG exportado (${px} px).`, "ok");
+      aviso(`PNG descargado (${px} px).`, "ok");
     } catch (e) {
       cerrar();
-      aviso("no se pudo exportar: " + e.message, "error");
+      aviso("no se pudo descargar: " + e.message, "error");
     } finally { exportando = false; }
   });
 }

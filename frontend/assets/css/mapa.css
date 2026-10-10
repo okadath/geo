@@ -1,6 +1,7 @@
-/* mundo.css — workspace unificado /estudio/mundo (ADR-006). Depende de
-   tokens.css + base.css. El mapa de fantasía es el lienzo principal; el panel
-   lateral es contextual por modo (Explorar / Battlemap / Conquistar). */
+/* mapa.css — visor /w/<sello>/mapa (heredero del workspace mundo.css).
+   Depende de tokens.css + base.css. El mapa de fantasía es el lienzo
+   principal; a la derecha el panel de estilo. battlemap.html reutiliza de
+   aquí la cabecera (.ws-cab), el error (.ws-error) y .panel-bloque. */
 
 /* ==========================================================================
    Estado de error elegante
@@ -17,7 +18,7 @@
 .ws-error-caja .btn { margin-top: var(--e5); }
 
 /* ==========================================================================
-   Andamiaje del workspace: cabecera + modos + cuerpo a pantalla casi completa
+   Andamiaje: cabecera + cuerpo a pantalla casi completa
    ========================================================================== */
 .ws {
   display: flex;
@@ -34,16 +35,6 @@
   border-bottom: 1px solid var(--borde-suave);
   background: var(--fondo-2);
 }
-.ws-volver {
-  font-size: var(--txt-sm);
-  font-weight: var(--peso-medio);
-  color: var(--tinta-suave);
-  padding: 0.45em 0.7em;
-  border-radius: var(--radio-sm);
-  transition: color var(--transicion), background var(--transicion);
-  white-space: nowrap;
-}
-.ws-volver:hover { color: var(--oro-claro); background: var(--panel-2); }
 .ws-titulo { display: flex; align-items: baseline; gap: var(--e2); min-width: 0; }
 .ws-mundo { font-family: var(--serif); color: var(--pergamino); font-weight: var(--peso-fuerte); }
 .ws-sello {
@@ -57,17 +48,7 @@
 .ws-zoom .btn { min-width: 2.2em; padding-inline: 0.5em; }
 .ws-zoom-val { font-size: var(--txt-sm); color: var(--oro-claro); min-width: 3.2em; text-align: center; }
 
-/* --- barra de modos (barra de sección pegada bajo el nav) --- */
-.ws-modos {
-  display: flex;
-  align-items: center;
-  gap: var(--e4);
-  padding: var(--e3) var(--e5);
-  flex-wrap: wrap;
-  background: var(--fondo-2);
-  border-bottom: 1px solid var(--borde-suave);
-}
-.ws-estado { font-size: var(--txt-sm); }
+.ws-estado { font-size: var(--txt-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-estado.es-error { color: var(--rojo); }
 
 /* --- cuerpo: lienzo (crece) + panel lateral fijo --- */
@@ -77,7 +58,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: var(--e5);
-  padding: 0 var(--e5) var(--e5);
+  padding: var(--e4) var(--e5) var(--e5);
 }
 .ws-lienzo {
   min-width: 0;
@@ -107,7 +88,9 @@
   /* mapas panorámicos 2:1: el ancho manda y el alto sale del aspecto real
      (--ar lo fija el JS con nx/ny); max-height evita que un mapa casi
      cuadrado (compatibilidad 1:1) desborde el alto de la ventana */
-  width: 100%;
+  /* el ancho no pasa del que permite el alto disponible con el aspecto real
+     (un mundo 1:1 no se estira a la caja apaisada) */
+  width: min(100%, calc((100vh - 62px - 150px) * var(--ar, 2 / 1)));
   height: auto;
   aspect-ratio: var(--ar, 2 / 1);
   max-width: 100%;
@@ -116,8 +99,9 @@
   box-shadow: var(--sombra);
 }
 .vs.agarrando { cursor: grabbing; }
-/* modo battlemap: retícula para elegir punto */
-body[data-modo="battlemap"] .vs.puntear { cursor: crosshair; }
+/* puntería: el clic abre el battlemap del punto */
+.vs.puntear { cursor: crosshair; }
+.vs.puntear.agarrando { cursor: grabbing; }
 
 .vs-lienzo { position: absolute; inset: 0; transform-origin: 0 0; }
 .vs-mapa {
@@ -230,64 +214,14 @@ body[data-modo="battlemap"] .vs.puntear { cursor: crosshair; }
 }
 
 /* ==========================================================================
-   Modo Battlemap
-   ========================================================================== */
-.bm-instruccion {
-  font-size: var(--txt-sm);
-  border: 1px dashed var(--borde);
-  border-radius: var(--radio);
-  padding: var(--e3);
-  background: var(--fondo-2);
-}
-.bm-titulo {
-  font-family: var(--serif);
-  font-size: var(--txt-lg);
-  font-weight: var(--peso-fuerte);
-  color: var(--pergamino);
-  margin-bottom: 2px;
-}
-.bm-sub-esc { font-size: var(--txt-xs); margin-bottom: var(--e3); }
-.bm-preview-caja { position: relative; }
-.bm-preview {
-  width: 100%; height: auto; display: block;
-  border-radius: var(--radio-sm);
-  border: 1px solid var(--borde);
-  background: #0a0d13;
-  min-height: 120px;
-  transition: opacity var(--transicion);
-}
-.bm-preview.bm-preview-cargando { opacity: 0.55; }
-
-.bm-ficha .bm-dato {
-  display: flex; justify-content: space-between; gap: var(--e3);
-  font-size: var(--txt-sm); padding: 2px 0;
-}
-.bm-ficha .bm-dato span { color: var(--tinta-suave); }
-.bm-bioma { font-weight: var(--peso-fuerte); font-size: var(--txt-base); margin-bottom: var(--e2); }
-.bm-cuad {
-  display: inline-block; width: 11px; height: 11px; border-radius: 3px;
-  margin-right: 7px; vertical-align: -1px; border: 1px solid rgba(255, 255, 255, 0.25);
-}
-.bm-cerca { margin-top: var(--e2); }
-.bm-cerca ul { margin-top: var(--e1); padding-left: 18px; font-size: var(--txt-sm); }
-.bm-cerca li { list-style: disc; margin-bottom: 2px; }
-.bm-sug { margin-top: var(--e2); font-size: var(--txt-sm); }
-.bm-sug b { color: var(--oro-claro); }
-
-.bm-export-botones { display: grid; grid-template-columns: 1fr 1fr; gap: var(--e2); }
-.bm-export-botones .btn { font-size: var(--txt-xs); }
-
-/* ==========================================================================
    Responsive: en pantallas chicas el panel pasa debajo del mapa
    ========================================================================== */
 @media (max-width: 980px) {
   .ws-cuerpo { grid-template-columns: 1fr; }
   .ws-panel { max-height: none; overflow: visible; }
   .vs { height: auto; width: 100%; }
-  .bm-export-botones { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 560px) {
   .ws-cab { flex-wrap: wrap; gap: var(--e2); }
   .ws-zoom { margin-left: 0; }
-  .bm-export-botones { grid-template-columns: 1fr; }
 }

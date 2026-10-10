@@ -8,7 +8,8 @@
 //
 // Además del rol de fantasía, este visor es el tablero del modo Battlemap:
 // expone un modo «puntería» que traduce un clic a la rejilla (rx,ry) del mundo
-// y pinta un pin. Un solo lienzo, tres modos (ADR-006).
+// y pinta un pin. En /w/<sello>/mapa el clic en modo puntería navega al
+// battlemap del punto (mapa.js).
 
 import {
   urlFantasiaRender, urlFantasiaSector, urlFantasiaDeco,
@@ -324,6 +325,9 @@ export function crearVisor({ sello, d, elVisor }) {
       elVisor.classList.toggle("puntear", st.pick);
     },
     setPin(rx, ry) { st.punto = { rx, ry }; pintarPin(); },
+    // conversión clic-de-pantalla -> rejilla del mundo {rx, ry} (floats; los
+    // mismos rx,ry de /api/batalla/*). Útil fuera del modo puntería.
+    aRejilla(clientX, clientY) { return pantallaARender(clientX, clientY); },
     limpiarPin() { st.punto = null; pintarPin(); },
     get punto() { return st.punto; },
 

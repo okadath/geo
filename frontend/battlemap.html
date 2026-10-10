@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Battlemap — Mundaria</title>
+  <meta name="description" content="Battlemap coherente con el terreno de un punto del mundo: tema, rejilla y export a PNG, Foundry VTT y Roll20.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/mapa.css">
+  <link rel="stylesheet" href="/app/css/battlemap.css">
+</head>
+<body>
+
+  <!-- estado de error elegante (sello inexistente o detalle que no carga) -->
+  <div class="ws-error oculto" id="ws-error">
+    <div class="tarjeta ws-error-caja">
+      <h2>No pudimos abrir este battlemap</h2>
+      <p class="tenue" id="ws-error-msg">El enlace no trae un mundo válido.</p>
+      <a class="btn btn-oro btn-lg" href="/">← Explorar mundos</a>
+    </div>
+  </div>
+
+  <div class="ws oculto" id="ws">
+
+    <!-- cabecera: título de la escena + compartir/guardar -->
+    <header class="ws-cab">
+      <div class="bp-cab-titulo">
+        <p class="bm-titulo">—</p>
+        <p class="bm-sub-esc tenue"></p>
+      </div>
+      <div class="bp-cab-acciones">
+        <button class="btn btn-sm" id="copiar" title="copiar la URL de este battlemap">⧉ Copiar enlace</button>
+        <button class="btn btn-sm btn-oro" id="guardar" title="guardar este battlemap en tu cuenta">★ Guardar</button>
+      </div>
+    </header>
+
+    <!-- lienzo grande + panel flotante + minimapa (raíz de los controles) -->
+    <main class="bp" id="bm">
+      <div class="bp-lienzo">
+        <img class="bp-render bm-preview" alt="battlemap del lugar">
+      </div>
+
+      <!-- minimapa: imagen del mundo con el punto actual; clic = otro punto -->
+      <div class="bp-mini" id="mini" title="clic = battlemap de otro punto">
+        <img class="bp-mini-img" alt="minimapa del mundo">
+        <span class="bp-mini-punto" aria-hidden="true"></span>
+      </div>
+
+      <!-- panel flotante de controles -->
+      <aside class="bp-panel" aria-label="controles del battlemap">
+        <button class="btn btn-sm bp-plegar" id="plegar" aria-expanded="true" title="plegar / desplegar controles">⚙ controles</button>
+
+        <div class="bp-panel-cuerpo">
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">El lugar</h3>
+            <div class="bm-ficha"><p class="tenue">consultando el lugar…</p></div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Escena</h3>
+            <div class="campo">
+              <label for="bm-tema">Tema</label>
+              <select id="bm-tema" class="bm-tema"></select>
+            </div>
+            <div class="campo">
+              <label for="bm-sub">Subtipo</label>
+              <select id="bm-sub" class="bm-sub"></select>
+            </div>
+            <div class="fila">
+              <div class="campo crece">
+                <label for="bm-cols">Columnas</label>
+                <input type="number" id="bm-cols" class="bm-cols" min="10" max="40" value="20">
+              </div>
+              <div class="campo crece">
+                <label for="bm-rows">Filas</label>
+                <input type="number" id="bm-rows" class="bm-rows" min="10" max="40" value="20">
+              </div>
+            </div>
+            <div class="campo">
+              <label for="bm-seed">Semilla</label>
+              <div class="fila">
+                <input type="number" id="bm-seed" class="entrada bm-seed crece" min="0" step="1" value="1">
+                <button class="btn btn-sm bm-dado" title="semilla aleatoria">🎲</button>
+              </div>
+            </div>
+            <div class="fila">
+              <div class="campo crece">
+                <label for="bm-momento">Momento</label>
+                <select id="bm-momento" class="bm-momento">
+                  <option value="dia">☀️ día</option>
+                  <option value="atardecer">🌅 atardecer</option>
+                  <option value="noche">🌙 noche</option>
+                </select>
+              </div>
+              <div class="campo crece">
+                <label for="bm-estacion">Estación</label>
+                <select id="bm-estacion" class="bm-estacion">
+                  <option value="primavera">🌸 primavera</option>
+                  <option value="verano" selected>☀️ verano</option>
+                  <option value="otono">🍂 otoño</option>
+                  <option value="invierno">❄️ invierno</option>
+                </select>
+              </div>
+            </div>
+            <div class="campo">
+              <label for="bm-px">Píxeles por casilla
+                <span class="insignia insignia-pro" title="más de 70 px/casilla con el plan Pro">140 Pro</span>
+              </label>
+              <select id="bm-px" class="bm-px">
+                <option value="35">35 px</option>
+                <option value="50">50 px</option>
+                <option value="70" selected>70 px</option>
+                <option value="100">100 px</option>
+                <option value="140">140 px</option>
+              </select>
+            </div>
+            <div class="fila fila-envuelve">
+              <label><input type="checkbox" class="bm-grid" checked> rejilla</label>
+              <label><input type="checkbox" class="bm-nums" checked> numeración A1…</label>
+              <button class="btn btn-sm bm-regen">↻ regenerar</button>
+            </div>
+          </section>
+
+          <section class="panel-bloque">
+            <h3 class="panel-titulo">Exportar</h3>
+            <div class="bm-export-botones">
+              <button class="btn bm-exp">💾 PNG</button>
+              <button class="btn bm-exp140">💾 PNG HD <span class="insignia insignia-pro">140 Pro</span></button>
+              <button class="btn bm-foundry">🎲 Foundry</button>
+              <button class="btn bm-roll20">🎲 Roll20</button>
+            </div>
+            <div class="bp-muro"></div>
+          </section>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="/app/js/battlemap-pagina.js"></script>
+</body>
+</html>
