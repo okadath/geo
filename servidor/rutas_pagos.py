@@ -50,17 +50,39 @@ async def checkout(request: Request):
         datos = json.loads(await request.body() or b"{}")
     except ValueError:
         datos = {}
-    plan_id = str((datos or {}).get("plan_id", ""))
+    if not isinstance(datos, dict):
+        datos = {}
+    plan_id = str(datos.get("plan_id", ""))
     if plan_id and plan_id not in _PLAN_POR_ID:
         return JSONResponse({"error": "plan desconocido"}, status_code=400)
     if not os.environ.get("PADDLE_TOKEN"):
+        # beta: se responde antes de exigir correo para que el front siga
+        # mostrando la lista de espera tambien a los anonimos
         return JSONResponse(
             {"error": "pasarela no configurada", "modo": "beta"},
             status_code=503)
-    # Con token conectado (fase 4): aqui se crearia la transaccion Paddle y se
-    # devolveria la URL/overlay del checkout. Hoy nunca se llega con token.
+    custom = _custom_data(request, datos, plan_id)
+    if custom is None:
+        return JSONResponse({"error": "email invalido"}, status_code=400)
+    # Con token conectado (fase 4): aqui se crearia la transaccion Paddle con
+    # `custom` como custom_data y se devolveria la URL/overlay del checkout.
+    # Hoy nunca se llega con token.
     return JSONResponse(
         {"error": "pasarela no configurada", "modo": "beta"}, status_code=503)
+
+
+def _custom_data(request, datos, plan_id):
+    """custom_data del checkout: {price_id, email}. El email sale de la sesion
+    si la hay; si no (checkout anonimo), del cuerpo, validado. None si no hay
+    email valido. El webhook lo lee como respaldo (_email_del_payload) y crea
+    la cuenta con asegurar_usuario."""
+    from .rutas_cuentas import resolver_plan
+    from .cuentas import normalizar_email
+    usuario, _ = resolver_plan(request)
+    email = (usuario or {}).get("email") or normalizar_email(datos.get("email"))
+    if not email:
+        return None
+    return {"price_id": plan_id, "email": email}
 
 
 def _firma_valida(cabecera, cuerpo_crudo, secreto):
@@ -147,7 +169,7 @@ async def webhook(request: Request):
 
     # import perezoso: la otra fase escribe cuentas.py; no debe romper el boot
     try:
-        from servidor.cuentas import cambiar_plan
+        from servidor.cuentas import asegurar_usuario, cambiar_plan
     except ImportError:
         # integracion final la prueba la fase 4; la firma ya quedo verificada
         return JSONResponse(
@@ -158,9 +180,15 @@ async def webhook(request: Request):
         plan, dias = _plan_del_payload(data)
         if not plan:
             return JSONResponse({"error": "plan no resoluble"}, status_code=400)
+        # pagar como anonimo crea la cuenta (sin clave) con el correo del pago
+        usuario = asegurar_usuario(email)
+        if not usuario:
+            return JSONResponse({"error": "email invalido"}, status_code=400)
+        email = usuario["email"]
         cambiar_plan(email, plan, dias)
         return {"ok": True, "email": email, "plan": plan}
     if tipo == "subscription.canceled":
+        email = email.strip().lower()
         cambiar_plan(email, "free", 0)
         return {"ok": True, "email": email, "plan": "free"}
 
