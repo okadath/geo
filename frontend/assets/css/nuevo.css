@@ -1,0 +1,222 @@
+/* nuevo.css — layout propio de /nuevo (asistente «Forjar mundo», ADR-005).
+   Derivada de la antigua estudio.css: presets, semilla, ajustes avanzados y
+   progreso de forja, ahora en la página (no en un <dialog>), más el muro Pro
+   sobre el formulario deshabilitado. Depende de tokens.css y base.css.
+   Español en clases y comentarios (ADR-008). */
+
+.nvo-main {
+  padding-block: var(--e7) var(--e6);
+  max-width: 760px;
+}
+.nvo-cabecera { margin-bottom: var(--e5); }
+.nvo-cabecera p { margin-top: var(--e2); max-width: 56ch; }
+
+.nvo-zona { position: relative; }
+.nvo-tarjeta {
+  display: flex;
+  flex-direction: column;
+  padding: var(--e6);
+}
+
+/* ==========================================================================
+   Sin Pro: formulario visible pero apagado, con el muro encima
+   ========================================================================== */
+.nvo-bloqueado .nvo-tarjeta {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+  filter: saturate(0.6);
+}
+.nvo-muro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--e8) var(--e4) 0;
+  z-index: 2;
+}
+.nvo-muro .muro-pro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--e3);
+  text-align: center;
+  max-width: 380px;
+  padding: var(--e5) var(--e6);
+  border-color: var(--oro);
+  box-shadow: var(--sombra-oro), var(--sombra-lg);
+}
+.nvo-muro .muro-pro p {
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  margin: 0;
+}
+
+/* ==========================================================================
+   Asistente: presets, semilla, ajustes avanzados
+   ========================================================================== */
+.paso-etiqueta {
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  margin-bottom: var(--e3);
+}
+
+/* rejilla de presets 2×2 */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--e3);
+  margin-bottom: var(--e5);
+}
+.preset {
+  text-align: left;
+  padding: var(--e4);
+  cursor: pointer;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--panel-2);
+  transition: border-color var(--transicion), box-shadow var(--transicion),
+    background var(--transicion), transform var(--transicion);
+}
+.preset:hover:not(:disabled) { border-color: var(--oro-hondo); transform: translateY(-1px); }
+.preset:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+.preset:disabled { cursor: not-allowed; }
+.preset[aria-pressed="true"] {
+  border-color: var(--oro);
+  background: var(--oro-t);
+  box-shadow: var(--sombra-oro);
+}
+.preset-icono { font-size: 1.5rem; line-height: 1; }
+.preset-nombre {
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+  margin-top: var(--e2);
+}
+.preset-desc { color: var(--tinta-suave); font-size: var(--txt-xs); margin-top: var(--e1); }
+
+/* fila de semilla */
+.semilla-fila { display: flex; align-items: flex-end; gap: var(--e2); margin-bottom: var(--e4); }
+.semilla-fila .campo { flex: 1 1 auto; }
+.dado {
+  flex: 0 0 auto;
+  height: 2.55em;
+  width: 2.9em;
+  font-size: 1.1rem;
+}
+
+/* acordeón de ajustes avanzados */
+.avanzado { margin-bottom: var(--e2); }
+.avanzado > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  padding: var(--e3) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  border-top: 1px solid var(--borde-suave);
+}
+.avanzado > summary::-webkit-details-marker { display: none; }
+.avanzado > summary::before {
+  content: "▸";
+  color: var(--oro);
+  transition: transform var(--transicion);
+}
+.avanzado[open] > summary::before { transform: rotate(90deg); }
+.avanzado > summary:focus-visible { outline: none; box-shadow: var(--anillo-foco); border-radius: var(--radio-sm); }
+
+.avanzado-grupo { margin-block: var(--e3) var(--e5); }
+.avanzado-grupo h4 {
+  font-family: var(--sans);
+  font-size: var(--txt-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tinta-tenue);
+  margin-bottom: var(--e3);
+}
+.diales {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--e4) var(--e5);
+}
+.dial .campo-etiqueta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--e2);
+  margin-bottom: var(--e2);
+}
+
+.forja-pie {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  margin-top: var(--e4);
+  padding-top: var(--e4);
+  border-top: 1px solid var(--borde-suave);
+}
+.forja-pie .crece { flex: 1 1 auto; color: var(--tinta-tenue); font-size: var(--txt-xs); }
+
+/* ==========================================================================
+   Progreso de forja (dos fases en una barra)
+   ========================================================================== */
+.forja-titulo { margin-bottom: var(--e2); }
+.forja-progreso { text-align: center; padding-block: var(--e3); }
+.forja-progreso .glifo { font-size: 2.4rem; margin-bottom: var(--e3); color: var(--oro); }
+.forja-progreso .frase {
+  font-family: var(--serif);
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  min-height: 1.6em;
+  transition: opacity var(--transicion);
+}
+.forja-progreso .frase.cambiando { opacity: 0; }
+.forja-progreso .fase-nota { color: var(--tinta-suave); font-size: var(--txt-sm); margin-top: var(--e2); }
+.forja-progreso .barra-progreso { margin-block: var(--e5) var(--e3); height: 12px; }
+.forja-progreso .contador {
+  display: flex;
+  justify-content: space-between;
+  color: var(--tinta-tenue);
+  font-size: var(--txt-xs);
+  font-family: var(--mono);
+}
+.forja-progreso .fases {
+  display: flex;
+  justify-content: center;
+  gap: var(--e5);
+  margin-top: var(--e5);
+}
+.fase-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  font-size: var(--txt-xs);
+  color: var(--tinta-tenue);
+}
+.fase-chip .punto {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--borde); flex: 0 0 auto;
+}
+.fase-chip.activa { color: var(--oro-claro); }
+.fase-chip.activa .punto { background: var(--oro); box-shadow: 0 0 0 3px var(--oro-t); }
+.fase-chip.hecha .punto { background: var(--verde); }
+
+/* aviso de error dentro del panel, con reintento */
+.forja-error { margin-top: var(--e4); }
+.forja-error .aviso { position: static; box-shadow: none; }
+
+/* ==========================================================================
+   Responsivo
+   ========================================================================== */
+@media (max-width: 560px) {
+  .presets { grid-template-columns: 1fr; }
+  .diales { grid-template-columns: 1fr; }
+  .nvo-tarjeta { padding: var(--e5); }
+  .nvo-muro { padding-top: var(--e6); }
+}

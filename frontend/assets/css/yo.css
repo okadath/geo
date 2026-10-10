@@ -1,0 +1,188 @@
+/* yo.css — página /yo (cuenta única). Derivada de la antigua cuenta.css.
+   Depende de tokens.css y base.css; aquí SOLO el layout propio (panel de
+   sesión, listas de guardados y tabla de planes). Reutiliza .tarjeta/.btn/
+   .campo/.barra-progreso/.insignia de los componentes comunes.
+   Español en clases y comentarios (ADR-008). */
+
+.yo-main {
+  padding-block: var(--e7) var(--e6);
+  max-width: 760px;
+}
+
+.yo-raiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e6);
+}
+
+/* estado de carga inicial */
+.yo-cargando {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e3);
+}
+
+/* ==========================================================================
+   Panel principal (entrar o resumen de sesión)
+   ========================================================================== */
+.yo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e4);
+}
+.yo-panel.tarjeta { padding: var(--e6); }
+.yo-panel h1 { font-size: var(--txt-2xl); }
+.yo-entrar .cuadro-correo { padding: var(--e6); }
+.yo-entrar .cuadro-correo form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e3);
+  max-width: 420px;
+}
+.yo-entrar .cuadro-correo form .btn { align-self: flex-start; }
+.yo-aviso-fijo { position: static; box-shadow: none; }
+
+/* cabecera de la sesión: email + insignia de plan */
+.yo-cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--e4);
+  flex-wrap: wrap;
+}
+.yo-email { color: var(--tinta-suave); margin-top: var(--e1); }
+.yo-plan { align-self: center; }
+.yo-expira { margin: calc(-1 * var(--e2)) 0 0; }
+
+/* uso del día */
+.yo-uso { display: flex; flex-direction: column; gap: var(--e2); }
+.yo-uso-cab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e3);
+}
+.yo-uso-cifra { color: var(--oro-claro); }
+.yo-uso-vacio { margin: 0; }
+
+.yo-acciones {
+  display: flex;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  margin-top: var(--e2);
+}
+
+/* ==========================================================================
+   Secciones: guardados, tus mundos
+   ========================================================================== */
+.yo-seccion { display: flex; flex-direction: column; gap: var(--e3); }
+.yo-seccion h2 { font-size: var(--txt-xl); }
+.yo-vacio { margin: 0; }
+
+.yo-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+}
+.yo-fila {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  padding: var(--e3) var(--e4);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--panel);
+  transition: border-color var(--transicion);
+}
+.yo-fila:hover { border-color: var(--oro-hondo); }
+.yo-fila-enlace {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  color: inherit;
+  text-decoration: none;
+}
+.yo-fila-nombre {
+  font-family: var(--serif);
+  color: var(--pergamino);
+  font-weight: var(--peso-fuerte);
+}
+.yo-fila-coord {
+  font-family: var(--mono);
+  font-weight: normal;
+  font-size: var(--txt-xs);
+  color: var(--oro-claro);
+  margin-left: var(--e2);
+}
+.yo-fila-meta { font-size: var(--txt-xs); color: var(--tinta-tenue); }
+.yo-quitar { flex: 0 0 auto; }
+
+/* ==========================================================================
+   Tabla de planes (#pro, precios de /api/pagos/config)
+   ========================================================================== */
+.yo-upgrade { scroll-margin-top: var(--e8); }
+.yo-upgrade-intro { max-width: 60ch; margin: 0; }
+.yo-correo-pago { max-width: 420px; }
+.yo-correo-nota { font-size: var(--txt-xs); }
+
+.yo-planes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--e4);
+  margin-top: var(--e2);
+}
+.yo-plan-tarjeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+  position: relative;
+  padding: var(--e5);
+}
+.yo-plan-destacado {
+  border-color: var(--oro);
+  box-shadow: var(--sombra-oro), var(--sombra-sm);
+}
+.yo-cinta {
+  position: absolute;
+  top: calc(-1 * var(--e3));
+  right: var(--e4);
+}
+.yo-plan-nombre {
+  font-family: var(--serif);
+  color: var(--pergamino);
+  font-size: var(--txt-lg);
+  font-weight: var(--peso-fuerte);
+}
+.yo-plan-ciclo { font-size: var(--txt-xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.yo-plan-precio {
+  font-family: var(--serif);
+  font-size: var(--txt-2xl);
+  font-weight: var(--peso-fuerte);
+  color: var(--tinta);
+  margin-bottom: var(--e2);
+}
+.yo-plan-tarjeta .btn { margin-top: auto; }
+
+/* acciones dentro de los modales (beta, portal) */
+.yo-beta-acciones {
+  display: flex;
+  gap: var(--e3);
+  flex-wrap: wrap;
+  margin-top: var(--e5);
+}
+
+/* ==========================================================================
+   Responsivo
+   ========================================================================== */
+@media (max-width: 560px) {
+  .yo-planes { grid-template-columns: 1fr; }
+  .yo-panel.tarjeta,
+  .yo-entrar .cuadro-correo { padding: var(--e5); }
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nuevo mundo — Mundaria</title>
+  <meta name="description" content="Forja un mundo propio: elige una forma, una semilla, y deja que la geología haga el resto.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/nuevo.css">
+</head>
+<body>
+  <main class="contenedor nvo-main">
+    <header class="nvo-cabecera">
+      <h1>Nuevo mundo</h1>
+      <p class="tenue">
+        Cada mundo nace de una geología real: primero se levantan placas y
+        cordilleras, después ríos, reinos y ciudades.
+      </p>
+    </header>
+
+    <!-- el asistente lo pinta nuevo.js; sin Pro queda deshabilitado bajo el muro -->
+    <section class="nvo-zona" id="nuevo" aria-busy="true">
+      <div class="tarjeta nvo-tarjeta">
+        <span class="esqueleto esqueleto-titulo"></span>
+        <span class="esqueleto esqueleto-texto"></span>
+        <span class="esqueleto esqueleto-texto"></span>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app/js/nuevo.js"></script>
+</body>
+</html>
