@@ -602,6 +602,27 @@ dialog.modal::backdrop { background: rgba(6, 10, 18, 0.72); backdrop-filter: blu
   .nav-sesion-email { display: none; }
 }
 
+/* migas de pan (montarNav({migas})): marca › miga › … › actual */
+.nav-migas {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.nav-miga {
+  font-size: var(--txt-sm);
+  color: var(--tinta-suave);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.nav-miga:hover { color: var(--tinta); }
+.nav-miga-actual { color: var(--tinta); }
+.nav-miga-sep { color: var(--tinta-tenue); flex: none; }
+.nav-migas .nav-marca { flex: none; }
+
 .pie {
   border-top: 1px solid var(--borde-suave);
   margin-top: var(--e8);
