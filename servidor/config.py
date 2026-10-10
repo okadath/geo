@@ -4,12 +4,20 @@ BASE apunta a la raiz del proyecto (el directorio padre de servidor/), de modo
 que SALIDAS, FRONTEND, tecto.py y las paginas HTML sueltas siguen resolviendose
 a los mismos sitios que antes.
 """
+import os
 import re
 from pathlib import Path
 
 # raiz del proyecto: servidor/ vive dentro de ella, asi que subimos un nivel
 BASE = Path(__file__).resolve().parent.parent
-SALIDAS = BASE / "salidas"
+# rutas de datos parcheables por entorno (las pruebas las redirigen a un
+# directorio temporal ANTES de importar la app; los modulos capturan estas
+# constantes al importar). Sin variable -> mismo sitio de siempre.
+SALIDAS = Path(os.environ.get("TECTO_SALIDAS") or BASE / "salidas")
+# BD de cuentas (y de los contadores de limites, que comparten conexion)
+DB_CUENTAS = Path(os.environ.get("TECTO_DB") or BASE / "cuentas.db")
+# lista de corridas publicas (ver rutas_lab._sellos_publicos)
+PUBLICOS = Path(os.environ.get("TECTO_PUBLICOS") or BASE / "publicos.json")
 # front comercial nuevo (ADR-004): paginas en frontend/ y estaticos en
 # frontend/assets/ servidos bajo /app/. El panel cientifico (web.html) se muda
 # a /lab; "/" pasa a ser la landing.
