@@ -2,12 +2,15 @@
 web.py (allowlists estrictas, regexes, sin traversal). Todo `def` normal
 (threadpool de FastAPI): leer archivos del disco es bloqueante.
 """
+import html
 import os
 import re
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
+from . import correo, mundos
 from .config import (ASSETS, BASE, CTYPE_APP, FRONTEND, RE_APP_REL, RE_ARCHIVO,
                      RE_SELLO, SALIDAS)
 
@@ -30,26 +33,166 @@ def _html(ruta):
     return _archivo(ruta, "text/html; charset=utf-8", cache=False)
 
 
-# --- front comercial (ADR-004): paginas de frontend/ + estaticos ---
+# --- paginas nuevas (ESPECIFICACION_RUTAS.md, tabla de rutas) ---
+# Mientras un HTML de destino no exista (T08-T10 los crean) se sirve
+# frontend/_pendiente.html para que la ruta responda 200.
+PENDIENTE = FRONTEND / "_pendiente.html"
+RE_XY = r"[0-9]+,[0-9]+"
+OG_MARCADORES = ("og_titulo", "og_imagen", "og_descripcion", "og_url")
+
+
+def _pagina(nombre):
+    ruta = FRONTEND / nombre
+    return _html(ruta if ruta.is_file() else PENDIENTE)
+
+
+def _sello_invalido(sello):
+    return not re.fullmatch(RE_SELLO, sello)
+
+
+def _no_existe():
+    return JSONResponse({"error": "no existe"}, status_code=404)
+
+
+def _con_d(ruta, d):
+    """`ruta` con `?d=<d>` si llega d (url-encoded); sin query si no."""
+    return f"{ruta}?{urlencode({'d': d})}" if d else ruta
+
+
+def _og(sello, d, request=None):
+    """Valores OG de la ficha (sin escapar). Mundo inexistente -> vacios."""
+    m = mundos.mundo(sello, d)
+    if m is None:
+        return dict.fromkeys(OG_MARCADORES, "")
+    base = correo.base_url(request)
+    meta = m.get("meta") or {}
+    partes = []
+    if meta.get("semilla") is not None:
+        partes.append(f"Semilla {meta['semilla']}")
+    if meta.get("continentes") is not None:
+        partes.append(f"{meta['continentes']} continentes")
+    if meta.get("paises"):
+        partes.append(f"{meta['paises']} países")
+    desc = "Mundo generado en Mundaria"
+    if partes:
+        desc += ": " + " · ".join(partes)
+    return {
+        "og_titulo": m["nombre"],
+        "og_imagen": base + m["imagen"],
+        "og_descripcion": desc,
+        # d solo si es el detalle resuelto (no reflejar basura de la query)
+        "og_url": base + _con_d(f"/w/{sello}", d if d == m["d"] else None),
+    }
+
+
 @router.get("/")
-def landing():
-    return _html(FRONTEND / "index.html")
+def explorar():
+    return _pagina("explorar.html")
+
+
+@router.get("/nuevo")
+def nuevo():
+    return _pagina("nuevo.html")
+
+
+@router.get("/yo")
+def yo():
+    return _pagina("yo.html")
+
+
+# ficha compartible: la unica pagina con plantillado en servidor (metas OG,
+# porque los bots de vista previa no ejecutan JS). Mundo inexistente -> ficha
+# con marcadores vacios (el front muestra el error), no 404.
+@router.get("/w/{sello}")
+def ficha(request: Request, sello: str, d: str | None = None):
+    if _sello_invalido(sello):
+        return _no_existe()
+    ruta = FRONTEND / "ficha.html"
+    try:
+        texto = (ruta if ruta.is_file() else PENDIENTE).read_text(encoding="utf-8")
+    except OSError:
+        return _no_existe()
+    for clave, valor in _og(sello, d, request).items():
+        texto = texto.replace("{{%s}}" % clave, html.escape(valor, quote=True))
+    return Response(content=texto, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "no-store"})
+
+
+# literales (mapa, jugar) antes del patron <x>,<y>
+@router.get("/w/{sello}/mapa")
+def mapa(sello: str):
+    if _sello_invalido(sello):
+        return _no_existe()
+    return _pagina("mapa.html")
+
+
+# juego de conquista por turnos: el juego.html de la raiz, sin cambios
+@router.get("/w/{sello}/jugar")
+def jugar(sello: str):
+    if _sello_invalido(sello):
+        return _no_existe()
+    return _html(BASE / "juego.html")
+
+
+@router.get("/w/{sello}/{xy}")
+def battlemap(sello: str, xy: str):
+    if _sello_invalido(sello) or not re.fullmatch(RE_XY, xy):
+        return _no_existe()
+    return _pagina("battlemap.html")
+
+
+# --- redirecciones de rutas viejas (302, conservando d) ---
+def _vieja(request, sufijo=""):
+    """302 a /w/<sello><sufijo>?d= ; sin sello valido -> /."""
+    q = request.query_params
+    sello = q.get("sello") or ""
+    if _sello_invalido(sello):
+        return RedirectResponse("/", status_code=302)
+    return RedirectResponse(_con_d(f"/w/{sello}{sufijo}", q.get("d")),
+                            status_code=302)
 
 
 @router.get("/estudio")
 def estudio():
-    return _html(FRONTEND / "estudio.html")
+    return RedirectResponse("/", status_code=302)
 
 
 @router.get("/estudio/mundo")
-def estudio_mundo():
-    return _html(FRONTEND / "mundo.html")
+def estudio_mundo(request: Request):
+    sufijo = {"battlemap": "/mapa", "conquistar": "/jugar"}.get(
+        request.query_params.get("modo"), "")
+    return _vieja(request, sufijo)
 
 
-# mi cuenta: sesion, plan, uso del dia y tabla de upgrade (mismo patron que /estudio)
+@router.get("/fantasia")
+def fantasia(request: Request):
+    return _vieja(request, "/mapa")
+
+
+@router.get("/batalla")
+def batalla(request: Request):
+    return _vieja(request, "/mapa")
+
+
+@router.get("/juego")
+def juego(request: Request):
+    return _vieja(request, "/jugar")
+
+
 @router.get("/cuenta")
 def cuenta():
-    return _html(FRONTEND / "cuenta.html")
+    return RedirectResponse("/yo", status_code=302)
+
+
+# solo /entrar exacto: /entrar/<token> es de rutas_cuentas (enlace magico)
+@router.get("/entrar")
+def entrar():
+    return RedirectResponse("/yo", status_code=302)
+
+
+@router.get("/pro")
+def pro():
+    return RedirectResponse("/yo#pro", status_code=302)
 
 
 # laboratorio: el panel cientifico completo, antes en "/"
@@ -76,28 +219,6 @@ def app_estatico(rel: str):
 @router.get("/regiones")
 def regiones():
     return _html(BASE / "regiones.html")
-
-
-# juego de conquista por turnos sobre las provincias de UN detalle
-@router.get("/juego")
-def juego():
-    return _html(BASE / "juego.html")
-
-
-# rutas viejas desactivadas (ADR-009): fantasia y batalla son ahora modos del
-# workspace; redirigen conservando la query (?sello&d). status 302.
-@router.get("/fantasia")
-def fantasia(request: Request):
-    q = request.url.query
-    extra = f"?{q}" if q else ""
-    return RedirectResponse(f"/estudio/mundo{extra}", status_code=302)
-
-
-@router.get("/batalla")
-def batalla(request: Request):
-    q = request.url.query
-    extra = f"{q}&" if q else ""
-    return RedirectResponse(f"/estudio/mundo?{extra}modo=battlemap", status_code=302)
 
 
 # modulo del detallado: allowlist estricta (sin traversal), solo estos dos
