@@ -1,6 +1,6 @@
 # ADR-004 — Mapa de rutas: el front comercial toma `/`, el laboratorio se muda a `/lab`
 
-**Estado:** aceptada · 2026-07-17
+**Estado:** sustituida por ADR-010 · aceptada 2026-07-17
 
 ## Contexto
 

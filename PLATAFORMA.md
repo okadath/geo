@@ -17,6 +17,11 @@ no producto.
 
 ### 1.1 El producto unificado
 
+> **Nota (2026-10-10):** las rutas y pantallas definitivas del producto están en
+> [`ESPECIFICACION_RUTAS.md`](ESPECIFICACION_RUTAS.md) y
+> [`frontend/ADR/ADR-010-rutas-publicas.md`](frontend/ADR/ADR-010-rutas-publicas.md);
+> lo que sigue es el plan original y puede citar rutas ya retiradas.
+
 Hoy `/fantasia` y `/batalla` son dos páginas separadas que comparten query
 (`?sello=…&d=…`). Para vender hay que presentarlas como **una sola
 herramienta** con un flujo continuo:
@@ -62,6 +67,10 @@ por defecto (`NEGOCIO.md` §9.4).
 ---
 
 ## 2. Desarrollo (plomería, en orden)
+
+> **Nota (2026-10-10):** cuentas por enlace mágico (sin contraseñas),
+> guardados, mundos públicos/privados y rutas nuevas se implementaron según
+> [`ESPECIFICACION_RUTAS.md`](ESPECIFICACION_RUTAS.md) (tickets en `tickets/`).
 
 Presupuesto total honesto: **3–6 semanas** a tiempo completo.
 

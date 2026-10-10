@@ -1,6 +1,6 @@
 # ADR-006 — Workspace unificado: fantasía y battlemaps en una sola página
 
-**Estado:** aceptada · 2026-07-17
+**Estado:** sustituida por ADR-010 · aceptada 2026-07-17
 
 ## Contexto
 

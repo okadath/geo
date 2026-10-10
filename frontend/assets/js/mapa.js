@@ -1,5 +1,5 @@
 // mapa.js — visor del mapa de fantasía en /w/<sello>/mapa (ESPECIFICACION_RUTAS
-// «Visor»). Heredero del workspace mundo.js sin modos: visor pan/zoom +
+// «Visor»). Heredero del antiguo workspace sin modos: visor pan/zoom +
 // panel de estilo + descarga PNG + ★ Guardar. El clic en el mapa navega al
 // battlemap del punto (/w/<sello>/<x>,<y>) con la conversión fantasía→rejilla
 // del visor (modo puntería). Todo el render vive en el servidor (ADR-001/003).

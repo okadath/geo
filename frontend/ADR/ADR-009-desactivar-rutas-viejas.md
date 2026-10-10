@@ -1,6 +1,6 @@
 # ADR-009 — Desactivar las rutas viejas: un solo embudo por `/estudio/mundo`
 
-**Estado:** aceptada · 2026-07-17 · sustituye el «rutas viejas intactas» de ADR-004
+**Estado:** sustituida por ADR-010 · aceptada 2026-07-17 · sustituía el «rutas viejas intactas» de ADR-004
 
 ## Contexto
 

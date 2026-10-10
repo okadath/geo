@@ -94,7 +94,8 @@ python3 web.py            # abre http://127.0.0.1:8000
 python3 web.py -p 9000    # otro puerto
 ```
 
-Página local (solo biblioteca estándar, sin dependencias extra) que llama al
+`/` sirve el front comercial (Mundaria, ver [`frontend/README.md`](frontend/README.md)).
+El panel científico descrito aquí vive en **`/lab`**: página local que llama al
 CLI para generar GIFs desde el navegador:
 
 - **Sliders** para los parámetros importantes: tiempo, frame cada N pasos,
@@ -311,27 +312,35 @@ visor enlaza como «mapa político».
 
 ## Páginas interactivas sobre un detalle
 
-Cada cuadro detallado **con civilización** habilita cuatro páginas más del
-servidor local, con la misma query `?sello=…&d=<stem>`. La lógica propietaria
-(motor del juego, renders de fantasía y battlemaps) corre **en el servidor**,
-en módulos enchufables que `web.py` carga al arrancar (`juego_srv.py`,
-`fantasia_srv.py`, `batalla_srv.py`, endpoints `/api/...`); los HTML son solo
-presentación:
+Cada cuadro detallado **con civilización** habilita varias páginas del
+servidor local. Un mundo se identifica por el **sello** de su corrida; el
+servidor resuelve el detalle (`?d=<stem>` lo fija a mano). La lógica
+propietaria (motor del juego, renders de fantasía y battlemaps) corre **en el
+servidor**, en módulos enchufables que `web.py` carga al arrancar
+(`juego_srv.py`, `fantasia_srv.py`, `batalla_srv.py`, endpoints `/api/...`);
+los HTML son solo presentación. Tabla completa de rutas en
+[`frontend/README.md`](frontend/README.md) y
+[`ESPECIFICACION_RUTAS.md`](ESPECIFICACION_RUTAS.md):
 
-- **`/regiones`** — visor de **subregiones**: provincias de cada país y
-  regiones marinas, con selección múltiple, fichas, tooltips y árbol por país.
-  Doc: [`SUBREGIONES.md`](SUBREGIONES.md).
-- **`/juego`** — **juego de conquista por turnos** (estilo Age of History)
-  sobre esas provincias: economía, ejércitos, mar transitable, desembarcos,
-  diplomacia e IA. Doc: [`JUEGO.md`](JUEGO.md).
-- **`/fantasia`** — **mapa de fantasía**: redibujado estilo pergamino (glifos
-  de montaña, waterlines, rótulos caligráficos) con niveles de calidad,
-  re-render nítido por sector al hacer zoom y export de PNG completo o del
-  sector visible. Doc: [`FANTASIA.md`](FANTASIA.md).
-- **`/batalla`** — **battlemaps de encuentro**: elige un punto del mundo y
-  genera un mapa táctico con rejilla coherente con ese lugar (14 temas con
-  subtipos, título narrativo, export PNG para VTT/impresión).
+- **`/w/<sello>`** — ficha compartible del mundo (vista previa OG, lugares
+  destacados, Abrir mapa, Jugar).
+- **`/w/<sello>/mapa`** — **mapa de fantasía**: redibujado estilo pergamino
+  (glifos de montaña, waterlines, rótulos caligráficos) con niveles de
+  calidad, re-render nítido por sector al hacer zoom y export de PNG.
+  Doc: [`FANTASIA.md`](FANTASIA.md).
+- **`/w/<sello>/<x>,<y>`** — **battlemap de encuentro** en ese punto del
+  mundo: mapa táctico con rejilla coherente con el lugar (14 temas con
+  subtipos, título narrativo, export PNG/Foundry/Roll20).
   Doc: [`BATALLA.md`](BATALLA.md).
+- **`/w/<sello>/jugar`** — **juego de conquista por turnos** (estilo Age of
+  History) sobre las provincias: economía, ejércitos, mar transitable,
+  desembarcos, diplomacia e IA. Doc: [`JUEGO.md`](JUEGO.md).
+- **`/regiones?sello=…&d=<stem>`** — visor de **subregiones**: provincias de
+  cada país y regiones marinas, con selección múltiple, fichas, tooltips y
+  árbol por país. Doc: [`SUBREGIONES.md`](SUBREGIONES.md).
+
+Las rutas viejas `/fantasia`, `/batalla` y `/juego?sello&d` redirigen (302) a
+las nuevas.
 
 ## Diales interesantes (constantes al inicio de `tecto.py`)
 
@@ -359,8 +368,8 @@ los **lagos extendidos / cuencas endorreicas** de la hidrología fina, con su
 matemática, sus diales y las trampas ya resueltas.
 
 Además: [`SUBREGIONES.md`](SUBREGIONES.md) (provincias y cuencas marinas +
-página `/regiones`), [`JUEGO.md`](JUEGO.md) (juego de conquista `/juego`),
-[`FANTASIA.md`](FANTASIA.md) (mapa de fantasía `/fantasia`),
-[`BATALLA.md`](BATALLA.md) (battlemaps `/batalla`),
+página `/regiones`), [`JUEGO.md`](JUEGO.md) (juego de conquista `/w/<sello>/jugar`),
+[`FANTASIA.md`](FANTASIA.md) (mapa de fantasía `/w/<sello>/mapa`),
+[`BATALLA.md`](BATALLA.md) (battlemaps `/w/<sello>/<x>,<y>`),
 [`ARQUITECTURA_C4.md`](ARQUITECTURA_C4.md) (vistas C4 del sistema) y
 [`NEGOCIO.md`](NEGOCIO.md) (posibles líneas de producto).

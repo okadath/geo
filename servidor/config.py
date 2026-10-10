@@ -18,9 +18,9 @@ SALIDAS = Path(os.environ.get("TECTO_SALIDAS") or BASE / "salidas")
 DB_CUENTAS = Path(os.environ.get("TECTO_DB") or BASE / "cuentas.db")
 # lista de corridas publicas (ver rutas_lab._sellos_publicos)
 PUBLICOS = Path(os.environ.get("TECTO_PUBLICOS") or BASE / "publicos.json")
-# front comercial nuevo (ADR-004): paginas en frontend/ y estaticos en
-# frontend/assets/ servidos bajo /app/. El panel cientifico (web.html) se muda
-# a /lab; "/" pasa a ser la landing.
+# front comercial (ADR-010): paginas en frontend/ y estaticos en
+# frontend/assets/ servidos bajo /app/. El panel cientifico (web.html) vive en
+# /lab; "/" es Explorar (servidor/rutas_paginas.py).
 FRONTEND = BASE / "frontend"
 ASSETS = FRONTEND / "assets"
 

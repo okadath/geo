@@ -1,6 +1,7 @@
-// visor.js — visor pan/zoom del mapa de fantasía, LIENZO principal del
-// workspace (ADR-006). Portado fielmente de fantasia.html: todo el dibujo
-// (pergamino, ríos, rótulos, decoración) se hornea en el servidor
+// visor.js — visor pan/zoom del mapa de fantasía: lienzo de /w/<sello>/mapa
+// y del mapa vivo de la portada (ADR-010). Portado fielmente de
+// fantasia.html: todo el dibujo (pergamino, ríos, rótulos, decoración) se
+// hornea en el servidor
 //   GET /api/fantasia/render  -> mapa completo (exportar)
 //   GET /api/fantasia/sector  -> ventana de mundo re-horneada (nítida a zoom)
 //   GET /api/fantasia/deco    -> overlay transparente (marco, rosa de vientos)

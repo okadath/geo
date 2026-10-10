@@ -1,6 +1,6 @@
-// battlemap.js — controles del battlemap (la estrella, ADR-006). Portado de
+// battlemap.js — controles del battlemap (la estrella, ADR-010). Portado de
 // batalla.html. Dos formas de montarlo:
-//   · con `visor` (workspace): el punto se elige con clic en el mapa
+//   · con `visor`: el punto se elige con clic en el mapa
 //     (visor.onPick) y se usa activar()/desactivar();
 //   · sin visor (página /w/<sello>/<x>,<y>): el punto es fijo, se arranca con
 //     iniciar(rx, ry), el estado inicial llega en `inicial` (la query) y cada
@@ -41,7 +41,7 @@ export const CLAVES_QUERY = [
 //                              resolucion, lugar, titulo}
 //   sello, d    mundo y detalle
 //   panel       raíz donde viven los controles (.bm-*); los que falten se omiten
-//   visor?      visor de fantasía (modo workspace: pin + clic elige punto)
+//   visor?      visor de fantasía (modo con visor: pin + clic elige punto)
 //   imagen?     <img> del render (por defecto .bm-preview del panel)
 //   inicial?    {tema, sub, semilla, cols, rows, px, rejilla, nums, momento,
 //               estacion} (strings de la query). Se aplica al cargar el
@@ -173,7 +173,7 @@ export function crearBattlemap({
 
   // ---- parámetros de la escena ----
   // px por casilla del render: el selector .bm-px si existe; si no, la vista
-  // previa del workspace (cabe en PREVIEW_MAX).
+  // previa del panel (cabe en PREVIEW_MAX).
   function pxRender(cols, rows) {
     const sel = $(".bm-px");
     const v = sel ? parseInt(sel.value, 10) : NaN;
@@ -268,7 +268,7 @@ export function crearBattlemap({
     }).catch(() => {});
   }
 
-  // ---- elegir punto (clic en el mapa del workspace, o punto fijo) ----
+  // ---- elegir punto (clic en el mapa del visor, o punto fijo) ----
   async function elegir(rx, ry) {
     st.punto = { rx, ry };
     if (visor) visor.setPin(rx, ry);
@@ -379,7 +379,7 @@ export function crearBattlemap({
   en(".bm-roll20", "click", exportRoll20);
 
   return {
-    // modo workspace (con visor): clic en el mapa elige el punto
+    // modo con visor: clic en el mapa elige el punto
     async activar() {
       const ok = await asegurarCargado();
       if (!ok || !visor) return;
