@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Ficha compartible del mundo (T08). Las metas OG llevan marcadores que el
+       servidor sustituye al servir /w/<sello> (servidor/rutas_paginas.py):
+       los bots de vista previa no ejecutan JS. ficha.js pinta el resto. -->
+  <title>{{og_titulo}} — Mundaria</title>
+  <meta name="description" content="{{og_descripcion}}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Mundaria">
+  <meta property="og:title" content="{{og_titulo}}">
+  <meta property="og:description" content="{{og_descripcion}}">
+  <meta property="og:image" content="{{og_imagen}}">
+  <meta property="og:url" content="{{og_url}}">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/ficha.css">
+</head>
+<body>
+  <main class="contenedor">
+
+    <!-- bloque superior: imagen + datos + acciones -->
+    <section class="fi-cabeza" id="fi-cabeza" aria-busy="true">
+      <figure class="fi-imagen">
+        <img id="fi-img" alt="" decoding="async">
+      </figure>
+
+      <div class="fi-datos">
+        <p class="fi-sello mono tenue" id="fi-sello"></p>
+        <h1 class="fi-nombre" id="fi-nombre">{{og_titulo}}</h1>
+        <p class="fi-insignias" id="fi-insignias"></p>
+        <dl class="fi-tabla" id="fi-tabla"></dl>
+
+        <div class="fi-principales">
+          <a class="btn btn-oro btn-lg" id="fi-mapa" href="/">Abrir mapa</a>
+          <a class="btn btn-lg" id="fi-jugar" href="/">⚔ Jugar</a>
+        </div>
+        <div class="fi-secundarias">
+          <button class="btn btn-fantasma btn-sm" id="fi-copiar" type="button">⧉ Copiar enlace</button>
+          <button class="btn btn-fantasma btn-sm" id="fi-guardar" type="button">★ Guardar</button>
+          <button class="btn btn-fantasma btn-sm" id="fi-remezclar" type="button">Remezclar semilla</button>
+        </div>
+        <div class="fi-muro-remezcla" id="fi-muro-remezcla"></div>
+
+        <!-- solo el dueño: conmutador de visibilidad -->
+        <div class="fi-visibilidad tarjeta oculto" id="fi-visibilidad">
+          <label class="fi-conmutador">
+            <input type="checkbox" id="fi-publico">
+            <span>Publicado en Explorar</span>
+          </label>
+          <p class="tenue" id="fi-visibilidad-nota"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- lugares destacados (calculados en el servidor) -->
+    <section class="fi-lugares oculto" id="fi-lugares" aria-labelledby="fi-lugares-titulo">
+      <h2 id="fi-lugares-titulo">Battlemaps destacados</h2>
+      <p class="tenue">Lugares con carácter de este mundo; ábrelos como battlemap
+        o haz clic en cualquier punto del mapa.</p>
+      <div class="fi-rejilla" id="fi-rejilla" role="list"></div>
+    </section>
+
+    <!-- muro Pro al final (solo si el plan no es Pro) -->
+    <section class="fi-pro oculto" id="fi-pro"></section>
+
+    <!-- error elegante: el mundo no existe -->
+    <section class="fi-error tarjeta centrado oculto" id="fi-error" role="alert">
+      <h1>Este mundo no existe</h1>
+      <p class="tenue" id="fi-error-texto">Puede que el enlace esté mal copiado
+        o que el mundo se haya borrado.</p>
+      <a class="btn btn-oro" href="/">Explorar mundos</a>
+    </section>
+
+  </main>
+
+  <script type="module" src="/app/js/ficha.js"></script>
+</body>
+</html>

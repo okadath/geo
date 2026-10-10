@@ -1,0 +1,104 @@
+/* ficha.css — layout propio de la ficha del mundo `/w/<sello>` (T08).
+   Depende de tokens.css y base.css; aquí SOLO el layout que no cubren los
+   componentes comunes: bloque imagen + datos, tabla de metadatos, rejilla de
+   lugares destacados. Español en clases y comentarios (ADR-008). */
+
+/* ==========================================================================
+   Bloque superior: imagen a la izquierda, datos a la derecha
+   ========================================================================== */
+.fi-cabeza {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+  gap: var(--e6);
+  align-items: start;
+  padding-block: var(--e6) var(--e5);
+}
+@media (max-width: 820px) {
+  .fi-cabeza { grid-template-columns: 1fr; gap: var(--e5); }
+}
+
+.fi-imagen {
+  margin: 0;
+  min-height: 260px;          /* hueco mientras llega el render */
+  background: var(--fondo-2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  overflow: hidden;
+  box-shadow: var(--sombra);
+}
+.fi-imagen img {
+  width: 100%; height: auto; display: block;
+  opacity: 0; transition: opacity var(--transicion-lenta);
+}
+.fi-imagen img.cargada { opacity: 1; }
+.fi-imagen:has(img.cargada) { min-height: 0; }
+.fi-imagen.sin-imagen img { display: none; }
+
+.fi-datos { display: flex; flex-direction: column; gap: var(--e4); }
+.fi-sello { font-size: var(--txt-sm); }
+.fi-nombre { color: var(--pergamino); line-height: 1.1; margin-top: calc(-1 * var(--e3)); }
+.fi-insignias { display: flex; gap: var(--e2); flex-wrap: wrap; }
+.fi-insignias:empty { display: none; }
+
+.fi-tabla {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--e3) var(--e5);
+  margin: 0;
+  padding-block: var(--e3);
+  border-block: 1px solid var(--borde-suave);
+}
+.fi-tabla:empty { display: none; }
+.fi-tabla dt {
+  color: var(--tinta-tenue);
+  font-size: var(--txt-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.fi-tabla dd { margin: 0; color: var(--tinta); }
+
+.fi-principales, .fi-secundarias { display: flex; gap: var(--e3); flex-wrap: wrap; }
+.fi-principales .btn-oro { flex: 1 1 auto; }
+.fi-secundarias { gap: var(--e2); }
+.fi-muro-remezcla:empty { display: none; }
+
+.fi-visibilidad { display: flex; flex-direction: column; gap: var(--e2); padding: var(--e4); }
+.fi-conmutador {
+  display: inline-flex; align-items: center; gap: var(--e2);
+  cursor: pointer; font-weight: var(--peso-medio);
+}
+.fi-conmutador input { accent-color: var(--oro); width: 1.1em; height: 1.1em; }
+.fi-visibilidad p { font-size: var(--txt-sm); }
+
+/* ==========================================================================
+   Lugares destacados
+   ========================================================================== */
+.fi-lugares { margin-block: var(--e6); }
+.fi-lugares h2 { font-size: var(--txt-xl); }
+.fi-lugares > p { margin-block: var(--e2) var(--e4); }
+.fi-rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--e4);
+}
+.fi-lugar { display: flex; flex-direction: column; align-items: flex-start; gap: var(--e2); }
+.fi-lugar-nombre {
+  font-size: var(--txt-lg);
+  color: var(--pergamino);
+  margin: 0;
+}
+.fi-lugar-det { font-size: var(--txt-sm); }
+.fi-lugar-ir { margin-top: auto; color: var(--oro); font-size: var(--txt-sm); }
+
+/* ==========================================================================
+   Muro Pro final y error
+   ========================================================================== */
+.fi-pro { margin-block: var(--e6) var(--e7); }
+.fi-error {
+  margin-block: var(--e8);
+  padding: var(--e7) var(--e5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--e4);
+}

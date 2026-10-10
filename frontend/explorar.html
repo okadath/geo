@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Explorar mundos — Mundaria</title>
+  <meta name="description" content="Mundos con geología real, listos para explorar: el mundo del día con su mapa vivo, los mundos públicos más nuevos y un buscador por semilla o nombre. Haz clic en el mapa y obtén el battlemap de ese lugar.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app/css/tokens.css">
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/explorar.css">
+</head>
+<body>
+  <main class="contenedor">
+
+    <!-- mundo del día: cabecera + visor vivo -->
+    <section class="ex-dia" id="ex-dia" aria-labelledby="ex-dia-titulo" aria-busy="true">
+      <header class="ex-dia-cab">
+        <h1 class="ex-dia-titulo" id="ex-dia-titulo">
+          <span class="ex-dia-rotulo">Mundo del día</span>
+          <span class="ex-dia-sep" aria-hidden="true">·</span>
+          <span id="ex-dia-nombre" class="ex-dia-nombre">…</span>
+          <span id="ex-dia-sello" class="mono tenue ex-dia-sello"></span>
+        </h1>
+        <nav class="ex-dia-enlaces" aria-label="mundo del día">
+          <a class="btn btn-fantasma btn-sm" id="ex-dia-ficha" href="/">ficha</a>
+          <button class="btn btn-sm" id="ex-dia-siguiente" type="button">siguiente ▸</button>
+        </nav>
+      </header>
+
+      <div class="ex-visor-caja" id="ex-visor-caja">
+        <!-- el JS clona esta plantilla en cada mundo (un visor por mundo) -->
+        <template id="ex-visor-plantilla">
+          <div class="vs" id="ex-visor">
+            <div class="vs-telon"></div>
+            <div class="vs-lienzo">
+              <img class="vs-mapa" alt="mapa de fantasía del mundo del día">
+              <canvas class="vs-pin" aria-hidden="true"></canvas>
+            </div>
+            <img class="vs-deco" alt="" aria-hidden="true">
+            <div class="vs-cargador">
+              <div class="vs-cargador-fila"><span class="vs-spin"></span> pintando el mapa…</div>
+              <div class="barra-progreso indeterminada"><div class="relleno"></div></div>
+            </div>
+            <div class="vs-pista tenue">Arrastra para moverte · rueda para acercar · clic en un punto para su battlemap</div>
+          </div>
+        </template>
+        <div class="esqueleto esqueleto-bloque ex-visor-esqueleto" aria-hidden="true"></div>
+      </div>
+      <p class="tenue ex-dia-error oculto" id="ex-dia-error" role="alert"></p>
+    </section>
+
+    <!-- más mundos: filtros + tira horizontal -->
+    <section class="ex-mas" id="ex-mas" aria-labelledby="ex-mas-titulo">
+      <header class="ex-mas-cab">
+        <h2 id="ex-mas-titulo">Más mundos</h2>
+        <div class="pestanas" role="tablist" aria-label="orden">
+          <button class="pestana" type="button" role="tab" data-orden="nuevos" aria-selected="true">Nuevos</button>
+          <button class="pestana" type="button" role="tab" data-orden="azar" aria-selected="false">Al azar</button>
+        </div>
+        <form class="ex-buscador" id="ex-buscador" role="search">
+          <input class="entrada" id="ex-q" name="q" type="search" aria-label="Buscar por semilla o nombre"
+                 placeholder="Semilla o nombre…" autocomplete="off">
+          <button class="btn btn-sm" type="submit">Buscar</button>
+        </form>
+      </header>
+      <div class="ex-tira scroll-x" id="ex-tira" role="list" aria-busy="true"></div>
+      <p class="tenue ex-tira-nota oculto" id="ex-tira-nota" role="status"></p>
+    </section>
+
+    <!-- estado vacío: no hay mundos públicos -->
+    <section class="ex-vacio tarjeta centrado oculto" id="ex-vacio">
+      <h1>Aún no hay mundos públicos</h1>
+      <p class="tenue">Cuando alguien publique un mundo aparecerá aquí. Mientras
+        tanto, puedes forjar el tuyo.</p>
+      <a class="btn btn-oro btn-lg" href="/nuevo">＋ Nuevo mundo</a>
+    </section>
+
+  </main>
+
+  <script type="module" src="/app/js/explorar.js"></script>
+</body>
+</html>
