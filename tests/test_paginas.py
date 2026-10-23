@@ -10,7 +10,7 @@ S = "20260101-000000"
 
 @pytest.mark.parametrize("ruta", [
     "/", "/nuevo", "/yo",
-    f"/w/{S}", f"/w/{S}/mapa", f"/w/{S}/jugar", f"/w/{S}/12,8",
+    f"/w/{S}", f"/w/{S}/detail", f"/w/{S}/jugar", f"/w/{S}/12,8",
     f"/w/{S}/0,0",
 ])
 def test_paginas_nuevas_200_html(cliente, corrida_falsa, ruta):
@@ -36,7 +36,8 @@ def test_jugar_sin_enlaces_viejos(cliente, corrida_falsa):
 
 
 @pytest.mark.parametrize("ruta", [
-    "/w/no-es-sello","/w/no-es-sello/mapa", "/w/no-es-sello/jugar",
+    "/w/no-es-sello","/w/no-es-sello/mapa", "/w/no-es-sello/detail",
+    "/w/no-es-sello/jugar",
     "/w/no-es-sello/1,2", f"/w/{S}/1,", f"/w/{S}/a,b", f"/w/{S}/1,2,3",
     f"/w/{S}/otra",
 ])
@@ -88,18 +89,20 @@ REDIRECCIONES = [
     ("/estudio?sello=" + S, "/"),
     (f"/estudio/mundo?sello={S}&{D}", f"/w/{S}?{D}"),
     (f"/estudio/mundo?sello={S}", f"/w/{S}"),
-    (f"/estudio/mundo?sello={S}&{D}&modo=battlemap", f"/w/{S}/mapa?{D}"),
-    (f"/estudio/mundo?modo=battlemap&sello={S}", f"/w/{S}/mapa"),
+    (f"/estudio/mundo?sello={S}&{D}&modo=battlemap", f"/w/{S}/detail?{D}"),
+    (f"/estudio/mundo?modo=battlemap&sello={S}", f"/w/{S}/detail"),
+    (f"/w/{S}/mapa", f"/w/{S}/detail"),
+    (f"/w/{S}/mapa?{D}", f"/w/{S}/detail?{D}"),
     (f"/estudio/mundo?sello={S}&{D}&modo=conquistar", f"/w/{S}/jugar?{D}"),
     (f"/estudio/mundo?sello={S}&{D}&modo=otro", f"/w/{S}?{D}"),
     ("/estudio/mundo", "/"),
     (f"/estudio/mundo?{D}&modo=battlemap", "/"),
     ("/estudio/mundo?sello=../etc&modo=conquistar", "/"),
-    (f"/fantasia?sello={S}&{D}", f"/w/{S}/mapa?{D}"),
-    (f"/fantasia?sello={S}", f"/w/{S}/mapa"),
+    (f"/fantasia?sello={S}&{D}", f"/w/{S}/detail?{D}"),
+    (f"/fantasia?sello={S}", f"/w/{S}/detail"),
     ("/fantasia", "/"),
     ("/fantasia?sello=malo", "/"),
-    (f"/batalla?sello={S}&{D}", f"/w/{S}/mapa?{D}"),
+    (f"/batalla?sello={S}&{D}", f"/w/{S}/detail?{D}"),
     ("/batalla", "/"),
     ("/batalla?sello=2026", "/"),
     (f"/juego?sello={S}&{D}", f"/w/{S}/jugar?{D}"),

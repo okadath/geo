@@ -58,7 +58,8 @@
 .fi-tabla dd { margin: 0; color: var(--tinta); }
 
 .fi-principales, .fi-secundarias { display: flex; gap: var(--e3); flex-wrap: wrap; }
-.fi-principales .btn-oro { flex: 1 1 auto; }
+.fi-principales .btn { flex: 1 1 auto; }
+.fi-principales .btn-oro { flex-basis: 100%; }
 .fi-secundarias { gap: var(--e2); }
 .fi-muro-remezcla:empty { display: none; }
 

@@ -1,4 +1,4 @@
-/* mapa.css — visor /w/<sello>/mapa (heredero del workspace mundo.css).
+/* mapa.css — visor /w/<sello>/detail (heredero del workspace mundo.css).
    Depende de tokens.css + base.css. El mapa de fantasía es el lienzo
    principal; a la derecha el panel de estilo. battlemap.html reutiliza de
    aquí la cabecera (.ws-cab), el error (.ws-error) y .panel-bloque. */

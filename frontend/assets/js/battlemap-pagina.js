@@ -10,7 +10,7 @@
 import { montarNav, montarPie } from "./nav.js";
 import {
   RE_SELLO, mundo, cuenta, esPro, conSesion, guardar,
-  urlMundo, urlMapa, urlBattlemap,
+  urlMundo, urlBattlemap,
 } from "./api.js";
 import { crearBattlemap, CLAVES_QUERY } from "./battlemap.js";
 import { aviso, modal, cuadroCorreo, muroPro } from "./ui.js";
@@ -69,10 +69,10 @@ async function arrancar() {
   const d = mu.d;
   // d explícito en la URL -> se conserva en los enlaces; si no, URLs limpias
   const qD = dQuery ? { d } : undefined;
+  // «Mapa» es la página del mundo (/w/<sello>): desde ahí se vuelve al rol
   const nav = montarNav({
     migas: [
-      { texto: mu.nombre, href: urlMundo(sello, qD) },
-      { texto: "Mapa", href: urlMapa(sello, qD) },
+      { texto: `Mapa · ${mu.nombre}`, href: urlMundo(sello, qD) },
       { texto: `${x}, ${y}` },
     ],
   });

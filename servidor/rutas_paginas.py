@@ -118,12 +118,21 @@ def ficha(request: Request, sello: str, d: str | None = None):
                     headers={"Cache-Control": "no-store"})
 
 
-# literales (mapa, jugar) antes del patron <x>,<y>
-@router.get("/w/{sello}/mapa")
-def mapa(sello: str):
+# literales (detail, mapa, jugar) antes del patron <x>,<y>
+@router.get("/w/{sello}/detail")
+def detail(sello: str):
     if _sello_invalido(sello):
         return _no_existe()
     return _pagina("mapa.html")
+
+
+# ruta anterior del visor: 302 a /detail conservando la query
+@router.get("/w/{sello}/mapa")
+def mapa(request: Request, sello: str):
+    if _sello_invalido(sello):
+        return _no_existe()
+    return RedirectResponse(_con_d(f"/w/{sello}/detail", request.query_params.get("d")),
+                            status_code=302)
 
 
 # juego de conquista por turnos: el juego.html de la raiz, sin cambios
@@ -159,19 +168,19 @@ def estudio():
 
 @router.get("/estudio/mundo")
 def estudio_mundo(request: Request):
-    sufijo = {"battlemap": "/mapa", "conquistar": "/jugar"}.get(
+    sufijo = {"battlemap": "/detail", "conquistar": "/jugar"}.get(
         request.query_params.get("modo"), "")
     return _vieja(request, sufijo)
 
 
 @router.get("/fantasia")
 def fantasia(request: Request):
-    return _vieja(request, "/mapa")
+    return _vieja(request, "/detail")
 
 
 @router.get("/batalla")
 def batalla(request: Request):
-    return _vieja(request, "/mapa")
+    return _vieja(request, "/detail")
 
 
 @router.get("/juego")

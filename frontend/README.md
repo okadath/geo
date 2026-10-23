@@ -57,7 +57,7 @@ Fuente de verdad: `servidor/rutas_paginas.py` (páginas) y
 |---|---|---|
 | `GET /` | `explorar.html` — mundo del día, tira de públicos, buscador | Todos |
 | `GET /w/<sello>` | `ficha.html` — ficha compartible (metas OG rellenadas en servidor) | Todos |
-| `GET /w/<sello>/mapa` | `mapa.html` — visor de fantasía; clic → battlemap | Todos |
+| `GET /w/<sello>/detail` | `mapa.html` — visor detallado de fantasía; clic → battlemap (`/mapa` redirige aquí) | Todos |
 | `GET /w/<sello>/<x>,<y>?tema=…` | `battlemap.html` — battlemap a pantalla completa con minimapa | Todos |
 | `GET /w/<sello>/jugar` | `juego.html` (raíz del repo) — conquista por turnos | Todos |
 | `GET /nuevo` | `nuevo.html` — asistente de creación (genera solo Pro) | Todos |
@@ -75,8 +75,8 @@ Redirecciones 302 (conservan `d`; sin `sello` válido van a `/`):
 | Vieja | Nueva |
 |---|---|
 | `/estudio` | `/` |
-| `/estudio/mundo?sello&d[&modo=battlemap\|conquistar]` | `/w/<sello>` (`/mapa`, `/jugar`) |
-| `/fantasia?sello&d`, `/batalla?sello&d` | `/w/<sello>/mapa?d=` |
+| `/estudio/mundo?sello&d[&modo=battlemap\|conquistar]` | `/w/<sello>` (`/detail`, `/jugar`) |
+| `/fantasia?sello&d`, `/batalla?sello&d`, `/w/<sello>/mapa?d=` | `/w/<sello>/detail?d=` |
 | `/juego?sello&d` | `/w/<sello>/jugar?d=` |
 | `/cuenta`, `/entrar` | `/yo` |
 | `/pro` | `/yo#pro` |
@@ -116,7 +116,7 @@ frontend/
 │           nuevo.js, yo.js        arranque de cada página
 ├── explorar.html          /
 ├── ficha.html             /w/<sello>
-├── mapa.html              /w/<sello>/mapa
+├── mapa.html              /w/<sello>/detail
 ├── battlemap.html         /w/<sello>/<x>,<y>
 ├── nuevo.html             /nuevo
 ├── yo.html                /yo

@@ -400,9 +400,10 @@ export function urlMundo(sello, q) {
   return _conQuery(`/w/${encodeURIComponent(sello)}`, q);
 }
 
-// /w/<sello>/mapa[?q] — visor del mapa de fantasía. q típico: {d}.
+// /w/<sello>/detail[?q] — visor detallado del mapa de fantasía. q típico: {d}.
+// (La ruta vieja /w/<sello>/mapa redirige aquí; «el mapa» es /w/<sello>.)
 export function urlMapa(sello, q) {
-  return _conQuery(`/w/${encodeURIComponent(sello)}/mapa`, q);
+  return _conQuery(`/w/${encodeURIComponent(sello)}/detail`, q);
 }
 
 // /w/<sello>/<x>,<y>[?q] — battlemap del punto. x, y se redondean a enteros

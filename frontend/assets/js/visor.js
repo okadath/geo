@@ -1,4 +1,4 @@
-// visor.js — visor pan/zoom del mapa de fantasía: lienzo de /w/<sello>/mapa
+// visor.js — visor pan/zoom del mapa de fantasía: lienzo de /w/<sello>/detail
 // y del mapa vivo de la portada (ADR-010). Portado fielmente de
 // fantasia.html: todo el dibujo (pergamino, ríos, rótulos, decoración) se
 // hornea en el servidor
@@ -9,7 +9,7 @@
 //
 // Además del rol de fantasía, este visor es el tablero del modo Battlemap:
 // expone un modo «puntería» que traduce un clic a la rejilla (rx,ry) del mundo
-// y pinta un pin. En /w/<sello>/mapa el clic en modo puntería navega al
+// y pinta un pin. En /w/<sello>/detail el clic en modo puntería navega al
 // battlemap del punto (mapa.js).
 
 import {

@@ -602,6 +602,24 @@ dialog.modal::backdrop { background: rgba(6, 10, 18, 0.72); backdrop-filter: blu
   .nav-sesion-email { display: none; }
 }
 
+/* «‹ Volver»: primer elemento de la barra en toda página que no sea la portada */
+.nav-volver {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e1);
+  font-size: var(--txt-sm);
+  font-weight: var(--peso-medio);
+  color: var(--tinta-suave);
+  padding: 0.45em 0.75em;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-full);
+  background: var(--panel);
+  white-space: nowrap;
+  transition: color var(--transicion), background var(--transicion), border-color var(--transicion);
+}
+.nav-volver:hover { color: var(--oro-claro); background: var(--oro-t); border-color: var(--oro-hondo); }
+
 /* migas de pan (montarNav({migas})): marca › miga › … › actual */
 .nav-migas {
   display: flex;

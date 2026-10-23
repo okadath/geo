@@ -26,7 +26,7 @@ def _reejecutar_en_venv():
     Asi `python3 web.py` toma las dependencias del entorno sin activarlo.
     Se hace ANTES de importar uvicorn (que vive en la .venv)."""
     venv = BASE / ".venv"
-    venv_py = venv / "bin" / "python"
+    venv_py = venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
     if not venv_py.exists():
         return
     # ¿ya estamos usando la .venv? Comparar por sys.prefix, NO por el ejecutable:

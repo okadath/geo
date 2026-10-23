@@ -20,28 +20,36 @@
     font: 15px/1.5 var(--sans); overflow: hidden;
     display: flex; flex-direction: column;
   }
+  /* la cabecera de la plataforma (nav.js) es el primer hijo del body */
+  .nav { flex: none; }
+  /* botones del juego = .btn de base.css (mismos tokens, tamaño compacto) */
   button {
-    background: var(--panel); color: var(--texto); border: 1px solid var(--borde);
-    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--panel-2); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: var(--radio-sm); padding: 0.45em 0.8em; font: inherit;
+    font-size: var(--txt-sm); font-weight: var(--peso-medio); line-height: 1;
     cursor: pointer; white-space: nowrap;
+    transition: background var(--transicion), border-color var(--transicion),
+      color var(--transicion), box-shadow var(--transicion);
   }
-  button:hover { border-color: var(--acento); }
-  button:disabled { opacity: .45; cursor: default; }
-  button:disabled:hover { border-color: var(--borde); }
+  button:hover { background: var(--borde); border-color: var(--borde); }
+  button:focus-visible { outline: none; box-shadow: var(--anillo-foco); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:disabled:hover { background: var(--panel-2); border-color: var(--borde); }
+  button.activo { border-color: var(--oro-hondo); background: var(--oro-t); color: var(--oro-claro); }
+  select, input[type="number"] {
+    background: var(--fondo-2); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: var(--radio-sm); padding: 0.4em 0.6em; font: inherit; font-size: var(--txt-sm);
+  }
+  select:focus, input[type="number"]:focus { outline: none; border-color: var(--oro-hondo); box-shadow: var(--anillo-foco); }
   .cuad { display: inline-block; width: 13px; height: 13px; border-radius: 3px;
           margin-right: 7px; vertical-align: -1.5px;
           border: 1px solid rgba(255,255,255,.3); }
 
-  /* ---- barra de modos del workspace (bajo el nav de plataforma) ---- */
-  #modos-barra {
-    display: flex; align-items: center; padding: 6px 16px;
-    background: var(--fondo-2); border-bottom: 1px solid var(--borde);
-  }
-
   /* ---- barra superior (país · dinero · turno) ---- */
   #barra {
-    display: flex; align-items: center; gap: 16px; padding: 8px 16px;
-    background: var(--fondo-2); border-bottom: 1px solid var(--borde);
+    display: flex; align-items: center; gap: 16px; padding: 8px 24px;
+    background: var(--fondo-2); border-bottom: 1px solid var(--borde-suave);
     font-size: 14px; flex-wrap: wrap;
   }
   #barra .pais { font-family: var(--serif); color: var(--pergamino);
@@ -50,7 +58,8 @@
                    font-variant-numeric: tabular-nums; }
   #barra .ingreso { color: var(--verde); font-size: 13px; }
   #barra .turno { margin-left: auto; font-weight: 700; font-size: 15px; }
-  #barra a { color: var(--acento); font-size: 13px; text-decoration: none; }
+  #barra a { color: var(--mar-claro); font-size: 13px; text-decoration: none; }
+  #barra a:hover { color: var(--oro-claro); }
 
   /* ---- visor del mapa ---- */
   #visor {
@@ -69,9 +78,9 @@
   }
   #tip {
     position: absolute; pointer-events: none; transform: translate(12px, 14px);
-    background: rgba(12, 17, 28, .93); border: 1px solid var(--borde);
-    border-radius: 8px; padding: 5px 9px; font-size: 12.5px; max-width: 280px;
-    z-index: 5;
+    background: rgba(22, 31, 49, .95); border: 1px solid var(--borde);
+    border-radius: var(--radio-sm); padding: 5px 9px; font-size: 12.5px; max-width: 280px;
+    z-index: 5; box-shadow: var(--sombra-sm);
   }
   #tip b { color: var(--acento); }
   #tip .mini { color: var(--tenue); font-size: 11.5px; }
@@ -83,59 +92,64 @@
   }
   #panel > * { pointer-events: auto; }
   #ficha {
-    background: rgba(16, 23, 38, .94); border: 1px solid var(--borde);
-    border-radius: 12px; padding: 10px 14px; min-width: 260px; max-width: 420px;
-    font-size: 13.5px;
+    background: rgba(22, 31, 49, .95); border: 1px solid var(--borde);
+    border-radius: var(--radio); padding: 10px 14px; min-width: 260px; max-width: 420px;
+    font-size: 13.5px; box-shadow: var(--sombra);
   }
-  #ficha h3 { margin: 0 0 4px; font-size: 15px; }
+  #ficha h3 { margin: 0 0 4px; font-size: 15px; font-family: var(--serif); color: var(--pergamino); }
   #ficha .fila { display: flex; justify-content: space-between; gap: 14px; }
   #ficha .fila span { color: var(--tenue); }
   #ficha .acciones { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
   /* ---- panel de orden de movimiento (flecha + slider) ---- */
   #orden {
-    background: rgba(16, 23, 38, .94); border: 1px solid var(--oro);
-    border-radius: 12px; padding: 10px 14px; min-width: 240px; max-width: 340px;
-    font-size: 13.5px;
+    background: rgba(22, 31, 49, .95); border: 1px solid var(--oro-hondo);
+    border-radius: var(--radio); padding: 10px 14px; min-width: 240px; max-width: 340px;
+    font-size: 13.5px; box-shadow: var(--sombra-oro), var(--sombra);
+    align-self: flex-end;
   }
-  #orden h3 { margin: 0 0 6px; font-size: 14px; }
+  #orden h3 { margin: 0 0 6px; font-size: 14px; font-family: var(--serif); color: var(--pergamino); }
   #orden .ruta { color: var(--tenue); font-size: 12.5px; margin-bottom: 6px; }
-  #orden input[type="range"] { width: 100%; accent-color: var(--acento); }
+  #orden input[type="range"] { width: 100%; accent-color: var(--oro); }
+  #ficha .acciones button { font-size: var(--txt-xs); }
   #orden .cifras { display: flex; justify-content: space-between;
                    font-variant-numeric: tabular-nums; font-size: 12.5px;
                    color: var(--tenue); }
   #orden .cifras b { color: var(--texto); font-size: 15px; }
   #orden .botones { display: flex; gap: 6px; margin-top: 8px; }
-  #orden .botones .ok {
+  #orden .botones .ok, #b-turno, #fin-botones .destacado {
     background: linear-gradient(180deg, var(--oro-claro), var(--oro));
-    color: #241a06; border: 0; font-weight: 700; flex: 1; }
+    color: #241a06; border: 1px solid var(--oro-hondo); font-weight: var(--peso-fuerte); }
+  #orden .botones .ok:hover, #b-turno:hover, #fin-botones .destacado:hover {
+    background: linear-gradient(180deg, #f0d089, var(--oro-claro));
+    border-color: var(--oro); color: #241a06; }
+  #orden .botones .ok { flex: 1; }
   #orden .costo-pa { color: var(--oro); font-size: 12px; }
   #orden .bajas { color: var(--tenue); font-size: 12px; margin-top: 5px; }
   #orden .bajas b { color: var(--rojo); }
   #b-turno {
     margin-left: auto; align-self: flex-end;
-    background: linear-gradient(180deg, var(--oro-claro), var(--oro));
-    color: #241a06; border: 1px solid var(--oro-hondo); font-weight: 700;
-    font-size: 16px; padding: 12px 22px; border-radius: 12px;
-    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+    font-size: var(--txt-base); padding: 0.9em 1.6em; border-radius: var(--radio);
+    box-shadow: var(--sombra);
   }
-  #b-turno:hover { filter: brightness(1.1); }
 
   /* ---- aviso flotante (modo atacar, mensajes de batalla) ---- */
   #aviso {
     position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-    background: rgba(16, 23, 38, .94); border: 1px solid var(--borde);
-    border-radius: 10px; padding: 7px 16px; font-size: 13.5px; z-index: 6;
-    max-width: 70%; text-align: center;
+    background: rgba(22, 31, 49, .95); border: 1px solid var(--borde);
+    border-left: 3px solid var(--mar);
+    border-radius: var(--radio); padding: 7px 16px; font-size: 13.5px; z-index: 6;
+    max-width: 70%; text-align: center; box-shadow: var(--sombra);
   }
-  #aviso.batalla { border-color: var(--oro); }
+  #aviso.batalla { border-left-color: var(--oro); }
 
   /* ---- log de eventos ---- */
   #log {
     position: absolute; top: 12px; right: 12px; width: 250px; max-height: 38%;
-    z-index: 6; background: rgba(16, 23, 38, .88);
-    border: 1px solid var(--borde); border-radius: 10px;
+    z-index: 6; background: rgba(22, 31, 49, .9);
+    border: 1px solid var(--borde); border-radius: var(--radio);
     font-size: 12px; color: var(--tenue); display: flex; flex-direction: column;
+    box-shadow: var(--sombra-sm);
   }
   #log-cab {
     display: flex; align-items: center; gap: 8px; padding: 6px 10px;
@@ -143,7 +157,7 @@
   }
   #log-cab .tit { color: var(--texto); font-weight: 650; font-size: 11.5px;
                   text-transform: uppercase; letter-spacing: .04em; }
-  #log-badge { background: var(--rojo); color: #fff; border-radius: 20px;
+  #log-badge { background: var(--rojo); color: #fff; border-radius: var(--radio-full);
                padding: 0 6px; font-size: 11px; font-weight: 700; line-height: 16px; }
   #b-log-min { margin-left: auto; padding: 1px 8px; font-size: 11px; line-height: 1.4; }
   #log-cuerpo { overflow: auto; padding: 6px 10px; }
@@ -164,34 +178,40 @@
   }
   .caja {
     background: var(--panel); border: 1px solid var(--borde);
-    border-radius: 14px; padding: 20px 24px; max-width: 460px; width: 92%;
-    max-height: 82%; overflow: auto;
+    border-radius: var(--radio-lg); padding: 24px 28px; max-width: 460px; width: 92%;
+    max-height: 82%; overflow: auto; box-shadow: var(--sombra-lg);
+    animation: subir var(--transicion-lenta);
   }
-  .caja h2 { margin: 0 0 8px; font-size: 17px; }
+  .caja h2 { margin: 0 0 8px; font-size: var(--txt-xl); }
   .caja p { color: var(--tenue); font-size: 13.5px; margin: 6px 0 12px; }
   .lista-p .item {
     display: flex; align-items: center; gap: 8px; padding: 6px 8px;
     border-radius: 8px; cursor: pointer; font-size: 14px;
   }
-  .lista-p .item:hover { background: rgba(212,169,78,.12); }
+  .lista-p .item:hover { background: var(--oro-t); }
   .lista-p .item .dato { margin-left: auto; color: var(--tenue); font-size: 12.5px;
                          font-variant-numeric: tabular-nums; }
   #dip-lista .item { cursor: pointer; }
-  #dip-lista .estado { font-size: 12px; padding: 1px 8px; border-radius: 20px;
-                       border: 1px solid var(--borde); }
-  #dip-lista .estado.guerra { color: #ff9c8a; border-color: #a04434; }
-  #dip-lista .estado.pacto { color: var(--mar-claro); border-color: var(--mar); }
-  #dip-lista .estado.paz { color: var(--verde); }
+  #dip-lista .item .nombre { white-space: nowrap; overflow: hidden;
+                             text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+  #dip-lista .item .dato, #dip-lista .item .estado { flex: none; }
+  #dip-lista .estado { font-size: var(--txt-xs); padding: 0.3em 0.7em; border-radius: var(--radio-full);
+                       border: 1px solid var(--borde); background: var(--fondo-2);
+                       text-transform: uppercase; letter-spacing: .03em; }
+  #dip-lista .estado.guerra { color: var(--rojo); border-color: var(--rojo); background: var(--rojo-t); }
+  #dip-lista .estado.pacto { color: var(--mar-claro); border-color: var(--mar); background: var(--mar-t); }
+  #dip-lista .estado.paz { color: var(--verde); border-color: var(--verde); background: var(--verde-t); }
 
   /* ---- panel acoplado de diplomacia (vista diplomacia) ---- */
   #dip-dock {
-    position: absolute; left: 12px; top: 12px; z-index: 7; width: 264px;
+    position: absolute; left: 12px; top: 12px; z-index: 7; width: 320px;
     max-height: 52%; display: flex; flex-direction: column;
-    background: rgba(16, 23, 38, .95); border: 1px solid var(--borde);
-    border-radius: 12px; overflow: hidden;
+    background: rgba(22, 31, 49, .95); border: 1px solid var(--borde);
+    border-radius: var(--radio); overflow: hidden; box-shadow: var(--sombra);
   }
   #dip-dock .dip-cab { padding: 8px 12px; border-bottom: 1px solid var(--borde); }
-  #dip-dock .dip-tit { font-weight: 650; font-size: 13px; }
+  #dip-dock .dip-tit { font-weight: var(--peso-fuerte); font-size: 14px;
+                       font-family: var(--serif); color: var(--pergamino); }
   #dip-dock .dip-key { display: flex; flex-wrap: wrap; gap: 2px 8px;
                        font-size: 11px; color: var(--tenue); margin-top: 5px; }
   #dip-dock .dip-key .cuad { width: 10px; height: 10px; margin: 0 3px 0 0; }
@@ -200,13 +220,11 @@
      para que nunca crezca tanto que tape la ficha del país (abajo) */
   #dip-dock #dip-lista { overflow-y: auto; padding: 4px 6px;
                          flex: 1 1 auto; min-height: 0; }
-  #dip-dock .item.sel { background: rgba(212,169,78,.18);
-                        outline: 1px solid var(--acento); }
+  #dip-dock .item.sel { background: var(--oro-t-fuerte);
+                        outline: 1px solid var(--oro-hondo); }
   .cerrar { float: right; background: none; border: 0; color: var(--tenue);
             font-size: 18px; padding: 0 4px; }
-  #dificultad { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; }
-  #dificultad button.activo { border-color: var(--acento);
-                              background: rgba(212,169,78,.14); }
+  #dificultad { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 
   /* ---- pantalla de inicio como PANEL LATERAL (deja ver el mapa al lado) ---- */
   #velo-inicio {
@@ -223,8 +241,8 @@
     box-shadow: 6px 0 26px rgba(0,0,0,.55);
   }
   /* item de país marcado por el hover del mapa (mapa -> lista) */
-  .lista-p .item.hl { background: rgba(212,169,78,.22);
-                      outline: 1px solid var(--acento); }
+  .lista-p .item.hl { background: var(--oro-t-fuerte);
+                      outline: 1px solid var(--oro-hondo); }
 
   /* ---- cabecera de la pantalla inicial: subsección «Conquistar» ---- */
   .cq-titulo {
@@ -242,12 +260,8 @@
   #ajustes-cuerpo label { display: flex; justify-content: space-between;
                           align-items: center; gap: 10px; font-size: 12.5px;
                           color: var(--tenue); }
-  #ajustes-cuerpo input[type="number"] { width: 66px; background: var(--fondo);
-                          color: var(--texto); border: 1px solid var(--borde);
-                          border-radius: 6px; padding: 3px 6px; font: inherit; }
-  #ajustes-cuerpo select { background: var(--fondo); color: var(--texto);
-                          border: 1px solid var(--borde); border-radius: 6px;
-                          padding: 3px 6px; font: inherit; font-size: 12px; }
+  #ajustes-cuerpo input[type="number"] { width: 72px; }
+  #ajustes-cuerpo select { font-size: 12px; }
 
   /* ---- partidas previas (pantalla de inicio) ---- */
   #previas { margin: 14px 0 0; padding-top: 10px;
@@ -262,7 +276,9 @@
   .prev-grupo:first-child { margin-top: 0; }
   #previas-lista .prev { display: flex; align-items: center; gap: 8px;
                          width: 100%; text-align: left; font-size: 12.5px;
-                         padding: 5px 9px; }
+                         padding: 5px 9px; justify-content: flex-start;
+                         min-width: 0; overflow: hidden; }
+  .prev .p-mundo { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   #previas-lista .prev:disabled { opacity: .55; cursor: default; }
   .prev .p-fecha { color: var(--tenue); white-space: nowrap; }
   .prev .p-mundo { font-family: ui-monospace, monospace; font-size: 11.5px;
@@ -271,20 +287,23 @@
   .prev .p-dif { white-space: nowrap; }
   .prev .p-estado { margin-left: auto; white-space: nowrap; }
   .prev .p-estado.es-curso { color: var(--acento); }
-  .prev .p-estado.es-victoria { color: #e8c15a; }
-  .prev .p-estado.es-derrota { color: #e07a6a; }
+  .prev .p-estado.es-victoria { color: var(--oro-claro); }
+  .prev .p-estado.es-derrota { color: var(--rojo); }
   /* fila previsualizándose (resaltada) y barra de confirmación */
-  .prev.sel { background: rgba(212,169,78,.18); outline: 1px solid var(--acento); }
+  .prev.sel { background: var(--oro-t-fuerte); outline: 1px solid var(--oro-hondo); }
   #previas-confirmar { display: flex; align-items: center; flex-wrap: wrap;
                        gap: 6px; margin: 8px 0 4px; font-size: 12px;
                        color: var(--tenue); }
   #previas-confirmar button { font-size: 12px; padding: 3px 8px; }
-  #previas-entrar { border-color: var(--acento); color: var(--acento); }
+  #previas-entrar { border-color: var(--oro-hondo); color: var(--oro-claro); background: var(--oro-t); }
 
   /* ---- botones de vista del mapa ---- */
-  #ui-vistas { display: inline-flex; gap: 4px; }
-  #ui-vistas .vista.activo { border-color: var(--acento);
-                             background: rgba(212,169,78,.16); }
+  #ui-vistas { display: inline-flex; gap: 4px; padding: 4px; background: var(--fondo);
+               border: 1px solid var(--borde-suave); border-radius: var(--radio); }
+  #ui-vistas .vista { border-color: transparent; background: transparent; color: var(--tenue); }
+  #ui-vistas .vista:hover { color: var(--texto); background: var(--panel-2); }
+  #ui-vistas .vista.activo { color: var(--oro-claro); background: var(--panel-2);
+                             box-shadow: inset 0 0 0 1px var(--oro-hondo); }
   /* vistas no politicas: fondo plano neutro, sin la geografia fisica debajo */
   #cinta.plano .mapa { background: #131b2d; }
   #cinta.plano .mapa > img { visibility: hidden; }
@@ -292,10 +311,11 @@
   /* ---- leyenda flotante de coropletas ---- */
   #leyenda {
     position: absolute; left: 12px; top: 12px; z-index: 6; max-width: 210px;
-    background: rgba(16, 23, 38, .94); border: 1px solid var(--borde);
-    border-radius: 10px; padding: 8px 12px; font-size: 12px; color: var(--texto);
+    background: rgba(22, 31, 49, .95); border: 1px solid var(--borde);
+    border-radius: var(--radio); padding: 8px 12px; font-size: 12px; color: var(--texto);
+    box-shadow: var(--sombra-sm);
   }
-  #leyenda .grad { height: 10px; border-radius: 5px; margin: 6px 0 3px; }
+  #leyenda .grad { height: 10px; border-radius: var(--radio-full); margin: 6px 0 3px; }
   #leyenda .rango { display: flex; justify-content: space-between;
                     font-size: 11px; color: var(--tenue);
                     font-variant-numeric: tabular-nums; }
@@ -306,15 +326,19 @@
   .caja.ancha { max-width: 820px; }
   #velo-graf { z-index: 11; }
   /* selector de métrica (una sola visible) */
-  .graf-tabs { display: flex; gap: 6px; margin: 6px 0 0; }
-  .graf-tabs .gtab { flex: 1; font-size: 13px; }
-  .graf-tabs .gtab.activo { border-color: var(--acento); color: var(--acento); }
+  .graf-tabs { display: flex; gap: 4px; margin: 6px 0 0; padding: 4px;
+               background: var(--fondo-2); border: 1px solid var(--borde-suave);
+               border-radius: var(--radio); }
+  .graf-tabs .gtab { flex: 1; font-size: 13px; border-color: transparent;
+                     background: transparent; color: var(--tenue); }
+  .graf-tabs .gtab:hover { color: var(--texto); background: var(--panel-2); }
+  .graf-tabs .gtab.activo { color: var(--oro-claro); background: var(--panel-2);
+                            box-shadow: inset 0 0 0 1px var(--oro-hondo); }
   /* selector de periodo: botones rápidos + dos sliders desde/hasta */
   .graf-periodo { display: flex; flex-wrap: wrap; align-items: center;
                   gap: 6px 12px; margin-top: 10px; font-size: 12px; }
   .graf-periodo .etq { color: var(--tenue); }
   .graf-periodo .gper { padding: 3px 9px; font-size: 12px; }
-  .graf-periodo .gper.activo { border-color: var(--acento); color: var(--acento); }
   .graf-rango { display: flex; flex-direction: column; gap: 2px;
                 flex: 1 1 240px; min-width: 210px; }
   .graf-rango label { display: flex; align-items: center; gap: 6px; color: var(--tenue); }
@@ -325,48 +349,56 @@
                       cursor: pointer; padding: 2px 6px; border-radius: 6px;
                       border: 1px solid transparent; }
   .graf-leyenda .it:hover { border-color: var(--borde); }
-  .graf-leyenda .it.fijo { border-color: var(--acento); background: rgba(212,169,78,.12); }
+  .graf-leyenda .it.fijo { border-color: var(--oro-hondo); background: var(--oro-t); }
   .graf-leyenda .it.tenue { opacity: .4; }
   .graf-bloque { margin-top: 12px; }
   .graf-bloque canvas {
     width: 100%; height: 220px; display: block; background: var(--fondo);
-    border: 1px solid var(--borde); border-radius: 8px; cursor: crosshair;
+    border: 1px solid var(--borde); border-radius: var(--radio-sm); cursor: crosshair;
   }
 
   /* ---- botón de modo espectador / replay en el velo final ---- */
   #fin-botones { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
                  margin-top: 12px; }
-  #fin-botones .destacado {
-    background: linear-gradient(180deg, var(--oro-claro), var(--oro));
-    color: #241a06; border: 0; font-weight: 700; }
 
   /* ---- panel flotante de controles del replay (no tapa el mapa) ---- */
   #replay-hud {
     position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
-    z-index: 8; background: rgba(16, 23, 38, .94); border: 1px solid var(--oro);
-    border-radius: 12px; padding: 8px 14px; text-align: center; min-width: 320px;
+    z-index: 8; background: rgba(22, 31, 49, .95); border: 1px solid var(--oro-hondo);
+    border-radius: var(--radio); padding: 8px 14px; text-align: center; min-width: 320px;
+    box-shadow: var(--sombra-oro), var(--sombra);
   }
-  #replay-turno { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; }
+  #replay-turno { font-weight: var(--peso-fuerte); font-size: 13.5px; margin-bottom: 4px;
+                  font-family: var(--serif); color: var(--pergamino); }
   #replay-hud input[type="range"] { width: 100%; accent-color: var(--oro); margin: 2px 0 6px; }
   #replay-controles { display: flex; gap: 6px; align-items: center; justify-content: center; }
-  #replay-controles .vel.activo,
-  #replay-controles #replay-loop.activo { border-color: var(--oro); background: rgba(212,169,78,.18); }
   #replay-gif[disabled] { opacity: .55; }
 </style>
 </head>
 <body>
-<!-- barra de modos del workspace: explorar/battlemap vuelven al visor del
-     mundo; conquistar es esta misma página -->
-<div id="modos-barra">
-  <div class="pestanas" id="modos-juego" role="tablist" aria-label="modo del mundo">
-    <button type="button" class="pestana" data-ir="explorar"
-            title="ver el mundo como mapa de fantasía">🗺️ Explorar</button>
-    <button type="button" class="pestana" data-ir="battlemap"
-            title="encuentros tácticos en cualquier punto del mapa">⚔️ Battlemap</button>
-    <button type="button" class="pestana activa" aria-selected="true"
-            title="estás aquí: el juego de conquista">👑 Conquistar</button>
-  </div>
-</div>
+<!-- cabecera de la plataforma con migas: mundo › Mapa › Conquistar (nav.js) -->
+<script type="module">
+  import { montarNav } from "/app/js/nav.js";
+  import { urlMundo } from "/app/js/api.js";
+  const m = location.pathname.match(/^\/w\/([^/]+)\/jugar\/?$/);
+  const sello = m ? decodeURIComponent(m[1]) : "";
+  const d = new URLSearchParams(location.search).get("d") || "";
+  const q = d ? { d } : undefined;
+  // «Mapa» es la página del mundo (/w/<sello>), no el visor detallado
+  const nav = montarNav({ migas: [
+    { texto: "Mapa", href: urlMundo(sello, q) },
+    { texto: "Conquistar" },
+  ] });
+  if (sello) {
+    fetch(`/api/w/${encodeURIComponent(sello)}`).then(r => r.ok ? r.json() : null)
+      .then(f => {
+        if (!f || !f.nombre) return;
+        const miga = nav.querySelector(".nav-miga");
+        if (miga) miga.textContent = `Mapa · ${f.nombre}`;
+        document.title = `${f.nombre} · conquista — Mundaria`;
+      }).catch(() => {});
+  }
+</script>
 <header id="barra">
   <span class="pais" id="ui-pais">—</span>
   <span class="dinero">🪙 <span id="ui-dinero">0</span></span>
@@ -599,11 +631,6 @@
   // vuelve a la pantalla inicial (selector de país + partidas); url limpia, la
   // partida ya está guardada en el servidor tras cada acción
   $("a-inicio").href = `/w/${sello}/jugar?d=${stem}`;
-  // pestañas de modo del inicio: explorar/battlemap llevan al workspace del
-  // mundo en ese modo (conquistar es esta página y no navega)
-  document.querySelectorAll("#modos-juego [data-ir]").forEach(b => b.onclick = () => {
-    location.href = `/w/${sello}/mapa`;
-  });
 
   // ================= estado (espejo de lo que manda el servidor) ==========
   const st = {
@@ -1937,7 +1964,7 @@
       // vista, se marca con +? (el total real nunca viaja al front)
       const parcial = !yo && p.provsVis != null && p.provsVis < p.provs;
       div.innerHTML = `<i class="cuad" style="background:rgb(${p.rgb.join(",")})"></i>` +
-        `${p.nombre}<span class="dato">${p.provs} · ⚔${fmtTropas(p.ej)}${parcial ? "+?" : ""}</span>${badge}`;
+        `<span class="nombre">${p.nombre}</span><span class="dato">${p.provs} · ⚔${fmtTropas(p.ej)}${parcial ? "+?" : ""}</span>${badge}`;
       div.onclick = () => { st.paisInfo = p.id; pintarDuenos(); pintarDiplomacia(); pintarFicha(); };
       div.onmouseenter = () => { resaltarPais(p.id); pintarPaisInfo(p.id); };
       // al salir de la fila NO se oculta la ficha si no hay país fijado: así el

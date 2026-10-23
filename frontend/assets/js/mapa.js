@@ -1,4 +1,4 @@
-// mapa.js — visor del mapa de fantasía en /w/<sello>/mapa (ESPECIFICACION_RUTAS
+// mapa.js — visor del mapa de fantasía en /w/<sello>/detail (ESPECIFICACION_RUTAS
 // «Visor»). Heredero del antiguo workspace sin modos: visor pan/zoom +
 // panel de estilo + descarga PNG + ★ Guardar. El clic en el mapa navega al
 // battlemap del punto (/w/<sello>/<x>,<y>) con la conversión fantasía→rejilla
@@ -31,7 +31,7 @@ const TIPO_NOMBRE = { asent: "Asentamientos", pais: "Países", mar: "Mares", rio
 
 const $ = (sel) => document.querySelector(sel);
 
-// /w/<sello>/mapa -> sello (el servidor ya validó el path)
+// /w/<sello>/detail -> sello (el servidor ya validó el path)
 const sello = decodeURIComponent((location.pathname.split("/")[2] || ""));
 const dQuery = new URLSearchParams(location.search).get("d") || "";
 
@@ -61,10 +61,10 @@ async function arrancar() {
   const d = m.d;
   // d explícito en la URL -> se propaga a los enlaces; si no, URLs limpias
   const qD = dQuery ? { d } : undefined;
-  montarNav({ migas: [{ texto: m.nombre, href: urlMundo(sello, qD) }, { texto: "Mapa" }] });
+  montarNav({ migas: [{ texto: `Mapa · ${m.nombre}`, href: urlMundo(sello, qD) }, { texto: "Detalle" }] });
   $(".ws-mundo").textContent = m.nombre;
   $("#ws-sello").textContent = sello;
-  document.title = `${m.nombre} · mapa — Mundaria`;
+  document.title = `${m.nombre} · detalle — Mundaria`;
 
   // resolución del detalle: la necesitan el visor y la conversión a rejilla.
   let info;

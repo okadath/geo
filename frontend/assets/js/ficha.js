@@ -133,6 +133,11 @@ function pintarCabeza(f) {
 
   $("#fi-mapa").href = urlMapa(f.sello, q);
   $("#fi-jugar").href = urlJugar(f.sello, q);
+  // Rol: battlemap del primer lugar destacado; sin lugares, el visor del mapa
+  // (allí el clic en un punto abre su battlemap)
+  const lugar = Array.isArray(f.lugares) && f.lugares[0];
+  $("#fi-rol").href = lugar
+    ? urlBattlemap(f.sello, lugar.x, lugar.y, q) : urlMapa(f.sello, q);
   $("#fi-cabeza").setAttribute("aria-busy", "false");
 }
 

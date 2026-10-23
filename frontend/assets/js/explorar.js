@@ -5,7 +5,7 @@
 
 import { montarNav, montarPie } from "/app/js/nav.js";
 import {
-  capas, mundos, mundoDia, urlMundo, urlBattlemap,
+  capas, mundos, mundoDia, urlMundo,
 } from "/app/js/api.js";
 import { crearVisor } from "/app/js/visor.js";
 import { aviso } from "/app/js/ui.js";
@@ -73,7 +73,8 @@ function mostrarErrorDia(texto) {
 }
 
 // Un visor por mundo: se clona la plantilla y se crea un visor nuevo (visor.js
-// fija sello/d al crearse). Clic en el mapa -> battlemap de ese punto.
+// fija sello/d al crearse). Clic en el mapa -> ficha del mundo (/w/<sello>);
+// desde ahí se abre el battlemap (rol) o la conquista.
 async function montarVisor(f) {
   const gen = ++st.genVisor;
   let info;
@@ -95,8 +96,8 @@ async function montarVisor(f) {
   // render en el cupo del visitante y la portada ya pide sector + miniaturas
   visor.setEstilo({ deco: false });
   visor.setPick(true);
-  visor.onPick = (rx, ry) => {
-    location.href = urlBattlemap(f.sello, rx, ry);
+  visor.onPick = () => {
+    location.href = urlMundo(f.sello);
   };
   visor.onEstado = (txt, err) => {
     if (err) mostrarErrorDia(txt);

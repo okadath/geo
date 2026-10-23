@@ -11,6 +11,8 @@
 //         Pro · $29/año -> /yo#pro  ·  Entrar | email+insignia -> /yo
 //       activa resalta uno: "explorar" | "nuevo" | "pro" | "yo"
 //       (alias viejos: "estudio"->explorar, "precios"->pro, "cuenta"->yo).
+//     · Siempre que la página no sea la portada, la barra empieza con «‹ Volver»
+//       al nivel superior (la miga anterior con href, o / si no hay).
 //     · Con migas -> Mundaria › miga › … › última (la última va sin enlace,
 //       aria-current="page"; también va sin enlace cualquier miga sin href)
 //       y a la derecha solo Entrar/Yo.
@@ -52,6 +54,17 @@ function _marca(conTagline) {
       </a>`;
 }
 
+// «← Volver»: a la miga anterior con enlace (nivel superior); sin ninguna, a /.
+// Es el único control de retroceso de todas las páginas: corto y siempre en
+// el mismo sitio (primer elemento de la barra).
+function _htmlVolver(migas) {
+  let href = "/";
+  for (let i = migas.length - 2; i >= 0; i--) {
+    if (migas[i] && migas[i].href) { href = migas[i].href; break; }
+  }
+  return `<a class="nav-volver" href="${_esc(href)}" title="volver al nivel anterior">‹ Volver</a>`;
+}
+
 function _htmlMigas(migas) {
   const partes = migas.map((m, i) => {
     const ultima = i === migas.length - 1;
@@ -62,6 +75,7 @@ function _htmlMigas(migas) {
     return `<span class="nav-miga-sep" aria-hidden="true">›</span>${pieza}`;
   });
   return `<nav class="nav-migas" aria-label="migas de pan">
+      ${_htmlVolver(migas)}
       ${_marca(false)}
       ${partes.join("")}
     </nav>`;
@@ -80,7 +94,10 @@ export function montarNav(opciones = {}) {
     cuerpo = `${_htmlMigas(migas)}
       <nav class="nav-enlaces" aria-label="cuenta">${sesion}</nav>`;
   } else {
-    cuerpo = `${_marca(true)}
+    // páginas de primer nivel (/nuevo, /yo): volver a la portada
+    const volver = activa && activa !== "explorar"
+      ? `<a class="nav-volver" href="/" title="volver a Explorar">‹ Volver</a>` : "";
+    cuerpo = `${volver}${_marca(true)}
       <nav class="nav-enlaces" aria-label="principal">
         ${_enlace("explorar", activa, "/", "Explorar")}
         ${_enlace("nuevo", activa, "/nuevo", "＋ Nuevo mundo")}
