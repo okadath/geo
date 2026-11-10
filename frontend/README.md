@@ -1,4 +1,4 @@
-# Mundaria — front comercial
+# Pergamundi — front comercial
 
 Front comercial del proyecto de geología procedural. Vende **una herramienta
 creativa**: eliges (o generas) un planeta con geología real, lo ves como mapa
@@ -27,7 +27,7 @@ No hay paso de build: `python web.py` y listo.
 | `SMTP_HOST` | servidor SMTP del enlace mágico | sin definir → **modo dev**: el enlace se escribe en el log y la API responde `"modo": "dev"` |
 | `SMTP_PORT` | puerto SMTP (465 = SSL, 587 = STARTTLS) | `587` |
 | `SMTP_USER`, `SMTP_PASS` | credenciales SMTP | vacías |
-| `SMTP_FROM` | remitente | `SMTP_USER` o `no-responder@mundaria.local` |
+| `SMTP_FROM` | remitente | `SMTP_USER` o `no-responder@pergamundi.com` |
 | `BASE_URL` | origen absoluto de los enlaces del correo y de las metas OG | el de la petición |
 | `PADDLE_TOKEN`, `PADDLE_WEBHOOK_SECRET` | pasarela de pago | sin definir → checkout en modo beta (lista de espera) |
 | `TECTO_SALIDAS` | directorio de corridas | `salidas/` |

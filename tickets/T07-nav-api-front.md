@@ -4,7 +4,7 @@ Depende de T06. Spec: «Páginas y navegación».
 
 ## Alcance (`frontend/assets/js/`)
 - `nav.js`: `montarNav({activa, migas})` (mantener compat con el string
-  actual). Sin `migas`: barra de cinco (Mundaria→`/`, Explorar→`/`,
+  actual). Sin `migas`: barra de cinco (Pergamundi→`/`, Explorar→`/`,
   ＋ Nuevo mundo→`/nuevo`, Pro · $29/año→`/yo#pro`, Entrar→`/yo` o
   email+insignia→`/yo`). Con `migas:[{texto, href}]`: marca › migas (último
   sin enlace) y a la derecha solo Entrar/Yo. «Pro» oculto si `GET /api/cuenta`

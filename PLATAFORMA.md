@@ -44,8 +44,8 @@ Trabajo de diseño concreto:
 - **Marca de agua y límites free**: se aplican **en el servidor** (los módulos
   `_srv` ya reciben todos los parámetros; añadir el plan del usuario al
   contexto de render). Nunca en JS.
-- Nombre y dominio del producto: decidir antes de la landing (pendiente del
-  dueño; todo lo demás no depende de esto).
+- Nombre y dominio del producto: **Pergamundi** / `pergamundi.com`
+  (decidido 2026-11-10, ver `frontend/ADR/ADR-002-nombre-provisional.md`).
 
 ### 1.2 Free vs Pro vs Comercial (qué gatea el servidor)
 
@@ -188,7 +188,8 @@ suscriptores: descongelar la ruta Steam de `/juego` (§10.2).
 
 ## 4. Pasos inmediatos (checklist de arranque)
 
-1. [ ] Elegir nombre y comprar dominio.
+1. [x] Elegir nombre y comprar dominio — **Pergamundi**, `pergamundi.com`
+   (ADR-002, 2026-11-10).
 2. [ ] Iniciar el alta en Paddle (tarda; hacerlo ya).
 3. [ ] Commitear la migración al back (los tres `_srv.py` + fronts + docs) —
    es la base de todo lo anterior y sigue sin commit.

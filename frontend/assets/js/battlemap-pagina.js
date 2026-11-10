@@ -76,7 +76,7 @@ async function arrancar() {
       { texto: `${x}, ${y}` },
     ],
   });
-  document.title = `${mu.nombre} · ${x}, ${y} — Mundaria`;
+  document.title = `${mu.nombre} · ${x}, ${y} — Pergamundi`;
   $("#ws").classList.remove("oculto");
 
   // URL de la página para un punto y una query de estilo
@@ -93,7 +93,7 @@ async function arrancar() {
       const nombre = nombreLugar(mu.lugares, g);
       const miga = nav.querySelector(".nav-miga-actual");
       if (miga) miga.textContent = nombre;
-      document.title = `${nombre} · ${mu.nombre} — Mundaria`;
+      document.title = `${nombre} · ${mu.nombre} — Pergamundi`;
     },
     antesVTT: async () => {
       if (await pro()) return true;

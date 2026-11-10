@@ -7,7 +7,7 @@
 # La app (uvicorn servidor.app:app) NO debe exponerse directo a internet: se
 # ata a 127.0.0.1 y solo Caddy la alcanza. Ver DESPLIEGUE.md y PLATAFORMA.md §2.
 
-mundaria.example.com {
+pergamundi.com {
 	# reverse proxy a la app local (uvicorn --host 127.0.0.1 --port 8000)
 	reverse_proxy 127.0.0.1:8000
 
@@ -27,12 +27,12 @@ mundaria.example.com {
 
 	# log de acceso a un archivo rotado por Caddy
 	log {
-		output file /var/log/caddy/mundaria.log
+		output file /var/log/caddy/pergamundi.log
 		format console
 	}
 }
 
 # --- redireccion opcional de www -> apex (descomentar si se usa www) ---
-# www.mundaria.example.com {
-# 	redir https://mundaria.example.com{uri} permanent
+# www.pergamundi.com {
+# 	redir https://pergamundi.com{uri} permanent
 # }

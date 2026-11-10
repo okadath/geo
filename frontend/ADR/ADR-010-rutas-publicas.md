@@ -39,9 +39,9 @@ Rutas viejas (302, conservando `d`; sin `sello` válido → `/`): `/estudio` →
 `modo=conquistar` → `/jugar`), `/fantasia` y `/batalla` → `/w/<sello>/mapa`,
 `/juego` → `/w/<sello>/jugar`, `/cuenta` → `/yo`.
 
-Navegación: en `/`, `/nuevo` y `/yo`, barra de cinco (Mundaria · Explorar ·
+Navegación: en `/`, `/nuevo` y `/yo`, barra de cinco (Pergamundi · Explorar ·
 ＋ Nuevo mundo · Pro · Entrar/Yo; «Pro» se oculta si ya lo eres). Dentro de un
-mundo, migas de pan (Mundaria › mundo › Mapa › lugar) en vez de «← volver».
+mundo, migas de pan (Pergamundi › mundo › Mapa › lugar) en vez de «← volver».
 
 Reglas de negocio:
 

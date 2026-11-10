@@ -2,7 +2,7 @@
 // Cambiar el nombre/dominio del producto es editar este archivo y el logo.
 
 export const MARCA = {
-  nombre: "Mundaria",
+  nombre: "Pergamundi",
   tagline: "Del planeta al encuentro",
   version: "beta",
 };

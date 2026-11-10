@@ -7,7 +7,7 @@ Configuracion por entorno (se lee en CADA envio, no al importar):
   SMTP_PORT   puerto (defecto 587). 587 -> STARTTLS; 465 -> SMTP sobre TLS.
   SMTP_USER   usuario para login (opcional; sin el no se autentica).
   SMTP_PASS   clave del usuario SMTP.
-  SMTP_FROM   remitente (defecto SMTP_USER o "no-responder@mundaria.local").
+  SMTP_FROM   remitente (defecto SMTP_USER o "no-responder@pergamundi.com").
   BASE_URL    origen publico para componer la URL del enlace
               (defecto http://127.0.0.1:8000, sin barra final).
 """
@@ -44,12 +44,12 @@ def url_entrar(token):
 
 def _mensaje(email, url, remitente):
     msg = EmailMessage()
-    msg["Subject"] = "Tu enlace para entrar en Mundaria"
+    msg["Subject"] = "Tu enlace para entrar en Pergamundi"
     msg["From"] = remitente
     msg["To"] = email
     msg.set_content(
         "Hola:\n\n"
-        "Pulsa este enlace para entrar en Mundaria:\n\n"
+        "Pulsa este enlace para entrar en Pergamundi:\n\n"
         "%s\n\n"
         "Caduca en 15 minutos y solo sirve una vez. Si no lo pediste, "
         "ignora este correo.\n" % url)
@@ -69,7 +69,7 @@ def enviar_enlace(email, url):
     usuario = os.environ.get("SMTP_USER") or ""
     clave = os.environ.get("SMTP_PASS") or ""
     remitente = (os.environ.get("SMTP_FROM") or usuario
-                 or "no-responder@mundaria.local")
+                 or "no-responder@pergamundi.com")
     msg = _mensaje(email, url, remitente)
     ctx = ssl.create_default_context()
     if puerto == 465:

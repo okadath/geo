@@ -73,7 +73,7 @@ def _og(sello, d, request=None):
         partes.append(f"{meta['continentes']} continentes")
     if meta.get("paises"):
         partes.append(f"{meta['paises']} países")
-    desc = "Mundo generado en Mundaria"
+    desc = "Mundo generado en Pergamundi"
     if partes:
         desc += ": " + " · ".join(partes)
     return {

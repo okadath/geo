@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mundaria — juego de conquista</title>
+<title>Pergamundi — juego de conquista</title>
 <link rel="stylesheet" href="/app/css/tokens.css">
 <link rel="stylesheet" href="/app/css/base.css">
 <style>
@@ -395,7 +395,7 @@
         if (!f || !f.nombre) return;
         const miga = nav.querySelector(".nav-miga");
         if (miga) miga.textContent = `Mapa · ${f.nombre}`;
-        document.title = `${f.nombre} · conquista — Mundaria`;
+        document.title = `${f.nombre} · conquista — Pergamundi`;
       }).catch(() => {});
   }
 </script>
@@ -3012,7 +3012,7 @@
 })();
 </script>
 <script type="module">
-  // cabecera común en modo migas de pan (ADR-010): Mundaria › mundo › Conquista.
+  // cabecera común en modo migas de pan (ADR-010): Pergamundi › mundo › Conquista.
   // La miga del mundo es el «volver a la ficha»; el nombre llega de /api/w.
   import { montarNav } from "/app/js/nav.js";
   const m = location.pathname.match(/^\/w\/([^/]+)\/jugar\/?$/);

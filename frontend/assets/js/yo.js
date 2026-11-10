@@ -303,7 +303,7 @@ function abrirPortal(config) {
     location.href = config.portal;
     return;
   }
-  const asunto = "Mundaria — gestionar mi suscripción";
+  const asunto = "Pergamundi — gestionar mi suscripción";
   modal({
     titulo: "Gestionar suscripción",
     cuerpoHTML: `
@@ -437,8 +437,8 @@ async function elegirPlan(boton, inputCorreo) {
 }
 
 function mostrarBeta(nombre, precio, ciclo) {
-  const asunto = `Acceso anticipado Mundaria — ${nombre} ${ciclo}`;
-  const cuerpo = `Hola, quiero unirme a la beta de Mundaria con el plan `
+  const asunto = `Acceso anticipado Pergamundi — ${nombre} ${ciclo}`;
+  const cuerpo = `Hola, quiero unirme a la beta de Pergamundi con el plan `
     + `${nombre} ${ciclo} (${precio}).`;
   const mailto = `mailto:${LISTA_ESPERA}`
     + `?subject=${encodeURIComponent(asunto)}`

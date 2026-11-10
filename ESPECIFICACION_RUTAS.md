@@ -1,4 +1,4 @@
-# Especificación: rutas y pantallas de Mundaria
+# Especificación: rutas y pantallas de Pergamundi
 
 Fecha: 2026-10-10 · Origen: sesión de grill-design (7 rondas, prototipo navegable
 en https://claude.ai/artifact/Bn7gy7FbHjgJb6981hwQ9G). Sustituye a ADR-004,
@@ -42,9 +42,9 @@ desde la misma página de cuenta.
 | `/entrar/<token>` | Aterrizaje del enlace mágico: crea sesión y redirige | quien tenga el enlace |
 | `/lab`, `/regiones` | Panel científico e inspección, sin cambios | solo el dueño |
 
-Barra superior: en `/`, `/nuevo` y `/yo`, cinco elementos (Mundaria · Explorar ·
+Barra superior: en `/`, `/nuevo` y `/yo`, cinco elementos (Pergamundi · Explorar ·
 ＋ Nuevo mundo · Pro $29/año · Entrar/Yo; «Pro» desaparece si ya eres Pro).
-Dentro de un mundo, migas de pan: Mundaria › Thalyra › Mapa › Vado de Ysra, con
+Dentro de un mundo, migas de pan: Pergamundi › Thalyra › Mapa › Vado de Ysra, con
 Yo a la derecha; las páginas de mundo pierden sus «← volver» sueltos.
 
 Reglas de negocio fijadas en el grilling:
@@ -83,7 +83,7 @@ Visitante anónimo
 12. Como visitante, quiero que los enlaces antiguos (`/estudio/mundo?sello&d`, `/fantasia`, `/batalla`, `/juego`) me lleven al mundo correcto, para que los marcadores viejos no se rompan.
 13. Como visitante, quiero copiar el enlace del mundo o del battlemap con un botón, para compartirlo.
 14. Como visitante, quiero ver la lista de lugares destacados de un mundo en su ficha, para tener un battlemap bueno a un clic.
-15. Como visitante, quiero saber siempre dónde estoy (Mundaria › mundo › mapa › lugar), para subir un nivel sin buscar el botón «volver».
+15. Como visitante, quiero saber siempre dónde estoy (Pergamundi › mundo › mapa › lugar), para subir un nivel sin buscar el botón «volver».
 
 Alta y cuenta Free
 
