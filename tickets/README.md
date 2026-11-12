@@ -1,4 +1,4 @@
-# Tickets — rutas y pantallas de Pergamundi
+# Tickets — rutas y pantallas de Pangeira
 
 Derivados de `../ESPECIFICACION_RUTAS.md`. Cada ticket es autocontenido para un
 agente: alcance, criterios de aceptación, dependencias. Las decisiones de

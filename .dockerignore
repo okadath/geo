@@ -1,0 +1,16 @@
+.git
+.claude
+.venv
+__pycache__
+**/__pycache__
+salidas
+mundos
+imgs_archivo
+ia
+tests
+tickets
+cuentas.db
+publicos.json
+semillas.json
+*.pem
+id_*

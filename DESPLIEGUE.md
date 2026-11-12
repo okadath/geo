@@ -1,6 +1,6 @@
 # Despliegue
 
-Cómo correr Pergamundi en tu máquina y en producción. El servidor es FastAPI +
+Cómo correr Pangeira en tu máquina y en producción. El servidor es FastAPI +
 Uvicorn (paquete `servidor/`, app en `servidor.app:app`); `web.py` es solo un
 lanzador delgado. Referencia de infraestructura: **PLATAFORMA.md §2**.
 
@@ -44,17 +44,17 @@ ssh root@IP-DEL-SERVER
 apt update && apt install -y python3-venv git caddy sqlite3
 
 # 2. usuario sin privilegios para la app
-adduser --system --group --home /opt/pergamundi pergamundi
+adduser --system --group --home /opt/pangeira pangeira
 
 # 3. el código: clonar (o subirlo con rsync desde tu máquina:
 #    rsync -av --exclude .venv --exclude salidas --exclude cuentas.db \
-#          --exclude __pycache__ ./ pergamundi@IP:/opt/pergamundi/)
-sudo -u pergamundi git clone <URL-DEL-REPO> /opt/pergamundi
+#          --exclude __pycache__ ./ pangeira@IP:/opt/pangeira/)
+sudo -u pangeira git clone <URL-DEL-REPO> /opt/pangeira
 
 # 4. entorno de python (el .venv NO viaja: se recrea aquí)
-cd /opt/pergamundi
-sudo -u pergamundi python3 -m venv .venv
-sudo -u pergamundi .venv/bin/pip install -r requirements.txt
+cd /opt/pangeira
+sudo -u pangeira python3 -m venv .venv
+sudo -u pangeira .venv/bin/pip install -r requirements.txt
 
 # 5. mundos: subir las corridas que quieras servir a salidas/ (rsync) y
 #    listar las publicas del free tier en publicos.json, p. ej.:
@@ -80,16 +80,16 @@ Un solo worker: el estado de los jobs de render vive en memoria del proceso
 .venv/bin/uvicorn servidor.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Ejemplo de unidad systemd (`/etc/systemd/system/pergamundi.service`):
+Ejemplo de unidad systemd (`/etc/systemd/system/pangeira.service`):
 
 ```ini
 [Unit]
-Description=Pergamundi (uvicorn)
+Description=Pangeira (uvicorn)
 After=network.target
 
 [Service]
-User=pergamundi
-WorkingDirectory=/opt/pergamundi
+User=pangeira
+WorkingDirectory=/opt/pangeira
 Environment=PYTHONUNBUFFERED=1
 # Variables de la pasarela Paddle (FUTURAS — hoy vacías = modo beta, sin cobro):
 #   PADDLE_TOKEN         habilita POST /api/pagos/checkout (sin él -> 503 beta)
@@ -97,7 +97,7 @@ Environment=PYTHONUNBUFFERED=1
 # Mientras no existan, la pasarela responde honestamente "modo beta" (ADR-007).
 # Environment=PADDLE_TOKEN=xxxxx
 # Environment=PADDLE_WEBHOOK_SECRET=xxxxx
-ExecStart=/opt/pergamundi/.venv/bin/uvicorn servidor.app:app --host 127.0.0.1 --port 8000 --workers 1
+ExecStart=/opt/pangeira/.venv/bin/uvicorn servidor.app:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=on-failure
 
 [Install]
@@ -105,7 +105,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now pergamundi
+sudo systemctl enable --now pangeira
 ```
 
 ### 2.2 Reverse proxy (Caddy)
@@ -150,7 +150,7 @@ Dos rutas guardan datos que **no** están en git (ver `.gitignore`):
 Ejemplo de respaldo diario de la base de cuentas:
 
 ```bash
-sqlite3 /opt/pergamundi/cuentas.db ".backup '/var/backups/pergamundi/cuentas-$(date +%F).db'"
+sqlite3 /opt/pangeira/cuentas.db ".backup '/var/backups/pangeira/cuentas-$(date +%F).db'"
 ```
 
 ---
@@ -158,7 +158,7 @@ sqlite3 /opt/pergamundi/cuentas.db ".backup '/var/backups/pergamundi/cuentas-$(d
 ## 5. Verificación rápida tras desplegar
 
 ```bash
-curl -s https://pergamundi.com/api/corridas | head -c 200      # JSON de corridas
-curl -s https://pergamundi.com/api/pagos/config                # {"activo":false,...}
-curl -si https://pergamundi.com/cuenta | head -n 1             # 200 (página mi cuenta)
+curl -s https://pangeira.com/api/corridas | head -c 200      # JSON de corridas
+curl -s https://pangeira.com/api/pagos/config                # {"activo":false,...}
+curl -si https://pangeira.com/cuenta | head -n 1             # 200 (página mi cuenta)
 ```

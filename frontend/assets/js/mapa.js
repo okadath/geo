@@ -64,7 +64,7 @@ async function arrancar() {
   montarNav({ migas: [{ texto: `Mapa · ${m.nombre}`, href: urlMundo(sello, qD) }, { texto: "Detalle" }] });
   $(".ws-mundo").textContent = m.nombre;
   $("#ws-sello").textContent = sello;
-  document.title = `${m.nombre} · detalle — Pergamundi`;
+  document.title = `${m.nombre} · detalle — Pangeira`;
 
   // resolución del detalle: la necesitan el visor y la conversión a rejilla.
   let info;

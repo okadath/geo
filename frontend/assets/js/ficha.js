@@ -14,7 +14,7 @@ import { aviso, modal, cuadroCorreo, muroPro } from "/app/js/ui.js";
 
 // textos visibles de la página (agrupados para la localización, ADR-008)
 const TXT = {
-  titulo: (n) => `${n} — Pergamundi`,
+  titulo: (n) => `${n} — Pangeira`,
   noExiste: "Este mundo no existe",
   noExisteTexto: "Puede que el enlace esté mal copiado o que el mundo se haya borrado.",
   errCarga: "No se pudo cargar el mundo",

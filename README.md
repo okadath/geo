@@ -94,7 +94,7 @@ python3 web.py            # abre http://127.0.0.1:8000
 python3 web.py -p 9000    # otro puerto
 ```
 
-`/` sirve el front comercial (Pergamundi, ver [`frontend/README.md`](frontend/README.md)).
+`/` sirve el front comercial (Pangeira, ver [`frontend/README.md`](frontend/README.md)).
 El panel científico descrito aquí vive en **`/lab`**: página local que llama al
 CLI para generar GIFs desde el navegador:
 

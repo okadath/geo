@@ -7,13 +7,13 @@
 //     opciones: { activa?: string, migas?: [{texto, href?}] }  (o un string,
 //     equivalente a {activa}: compatibilidad con montarNav("estudio")).
 //     · Sin migas -> barra de cinco:
-//         Pergamundi -> /  ·  Explorar -> /  ·  ＋ Nuevo mundo -> /nuevo  ·
+//         Pangeira -> /  ·  Explorar -> /  ·  ＋ Nuevo mundo -> /nuevo  ·
 //         Pro · $29/año -> /yo#pro  ·  Entrar | email+insignia -> /yo
 //       activa resalta uno: "explorar" | "nuevo" | "pro" | "yo"
 //       (alias viejos: "estudio"->explorar, "precios"->pro, "cuenta"->yo).
 //     · Siempre que la página no sea la portada, la barra empieza con «‹ Volver»
 //       al nivel superior (la miga anterior con href, o / si no hay).
-//     · Con migas -> Pergamundi › miga › … › última (la última va sin enlace,
+//     · Con migas -> Pangeira › miga › … › última (la última va sin enlace,
 //       aria-current="page"; también va sin enlace cualquier miga sin href)
 //       y a la derecha solo Entrar/Yo.
 //     La sesión se pinta después con GET /api/cuenta (api.cuenta(), memoizada:
